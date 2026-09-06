@@ -1,0 +1,11 @@
+import EmbeddedPostgres from 'embedded-postgres';
+import { existsSync } from 'node:fs';
+const database = new EmbeddedPostgres({ databaseDir: '.local/postgres', user: 'festival', password: 'local-only', port: 54329, persistent: true, initdbFlags: ['--encoding=UTF8', '--locale=C'], postgresFlags: ['-h', '127.0.0.1'] });
+if (!existsSync('.local/postgres/PG_VERSION')) await database.initialise();
+await database.start();
+const client = database.getPgClient(); await client.connect();
+if (!(await client.query("SELECT 1 FROM pg_database WHERE datname='festival'")).rowCount) await client.query('CREATE DATABASE festival');
+await client.end();
+console.log('Local PostgreSQL ready on 127.0.0.1:54329. Leave this process running.');
+for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, async () => { await database.stop(); process.exit(0); });
+setInterval(() => {}, 60000);

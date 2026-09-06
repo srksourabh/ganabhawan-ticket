@@ -1,0 +1,17 @@
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
+node_modules/
+.next/
+.env*
+!.env.example
+.local/
+*.tsbuildinfo
+test-results/
+playwright-report/
+artifacts/
+/dist/
+.vinext/
+.wrangler/
+.clerk/
+.composio/
+.playwright-mcp/

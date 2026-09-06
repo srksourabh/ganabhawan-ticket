@@ -1,0 +1,419 @@
+import { ORGANISATION, ORGANISATION_BN, DEFAULT_VENUE, DEFAULT_VENUE_PLACE } from '@/lib/brand';
+
+export type Locale = 'en' | 'bn';
+
+export const LOCALE_COOKIE = 'samatat-locale';
+export const LOCALE_STORAGE_KEY = 'samatat-locale';
+
+export const locales: Locale[] = ['en', 'bn'];
+
+export function isLocale(value: unknown): value is Locale {
+  return value === 'en' || value === 'bn';
+}
+
+/** Prefer Bengali CMS field when present; otherwise fall back to English. */
+export function localized(en: string, bn: string | null | undefined, locale: Locale): string {
+  if (locale === 'bn' && bn?.trim()) return bn;
+  return en;
+}
+
+export function dateLocale(locale: Locale): string {
+  return locale === 'bn' ? 'bn-IN' : 'en-IN';
+}
+
+type Dict = Record<string, string>;
+
+const en: Dict = {
+  'skip': 'Skip to content',
+  'lang.en': 'English',
+  'lang.bn': 'বাংলা',
+  'lang.switch': 'Language',
+
+  'nav.programme': 'Programme',
+  'nav.cart': 'Cart',
+  'nav.tickets': 'My tickets',
+  'nav.admin': 'Admin',
+  'nav.install': 'Install app',
+  'nav.openMenu': 'Open menu',
+  'nav.closeMenu': 'Close menu',
+  'nav.signInClerk': 'Google / Clerk',
+  'nav.otp': 'OTP',
+  'nav.signedIn': 'Signed in',
+  'nav.cartBadge': '{count} tickets in cart',
+  'nav.cartBadgeOne': '1 ticket in cart',
+  'nav.venue': DEFAULT_VENUE,
+
+  'home.eyebrow': `${DEFAULT_VENUE_PLACE} · ${DEFAULT_VENUE}`,
+  'home.lead': `Theatre, stories, and shared evenings — presented by ${ORGANISATION} at ${DEFAULT_VENUE}.`,
+  'home.support': 'Browse the programme and choose Daily or Season admission once the catalogue is published.',
+  'home.cta': 'Explore the programme',
+
+  'login.title': 'Sign in',
+  'login.orClerk': 'Or use the full Clerk form at',
+  'login.orOtp': 'or SMS / email OTP',
+  'login.contact': 'Email or mobile',
+  'login.contactPlaceholder': 'you@example.com or 98765 43210',
+  'login.send': 'Send code',
+  'login.sending': 'Sending…',
+  'login.staffHint': 'Staff may continue to use OTP. Customers can use Google.',
+  'login.enterCode': 'Enter your code',
+  'login.devCode': 'Development code',
+  'login.otp': 'One-time code',
+  'login.mfa': 'Staff authenticator (if required)',
+  'login.verify': 'Verify and continue',
+  'login.checking': 'Checking…',
+  'login.different': '← Use a different address',
+  'login.loading': 'Loading sign-in…',
+  'login.sendFail': 'Unable to send code.',
+  'login.verifyFail': 'Verification failed.',
+  'login.network': 'Network error. Please try again.',
+  'google.continue': 'Continue with Google',
+  'google.redirecting': 'Redirecting…',
+  'google.unavailable': 'Google sign-in is not available yet. Enable Google in the Clerk Dashboard, or use SMS / email OTP below.',
+  'sso.finishing': 'Finishing Google sign-in…',
+
+  'catalogue.eyebrow': `${ORGANISATION} · {venue}`,
+  'catalogue.title': 'The programme',
+  'catalogue.intro': '{festival} at {venue} · Discover performances, then tap a zone on the seating map to add Daily tickets, or choose a Season pass below.',
+  'catalogue.search': 'Search the programme',
+  'catalogue.searchPlaceholder': 'Search plays, genres, or ticket options',
+  'catalogue.error': 'The programme is being prepared. Please try again shortly.',
+  'catalogue.loading': 'Loading the programme…',
+  'catalogue.choose': 'Choose a performance',
+  'catalogue.performances': 'Performances',
+  'catalogue.daily': 'Daily admission',
+  'catalogue.mapHint': 'Photo from the stage. Ground floor: Premier in front, Superior at the back under the balcony. First floor: Balcony.',
+  'catalogue.added': 'Added {category} · {title} to your cart.',
+  'catalogue.addFail': 'Unable to add to cart.',
+  'catalogue.season': 'Season admission',
+  'catalogue.available': '{count} available · {shows} performance(s)',
+  'catalogue.bookNow': 'Book now',
+  'catalogue.soldOut': 'Sold out',
+
+  'map.aria': 'Auditorium seating map — select a zone to add tickets',
+  'map.stage': 'STAGE',
+  'map.soldOut': 'Sold out',
+  'map.available': '{count} available',
+  'map.zoneAria': '{category} zone, {price}, {availability}',
+  'map.ground': 'Ground floor',
+  'map.firstFloor': 'First floor',
+  'map.premierWhere': 'Ground floor, front — nearest the stage',
+  'map.superiorWhere': 'Ground floor, back — under the balcony',
+  'map.balconyWhere': 'First floor balcony',
+  'zone.Premier': 'Premier',
+  'zone.Superior': 'Superior',
+  'zone.Balcony': 'Balcony',
+
+  'cart.title': 'Your cart',
+  'cart.limitHint': 'Up to {max} tickets per checkout.',
+  'cart.empty': 'Your cart is empty.',
+  'cart.browse': 'Browse the programme',
+  'cart.each': 'each',
+  'cart.remove': 'Remove',
+  'cart.total': 'Total',
+  'cart.checkout': 'Checkout',
+  'cart.updateFail': 'Unable to update quantity.',
+  'cart.limit': `You can hold up to 6 tickets at a time.`,
+  'cart.decrease': 'Decrease quantity of {name}',
+  'cart.increase': 'Increase quantity of {name}',
+
+  'checkout.checking': 'Checking your session…',
+  'checkout.processed': 'All bookings were processed.',
+  'checkout.empty': 'Your cart is empty.',
+  'checkout.title': 'Checkout',
+  'checkout.intro': 'Each line is reserved, ordered, and confirmed in turn.',
+  'checkout.pay': 'Pay {amount}',
+  'checkout.processing': 'Processing…',
+  'checkout.partialFail': 'Some lines could not be completed. Remove or retry them from your cart, then check out again.',
+  'checkout.ref': 'Reference {ref}',
+  'checkout.status.pending': 'Waiting',
+  'checkout.status.processing': 'Reserving…',
+  'checkout.status.held': 'Reserved — creating payment order…',
+  'checkout.status.ordered': 'Order created…',
+  'checkout.status.confirmed': 'Confirmed',
+  'checkout.status.error': 'Failed',
+
+  'tickets.title': 'My tickets',
+  'tickets.signedIn': 'Signed in as {contact}',
+  'tickets.loadError': 'Unable to load bookings right now. Please try again shortly.',
+  'tickets.empty': 'No bookings yet',
+  'tickets.browse': 'Browse the programme →',
+  'tickets.count': '{count} tickets · {amount}',
+  'tickets.countOne': '1 ticket · {amount}',
+  'tickets.view': 'View detail',
+  'tickets.download': 'Download ticket {ordinal}',
+  'tickets.back': '← My tickets',
+  'tickets.detail': 'Booking detail',
+  'tickets.status': 'Status',
+  'tickets.quantity': 'Quantity',
+  'tickets.total': 'Total',
+  'tickets.booked': 'Booked',
+  'tickets.unitPrice': 'Unit price',
+  'tickets.coverage': 'Performances covered',
+  'tickets.yours': 'Your tickets',
+  'tickets.downloadPdf': 'Download PDF',
+  'tickets.notScanned': 'Not yet scanned',
+  'tickets.admitted': 'Admitted',
+  'tickets.ticketMeta': 'Ticket {ordinal} · {kind} · {scan}',
+  'tickets.refundNotice': 'A refund is being processed for this booking. Contact us if you have questions.',
+
+  'gate.title': 'Gate admission',
+  'gate.sub': 'Scan or enter a ticket token',
+  'gate.token': 'Ticket token',
+  'gate.showId': 'Show ID',
+  'gate.scan': 'Admit',
+  'gate.scanning': 'Checking…',
+  'gate.network': 'Network error — result unknown. Do not admit.',
+  'gate.admitted': 'ADMITTED',
+  'gate.denied': 'DENIED',
+  'gate.unknown': 'UNKNOWN',
+
+  'admin.title': 'Admin panel',
+  'admin.denied': 'Admin access denied.',
+  'admin.signIn': 'Sign in with a staff account to manage the festival.',
+  'admin.goLogin': 'Go to login',
+  'admin.tab.festival': 'Event',
+  'admin.tab.shows': 'Dramas',
+  'admin.tab.prices': 'Ticket prices',
+  'admin.loading': 'Loading…',
+  'admin.save': 'Save',
+  'admin.saving': 'Saving…',
+
+  'kind.DAILY': 'Daily',
+  'kind.SEASON': 'Season',
+
+  'book.loading': 'Loading booking…',
+  'book.back': '← Back to programme',
+  'book.eyebrow': 'Book tickets',
+  'book.title': 'Select quantity',
+  'book.qty': 'Number of tickets',
+  'book.max': '(max 6)',
+  'book.hint': 'Price is confirmed after the hold is created. Your selection is reserved for a limited time.',
+  'book.reserve': 'Reserve tickets',
+  'book.reserving': 'Reserving…',
+  'book.reference': 'Reference',
+  'book.holdExpires': 'Hold expires in',
+  'book.holdComplete': '. Complete payment before it lapses.',
+  'book.holdExpired': 'Your hold has expired.',
+  'book.startOver': 'Start over',
+  'book.creatingOrder': 'Creating payment order…',
+  'book.payDev': 'Pay (development)',
+  'book.processing': 'Processing…',
+  'book.confirmed': 'Booking confirmed',
+  'book.ready': 'Your tickets are ready. Open My tickets to download PDFs.',
+  'book.viewTickets': 'View my tickets',
+};
+
+const bn: Dict = {
+  'skip': 'মূল বিষয়ে যান',
+  'lang.en': 'English',
+  'lang.bn': 'বাংলা',
+  'lang.switch': 'ভাষা',
+
+  'nav.programme': 'অনুষ্ঠানসূচি',
+  'nav.cart': 'কার্ট',
+  'nav.tickets': 'আমার টিকিট',
+  'nav.admin': 'অ্যাডমিন',
+  'nav.install': 'অ্যাপ ইনস্টল',
+  'nav.openMenu': 'মেনু খুলুন',
+  'nav.closeMenu': 'মেনু বন্ধ করুন',
+  'nav.signInClerk': 'গুগল / ক্লার্ক',
+  'nav.otp': 'ওটিপি',
+  'nav.signedIn': 'সাইন ইন করা আছে',
+  'nav.cartBadge': 'কার্টে {count}টি টিকিট',
+  'nav.cartBadgeOne': 'কার্টে ১টি টিকিট',
+  'nav.venue': 'গণভবন',
+
+  'home.eyebrow': `উত্তরপাড়া · গণভবন`,
+  'home.lead': `নাটক, গল্প আর একসাথে সন্ধ্যা — ${ORGANISATION_BN}-এর আয়োজনে গণভবনে।`,
+  'home.support': 'অনুষ্ঠানসূচি দেখে দৈনিক বা মৌসুমি টিকিট বেছে নিন — ক্যাটালগ প্রকাশের পর।',
+  'home.cta': 'অনুষ্ঠানসূচি দেখুন',
+
+  'login.title': 'সাইন ইন',
+  'login.orClerk': 'অথবা পূর্ণ ক্লার্ক ফর্ম ব্যবহার করুন',
+  'login.orOtp': 'অথবা এসএমএস / ইমেল ওটিপি',
+  'login.contact': 'ইমেল বা মোবাইল',
+  'login.contactPlaceholder': 'you@example.com বা ৯৮৭৬৫ ৪৩২১০',
+  'login.send': 'কোড পাঠান',
+  'login.sending': 'পাঠানো হচ্ছে…',
+  'login.staffHint': 'কর্মীরা ওটিপি ব্যবহার করতে পারেন। দর্শকরা গুগল ব্যবহার করতে পারেন।',
+  'login.enterCode': 'আপনার কোড লিখুন',
+  'login.devCode': 'ডেভেলপমেন্ট কোড',
+  'login.otp': 'ওয়ান-টাইম কোড',
+  'login.mfa': 'কর্মী অথেন্টিকেটর (প্রয়োজন হলে)',
+  'login.verify': 'যাচাই করে এগোন',
+  'login.checking': 'যাচাই হচ্ছে…',
+  'login.different': '← অন্য ঠিকানা ব্যবহার করুন',
+  'login.loading': 'সাইন ইন লোড হচ্ছে…',
+  'login.sendFail': 'কোড পাঠানো যায়নি।',
+  'login.verifyFail': 'যাচাই ব্যর্থ হয়েছে।',
+  'login.network': 'নেটওয়ার্ক ত্রুটি। আবার চেষ্টা করুন।',
+  'google.continue': 'গুগল দিয়ে চালিয়ে যান',
+  'google.redirecting': 'রিডাইরেক্ট হচ্ছে…',
+  'google.unavailable': 'গুগল সাইন ইন এখন উপলব্ধ নয়। ক্লার্ক ড্যাশবোর্ডে গুগল চালু করুন, অথবা নিচের এসএমএস / ইমেল ওটিপি ব্যবহার করুন।',
+  'sso.finishing': 'গুগল সাইন ইন শেষ হচ্ছে…',
+
+  'catalogue.eyebrow': `${ORGANISATION_BN} · {venue}`,
+  'catalogue.title': 'অনুষ্ঠানসূচি',
+  'catalogue.intro': '{venue}-এ {festival} · নাটক বেছে নিন, তারপর সিটিং ম্যাপে জোনে ট্যাপ করে দৈনিক টিকিট যোগ করুন, অথবা নিচে মৌসুমি পাস নিন।',
+  'catalogue.search': 'অনুষ্ঠানসূচি খুঁজুন',
+  'catalogue.searchPlaceholder': 'নাটক, ধরন বা টিকিট অপশন খুঁজুন',
+  'catalogue.error': 'অনুষ্ঠানসূচি প্রস্তুত হচ্ছে। একটু পরে আবার চেষ্টা করুন।',
+  'catalogue.loading': 'অনুষ্ঠানসূচি লোড হচ্ছে…',
+  'catalogue.choose': 'একটি অনুষ্ঠান বেছে নিন',
+  'catalogue.performances': 'অনুষ্ঠানসমূহ',
+  'catalogue.daily': 'দৈনিক প্রবেশ',
+  'catalogue.mapHint': 'মঞ্চ থেকে তোলা ছবি। নিচতলা: সামনে প্রিমিয়ার, ব্যালকনির নিচে পিছনে সুপিরিয়র। প্রথম তলা: ব্যালকনি।',
+  'catalogue.added': 'কার্টে যোগ হয়েছে: {category} · {title}',
+  'catalogue.addFail': 'কার্টে যোগ করা যায়নি।',
+  'catalogue.season': 'মৌসুমি প্রবেশ',
+  'catalogue.available': '{count}টি উপলব্ধ · {shows}টি অনুষ্ঠান',
+  'catalogue.bookNow': 'বুক করুন',
+  'catalogue.soldOut': 'শেষ',
+
+  'map.aria': 'অডিটোরিয়াম সিটিং ম্যাপ — টিকিট যোগ করতে জোন নির্বাচন করুন',
+  'map.stage': 'মঞ্চ',
+  'map.soldOut': 'শেষ',
+  'map.available': '{count}টি উপলব্ধ',
+  'map.zoneAria': '{category} জোন, {price}, {availability}',
+  'map.ground': 'নিচতলা',
+  'map.firstFloor': 'প্রথম তলা',
+  'map.premierWhere': 'নিচতলা, সামনে — মঞ্চের কাছে',
+  'map.superiorWhere': 'নিচতলা, পিছনে — ব্যালকনির নিচে',
+  'map.balconyWhere': 'প্রথম তলার ব্যালকনি',
+  'zone.Premier': 'প্রিমিয়ার',
+  'zone.Superior': 'সুপিরিয়র',
+  'zone.Balcony': 'ব্যালকনি',
+
+  'cart.title': 'আপনার কার্ট',
+  'cart.limitHint': 'প্রতি চেকআউটে সর্বোচ্চ {max}টি টিকিট।',
+  'cart.empty': 'আপনার কার্ট খালি।',
+  'cart.browse': 'অনুষ্ঠানসূচি দেখুন',
+  'cart.each': 'প্রতিটি',
+  'cart.remove': 'সরান',
+  'cart.total': 'মোট',
+  'cart.checkout': 'চেকআউট',
+  'cart.updateFail': 'পরিমাণ আপডেট করা যায়নি।',
+  'cart.limit': 'একসাথে সর্বোচ্চ ৬টি টিকিট রাখা যায়।',
+  'cart.decrease': '{name}-এর পরিমাণ কমান',
+  'cart.increase': '{name}-এর পরিমাণ বাড়ান',
+
+  'checkout.checking': 'সেশন যাচাই হচ্ছে…',
+  'checkout.processed': 'সব বুকিং সম্পন্ন হয়েছে।',
+  'checkout.empty': 'আপনার কার্ট খালি।',
+  'checkout.title': 'চেকআউট',
+  'checkout.intro': 'প্রতিটি লাইন পর্যায়ক্রমে রিজার্ভ, অর্ডার ও নিশ্চিত করা হয়।',
+  'checkout.pay': 'পেমেন্ট {amount}',
+  'checkout.processing': 'প্রক্রিয়াকরণ…',
+  'checkout.partialFail': 'কিছু লাইন সম্পন্ন হয়নি। কার্ট থেকে সরিয়ে বা আবার চেষ্টা করে চেকআউট করুন।',
+  'checkout.ref': 'রেফারেন্স {ref}',
+  'checkout.status.pending': 'অপেক্ষা',
+  'checkout.status.processing': 'রিজার্ভ হচ্ছে…',
+  'checkout.status.held': 'রিজার্ভ — পেমেন্ট অর্ডার তৈরি…',
+  'checkout.status.ordered': 'অর্ডার তৈরি…',
+  'checkout.status.confirmed': 'নিশ্চিত',
+  'checkout.status.error': 'ব্যর্থ',
+
+  'tickets.title': 'আমার টিকিট',
+  'tickets.signedIn': '{contact} হিসেবে সাইন ইন',
+  'tickets.loadError': 'এখন বুকিং লোড করা যায়নি। একটু পরে আবার চেষ্টা করুন।',
+  'tickets.empty': 'এখনও কোনো বুকিং নেই',
+  'tickets.browse': 'অনুষ্ঠানসূচি দেখুন →',
+  'tickets.count': '{count}টি টিকিট · {amount}',
+  'tickets.countOne': '১টি টিকিট · {amount}',
+  'tickets.view': 'বিস্তারিত দেখুন',
+  'tickets.download': 'টিকিট {ordinal} ডাউনলোড',
+  'tickets.back': '← আমার টিকিট',
+  'tickets.detail': 'বুকিং বিবরণ',
+  'tickets.status': 'স্থিতি',
+  'tickets.quantity': 'পরিমাণ',
+  'tickets.total': 'মোট',
+  'tickets.booked': 'বুক হয়েছে',
+  'tickets.unitPrice': 'একক মূল্য',
+  'tickets.coverage': 'অন্তর্ভুক্ত অনুষ্ঠান',
+  'tickets.yours': 'আপনার টিকিট',
+  'tickets.downloadPdf': 'পিডিএফ ডাউনলোড',
+  'tickets.notScanned': 'এখনও স্ক্যান হয়নি',
+  'tickets.admitted': 'প্রবেশ হয়েছে',
+  'tickets.ticketMeta': 'টিকিট {ordinal} · {kind} · {scan}',
+  'tickets.refundNotice': 'এই বুকিংয়ের জন্য রিফান্ড চলছে। প্রশ্ন থাকলে যোগাযোগ করুন।',
+
+  'gate.title': 'গেট প্রবেশ',
+  'gate.sub': 'টিকিট টোকেন স্ক্যান বা লিখুন',
+  'gate.token': 'টিকিট টোকেন',
+  'gate.showId': 'শো আইডি',
+  'gate.scan': 'প্রবেশ দিন',
+  'gate.scanning': 'যাচাই হচ্ছে…',
+  'gate.network': 'নেটওয়ার্ক ত্রুটি — ফল অজানা। প্রবেশ দেবেন না।',
+  'gate.admitted': 'প্রবেশ মঞ্জুর',
+  'gate.denied': 'প্রবেশ বাতিল',
+  'gate.unknown': 'অজানা',
+
+  'admin.title': 'অ্যাডমিন প্যানেল',
+  'admin.denied': 'অ্যাডমিন প্রবেশাধিকার নেই।',
+  'admin.signIn': 'উৎসব পরিচালনা করতে কর্মী অ্যাকাউন্টে সাইন ইন করুন।',
+  'admin.goLogin': 'লগইনে যান',
+  'admin.tab.festival': 'অনুষ্ঠান',
+  'admin.tab.shows': 'নাটক',
+  'admin.tab.prices': 'টিকিট মূল্য',
+  'admin.loading': 'লোড হচ্ছে…',
+  'admin.save': 'সংরক্ষণ',
+  'admin.saving': 'সংরক্ষণ হচ্ছে…',
+
+  'kind.DAILY': 'দৈনিক',
+  'kind.SEASON': 'মৌসুমি',
+
+  'book.loading': 'বুকিং লোড হচ্ছে…',
+  'book.back': '← অনুষ্ঠানসূচিতে ফিরুন',
+  'book.eyebrow': 'টিকিট বুক করুন',
+  'book.title': 'পরিমাণ বেছে নিন',
+  'book.qty': 'টিকিটের সংখ্যা',
+  'book.max': '(সর্বোচ্চ ৬)',
+  'book.hint': 'হোল্ড তৈরির পর মূল্য নিশ্চিত হয়। সীমিত সময়ের জন্য সংরক্ষিত থাকে।',
+  'book.reserve': 'টিকিট রিজার্ভ করুন',
+  'book.reserving': 'রিজার্ভ হচ্ছে…',
+  'book.reference': 'রেফারেন্স',
+  'book.holdExpires': 'হোল্ড শেষ হবে',
+  'book.holdComplete': '। শেষ হওয়ার আগে পেমেন্ট সম্পন্ন করুন।',
+  'book.holdExpired': 'আপনার হোল্ড মেয়াদোত্তীর্ণ।',
+  'book.startOver': 'আবার শুরু করুন',
+  'book.creatingOrder': 'পেমেন্ট অর্ডার তৈরি হচ্ছে…',
+  'book.payDev': 'পেমেন্ট (ডেভেলপমেন্ট)',
+  'book.processing': 'প্রক্রিয়াকরণ…',
+  'book.confirmed': 'বুকিং নিশ্চিত',
+  'book.ready': 'আপনার টিকিট প্রস্তুত। পিডিএফ ডাউনলোড করতে আমার টিকিট খুলুন।',
+  'book.viewTickets': 'আমার টিকিট দেখুন',
+};
+
+const catalogs: Record<Locale, Dict> = { en, bn };
+
+export type MessageKey = keyof typeof en;
+
+export function t(locale: Locale, key: MessageKey, vars?: Record<string, string | number>): string {
+  let text = catalogs[locale][key] ?? catalogs.en[key] ?? String(key);
+  if (vars) {
+    for (const [name, value] of Object.entries(vars)) {
+      text = text.replaceAll(`{${name}}`, String(value));
+    }
+  }
+  return text;
+}
+
+export function zoneLabel(locale: Locale, category: string): string {
+  const key = `zone.${category}` as MessageKey;
+  if (key in catalogs.en) return t(locale, key);
+  return category;
+}
+
+export function kindLabel(locale: Locale, kind: string): string {
+  const key = `kind.${kind}` as MessageKey;
+  if (key in catalogs.en) return t(locale, key);
+  return kind;
+}
+
+export function zoneWhere(locale: Locale, category: string): string {
+  if (category === 'Premier') return t(locale, 'map.premierWhere');
+  if (category === 'Superior') return t(locale, 'map.superiorWhere');
+  if (category === 'Balcony') return t(locale, 'map.balconyWhere');
+  return '';
+}

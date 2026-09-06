@@ -1,0 +1,51 @@
+# Implementation status
+
+This status is the working companion to the plans in this folder. The repository contains a runnable Next.js application deployed through Vinext to Cloudflare Workers. PostgreSQL remains the transactional authority and Chroma is used only for catalogue retrieval.
+
+## Completed foundation
+
+- Responsive Ganabhawan landing and programme screens, with visible loading and error states.
+- Catalogue and Chroma search route handlers, protected catalogue reindexing, and local Worker smoke coverage.
+- PostgreSQL migration, embedded local PostgreSQL setup, synthetic seed data, session/OTP services, catalogue queries, hold expiry, inventory adjustment, hold reservation and captured-payment fulfillment services.
+- Vinext/Cloudflare build configuration and reproducible `npm run check` validation.
+
+## Completed this session (development adapters)
+
+Verified by `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build:vinext` on 6 Sep 2026.
+
+| Area | Evidence |
+| --- | --- |
+| Auth HTTP | `POST /api/auth/otp/request`, `POST /api/auth/otp/verify` (session cookie), `POST /api/auth/logout`, `GET /api/auth/me`; login UI at `/login` |
+| Holds / booking | `POST /api/holds` with Idempotency-Key; booking UI at `/book/[productId]` |
+| Payments | Development order/confirm adapters; Razorpay order + callback + webhook ingestion; `POST /api/payments/*` |
+| Tickets | PDF generation (`pdf-lib` + QR), owner download/resend, My tickets pages |
+| Jobs / worker | `src/lib/jobs.ts`, `scripts/worker.ts`, `POST /api/cron/worker` (CRON_SECRET) |
+| Admission | Online `admit` service + `/api/admission/scan` + `/gate` staff stub |
+| Health / CI | `GET /api/health`; `.github/workflows/ci.yml` |
+| Layout | Shared nav shell in `app/layout.tsx` |
+
+## Still pending / launch-gated
+
+- Live Razorpay sandbox credentials and end-to-end capture tests (AC05–AC10).
+- Hosted PostgreSQL (Neon pooled URL) + Cloudflare Hyperdrive binding; production secrets in Wrangler.
+- Cloudflare account login (`wrangler login`) and `npm run deploy:vinext`.
+- Full bilingual UI, admin inventory dashboard, physical desk exchange, refund self-service, reconciliation reports, concurrency/load drills, and commercial decisions in `DECISIONS.md`.
+- Chroma hosted endpoint for production catalogue search.
+
+## Alignment rules
+
+1. Implement each task in `TASKS.md` in dependency order.
+2. Update a task only when its stated completion check passes and record evidence here.
+3. Keep PostgreSQL authoritative for stock, money, tickets and admission; Chroma must never authorize a purchase or entry.
+4. Treat synthetic data and development adapters as local-only. Production launch remains blocked by unresolved decisions in `DECISIONS.md`.
+
+## Cloudflare deploy checklist
+
+**Production Worker (6 Sep 2026):** deployed to account `srksourabh@gmail.com`.
+
+- Worker URL: https://ganabhawan-festival.srksourabh.workers.dev
+- Health: `{"ok":true,"db":true}` against Neon database `samatat`
+- Catalogue returns Samatat Sanskriti / Ganabhawan seed data with development payment/OTP adapters
+- Secrets pushed via `npm run deploy:secrets` (DATABASE_URL, SESSION_SECRET, CREDENTIAL_KEY, CRON_SECRET, APP_*, PAYMENT_PROVIDER, OTP_PROVIDER, ALLOW_PUBLIC_SALES)
+
+Still deferred: live Razorpay/OTP (D16), Hyperdrive optional hardening, Chroma hosted search, commercial decisions D10–D22.

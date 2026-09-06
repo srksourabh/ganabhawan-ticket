@@ -1,0 +1,167 @@
+import { neon, Pool as NeonPool } from '@neondatabase/serverless';
+
+type QueryRow = Record<string, any>;
+
+type Queryable = {
+  query: <T = QueryRow>(sql: string, values?: unknown[]) => Promise<{ rows: T[] }>;
+};
+
+export type Client = Queryable & { release: () => void };
+
+type PoolLike = Queryable & {
+  connect: () => Promise<Client>;
+  end: () => Promise<void>;
+};
+
+const globalDb = globalThis as unknown as {
+  festivalHttpSql?: ReturnType<typeof neon>;
+  festivalPgPool?: import('pg').Pool;
+};
+
+function loadLocalEnv() {
+  if (typeof process === 'undefined') return;
+  try {
+    // Fill missing vars from .env.local; do not override Worker/runtime secrets.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { config } = require('dotenv') as typeof import('dotenv');
+    config({ path: '.env.local', quiet: true });
+  } catch {
+    // dotenv unavailable in some edge builds
+  }
+}
+
+loadLocalEnv();
+
+function connectionString() {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error('DATABASE_URL is not set');
+  return url;
+}
+
+function isNeonUrl(url: string) {
+  return url.includes('neon.tech');
+}
+
+function useNeonHttp() {
+  return isNeonUrl(process.env.DATABASE_URL || '');
+}
+
+function getHttpSql() {
+  if (!globalDb.festivalHttpSql) {
+    globalDb.festivalHttpSql = neon(connectionString(), {
+      fetchOptions: { cache: 'no-store' },
+    });
+  }
+  return globalDb.festivalHttpSql;
+}
+
+async function getPgPool() {
+  if (!globalDb.festivalPgPool) {
+    const pg = await import('pg');
+    globalDb.festivalPgPool = new pg.default.Pool({
+      connectionString: connectionString(),
+      max: Number(process.env.DB_POOL_MAX ?? 5),
+      connectionTimeoutMillis: 10000,
+      idleTimeoutMillis: 20000,
+    });
+  }
+  return globalDb.festivalPgPool;
+}
+
+async function withRetry<T>(run: () => Promise<T>, attempts = 3): Promise<T> {
+  let last: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await run();
+    } catch (error) {
+      last = error;
+      if (attempt === attempts - 1) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 200 * 2 ** attempt));
+    }
+  }
+  throw last;
+}
+
+function wrapClient(client: Queryable, release: () => void): Client {
+  return {
+    query: (sql, values = []) => client.query(sql, values),
+    release,
+  };
+}
+
+export async function query<T = QueryRow>(sql: string, values: unknown[] = []): Promise<T[]> {
+  if (useNeonHttp()) {
+    const rows = await withRetry(() => getHttpSql().query(sql, values));
+    return rows as T[];
+  }
+  const pool = await getPgPool();
+  return (await pool.query(sql, values)).rows as T[];
+}
+
+export async function transaction<T>(fn: (client: Client) => Promise<T>, commerce = false): Promise<T> {
+  if (useNeonHttp()) {
+    const pool = new NeonPool({ connectionString: connectionString(), max: 1 });
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query("SET LOCAL lock_timeout = '10s'");
+      if (commerce) await client.query("SELECT pg_advisory_xact_lock(hashtext('festival-commerce'))");
+      const result = await fn(wrapClient(client, () => client.release()));
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        // The connection may already be dead.
+      }
+      throw error;
+    } finally {
+      client.release();
+      await pool.end();
+    }
+  }
+
+  const pool = await getPgPool();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query("SET LOCAL lock_timeout = '10s'");
+    if (commerce) await client.query("SELECT pg_advisory_xact_lock(hashtext('festival-commerce'))");
+    const result = await fn(wrapClient(client, () => client.release()));
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function one<T = QueryRow>(client: Client, sql: string, values: unknown[] = []): Promise<T | undefined> {
+  return (await client.query<T>(sql, values)).rows[0];
+}
+
+export const pool: PoolLike = {
+  query: async (sql, values = []) => ({ rows: await query(sql, values) }),
+  connect: async () => {
+    if (useNeonHttp()) {
+      const neonPool = new NeonPool({ connectionString: connectionString(), max: 1 });
+      const client = await neonPool.connect();
+      return wrapClient(client, () => {
+        client.release();
+        void neonPool.end();
+      });
+    }
+    const pgPool = await getPgPool();
+    const client = await pgPool.connect();
+    return wrapClient(client, () => client.release());
+  },
+  end: async () => {
+    if (globalDb.festivalPgPool) {
+      await globalDb.festivalPgPool.end();
+      globalDb.festivalPgPool = undefined;
+    }
+  },
+};
