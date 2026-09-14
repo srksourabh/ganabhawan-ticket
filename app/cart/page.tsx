@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useCart } from '@/components/CartProvider';
 import { useLocale } from '@/components/LocaleProvider';
-import { ORGANISATION, ORGANISATION_BN } from '@/lib/brand';
+import { FESTIVAL, FESTIVAL_BN } from '@/lib/brand';
 import { dateLocale, kindLabel, zoneLabel } from '@/lib/i18n';
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
@@ -23,7 +23,7 @@ export default function CartPage() {
   return (
     <main style={{ minHeight: '100vh' }}>
       <section className="container" style={{ padding: '2.5rem 0 3.5rem', maxWidth: 720 }}>
-        <p className="eyebrow">{locale === 'bn' ? ORGANISATION_BN : ORGANISATION}</p>
+        <p className="eyebrow">{locale === 'bn' ? FESTIVAL_BN : FESTIVAL}</p>
         <h1 style={{ fontSize: 'clamp(2rem, 6vw, 3rem)', margin: '0 0 .5rem' }}>{t('cart.title')}</h1>
         <p style={{ color: 'var(--muted)', margin: '0 0 1.5rem' }}>{t('cart.limitHint', { max: cart.maxTickets })}</p>
 

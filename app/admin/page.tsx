@@ -48,14 +48,27 @@ type Product = {
 
 const money = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN')}`;
 
+/** Format a timestamptz for datetime-local using Asia/Kolkata wall clock. */
 function toLocalInput(iso: string) {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date(iso));
+  const get = (type: string) => parts.find((p) => p.type === type)?.value || '00';
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`;
 }
 
+/** Interpret datetime-local as IST and store UTC ISO. */
 function fromLocalInput(value: string) {
-  return new Date(value).toISOString();
+  const m = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!m) return new Date(value).toISOString();
+  const [, y, mo, d, h, mi] = m;
+  return new Date(`${y}-${mo}-${d}T${h}:${mi}:00+05:30`).toISOString();
 }
 
 function isPosterUrl(artwork: string) {
@@ -373,7 +386,7 @@ export default function AdminPage() {
                   <input name="troupe" defaultValue={editingShow?.troupe || ''} required />
                 </label>
                 <label className="field">
-                  <span>Date & time</span>
+                  <span>Date & time (IST)</span>
                   <input name="startsAt" type="datetime-local" defaultValue={editingShow ? toLocalInput(editingShow.starts_at) : ''} required />
                 </label>
                 <label className="field">
@@ -390,7 +403,7 @@ export default function AdminPage() {
                 </label>
                 <label className="field">
                   <span>Status</span>
-                  <select name="status" defaultValue={editingShow?.status || 'DRAFT'}>
+                  <select name="status" defaultValue={editingShow?.status || 'PUBLISHED'}>
                     {['DRAFT', 'PUBLISHED', 'CANCELLED'].map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </label>

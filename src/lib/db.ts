@@ -1,5 +1,6 @@
 import { neon, Pool as NeonPool } from '@neondatabase/serverless';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- row shapes vary by query
 type QueryRow = Record<string, any>;
 
 type Queryable = {
@@ -42,7 +43,7 @@ function isNeonUrl(url: string) {
   return url.includes('neon.tech');
 }
 
-function useNeonHttp() {
+function prefersNeonHttp() {
   return isNeonUrl(process.env.DATABASE_URL || '');
 }
 
@@ -90,7 +91,7 @@ function wrapClient(client: Queryable, release: () => void): Client {
 }
 
 export async function query<T = QueryRow>(sql: string, values: unknown[] = []): Promise<T[]> {
-  if (useNeonHttp()) {
+  if (prefersNeonHttp()) {
     const rows = await withRetry(() => getHttpSql().query(sql, values));
     return rows as T[];
   }
@@ -99,7 +100,7 @@ export async function query<T = QueryRow>(sql: string, values: unknown[] = []): 
 }
 
 export async function transaction<T>(fn: (client: Client) => Promise<T>, commerce = false): Promise<T> {
-  if (useNeonHttp()) {
+  if (prefersNeonHttp()) {
     const pool = new NeonPool({ connectionString: connectionString(), max: 1 });
     const client = await pool.connect();
     try {
@@ -146,7 +147,7 @@ export async function one<T = QueryRow>(client: Client, sql: string, values: unk
 export const pool: PoolLike = {
   query: async (sql, values = []) => ({ rows: await query(sql, values) }),
   connect: async () => {
-    if (useNeonHttp()) {
+    if (prefersNeonHttp()) {
       const neonPool = new NeonPool({ connectionString: connectionString(), max: 1 });
       const client = await neonPool.connect();
       return wrapClient(client, () => {

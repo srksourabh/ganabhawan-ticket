@@ -7,7 +7,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "next dev --hostname 127.0.0.1",
+    "dev": "next dev --hostname localhost",
     "build": "next build",
     "start": "next start --hostname 127.0.0.1",
     "typecheck": "tsc --noEmit",
@@ -17,6 +17,7 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
     "db:admin": "tsx scripts/set-admin.ts",
+    "gate:rehearsal": "tsx scripts/gate-rehearsal.ts",
     "worker": "tsx scripts/worker.ts",
     "test": "tsx --test --test-concurrency=1 tests/*.test.ts",
     "test:e2e": "playwright test",

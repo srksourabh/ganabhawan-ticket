@@ -5,7 +5,7 @@
  * navigations fall back to a small inline HTML page.
  */
 
-const CACHE_NAME = 'samatat-v1';
+const CACHE_NAME = 'samatat-natyomela-v2';
 
 const STATIC_ASSET_PATTERN = /\.(?:css|js|mjs|png|jpg|jpeg|svg|gif|webp|ico|woff2?|ttf)$/i;
 

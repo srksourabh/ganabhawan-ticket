@@ -29,6 +29,7 @@ export async function POST(request: Request): Promise<Response> {
       genre: body.genre ?? '',
       language: body.language,
       artwork: body.artwork,
+      status: body.status,
     });
     return jsonOk(show, 201);
   } catch (error) {

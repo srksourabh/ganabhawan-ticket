@@ -1,0 +1,26 @@
+# Expire ticket holds and run background jobs on production.
+# Requires repository secrets: CRON_SECRET, APP_URL (e.g. https://ganabhawan-festival.srksourabh.workers.dev)
+
+name: Hold expiry cron
+
+on:
+  schedule:
+    - cron: "*/2 * * * *"
+  workflow_dispatch:
+
+jobs:
+  expire:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run worker tick
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          if [ -z "$CRON_SECRET" ] || [ -z "$APP_URL" ]; then
+            echo "CRON_SECRET and APP_URL secrets are required."
+            exit 1
+          fi
+          curl -fsS -X POST "${APP_URL%/}/api/cron/worker" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "Content-Type: application/json"
