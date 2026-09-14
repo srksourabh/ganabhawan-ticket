@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useLocale } from '@/components/LocaleProvider';
-import { ORGANISATION, ORGANISATION_BN } from '@/lib/brand';
+import { FESTIVAL, FESTIVAL_BN } from '@/lib/brand';
 import { dateLocale } from '@/lib/i18n';
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
@@ -42,34 +42,34 @@ export default function TicketsView({
   const dl = dateLocale(locale);
 
   return (
-    <main style={{ minHeight: '100vh', background: '#f7f2ea', padding: '2rem 1.25rem' }}>
+    <main style={{ minHeight: '100vh', padding: '2rem 1.25rem' }}>
       <section style={{ maxWidth: 760, margin: '0 auto' }}>
-        <p style={{ color: '#8b2f2f', letterSpacing: '.12em', textTransform: 'uppercase', fontSize: '.78rem', margin: '0 0 .4rem' }}>
-          {locale === 'bn' ? ORGANISATION_BN : ORGANISATION}
+        <p className="eyebrow">
+          {locale === 'bn' ? FESTIVAL_BN : FESTIVAL}
         </p>
         <h1 style={{ fontFamily: 'Georgia, serif', fontSize: 'clamp(2rem, 6vw, 3rem)', lineHeight: 1, margin: '0 0 .5rem' }}>{t('tickets.title')}</h1>
-        <p style={{ color: '#64564d', margin: '0 0 2rem' }}>{t('tickets.signedIn', { contact })}</p>
+        <p style={{ color: 'var(--muted)', margin: '0 0 2rem' }}>{t('tickets.signedIn', { contact })}</p>
 
         {fetchError && (
-          <p role="alert" style={{ padding: '1rem', background: '#fff0f0', border: '1px solid #e8c0c0', borderRadius: 8 }}>{t('tickets.loadError')}</p>
+          <p role="alert" className="alert alert--error">{t('tickets.loadError')}</p>
         )}
 
         {!fetchError && bookings.length === 0 && (
-          <div style={{ padding: '2rem', background: 'white', borderRadius: 10, textAlign: 'center', color: '#64564d' }}>
+          <div className="card" style={{ textAlign: 'center' }}>
             <p style={{ margin: '0 0 1rem', fontFamily: 'Georgia, serif', fontSize: '1.25rem' }}>{t('tickets.empty')}</p>
-            <Link href="/catalogue" style={{ color: '#8b2f2f', textDecoration: 'none', fontWeight: 600 }}>{t('tickets.browse')}</Link>
+            <Link href="/catalogue" className="btn btn--primary">{t('tickets.browse')}</Link>
           </div>
         )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           {bookings.map((b) => (
-            <article key={b.id} style={{ background: 'white', borderRadius: 10, padding: '1.5rem', boxShadow: '0 4px 16px #3d24120a' }}>
+            <article key={b.id} className="card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '.5rem' }}>
                 <div>
                   <h2 style={{ fontFamily: 'Georgia, serif', fontSize: '1.2rem', margin: '0 0 .25rem' }}>{b.snapshot?.name}</h2>
-                  <p style={{ margin: 0, fontFamily: 'monospace', fontSize: '.9rem', color: '#64564d' }}>{b.reference}</p>
+                  <p style={{ margin: 0, fontFamily: 'monospace', fontSize: '.9rem', color: 'var(--muted)' }}>{b.reference}</p>
                 </div>
-                <span style={{ padding: '.25rem .7rem', borderRadius: 20, fontSize: '.8rem', fontWeight: 600, background: '#f7f2ea', color: statusColour[b.status] || '#64564d' }}>
+                <span style={{ padding: '.25rem .7rem', borderRadius: 20, fontSize: '.8rem', fontWeight: 600, background: '#141414', color: statusColour[b.status] || 'var(--muted)' }}>
                   {b.status.replace('_', ' ')}
                 </span>
               </div>
@@ -84,17 +84,17 @@ export default function TicketsView({
 
               {b.snapshot?.coverage?.map((c, i) => (
                 <p key={i} style={{ margin: '.2rem 0', fontSize: '.85rem', color: '#64564d' }}>
-                  {c.title} — {new Date(c.startsAt).toLocaleString(dl, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}
+                  {c.title} - {new Date(c.startsAt).toLocaleString(dl, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}
                 </p>
               ))}
 
               <div style={{ marginTop: '1rem', display: 'flex', gap: '.75rem', flexWrap: 'wrap' }}>
-                <Link href={`/tickets/${b.id}`} style={{ color: '#8b2f2f', textDecoration: 'none', fontWeight: 600, fontSize: '.9rem' }}>
+                <Link href={`/tickets/${b.id}`} style={{ color: '#c9a227', textDecoration: 'none', fontWeight: 600, fontSize: '.9rem' }}>
                   {t('tickets.view')}
                 </Link>
                 {b.status === 'CONFIRMED' && b.tickets?.map((ticket) => (
                   <a key={ticket.id} href={`/api/tickets/${ticket.id}/pdf`} target="_blank" rel="noopener noreferrer"
-                    style={{ color: '#8b2f2f', textDecoration: 'none', fontWeight: 600, fontSize: '.9rem' }}>
+                    style={{ color: '#c9a227', textDecoration: 'none', fontWeight: 600, fontSize: '.9rem' }}>
                     {t('tickets.download', { ordinal: ticket.ordinal })}
                   </a>
                 ))}

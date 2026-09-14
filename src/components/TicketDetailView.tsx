@@ -26,13 +26,13 @@ export default function TicketDetailView({ booking }: { booking: BookingDetail }
   const isConfirmed = booking.status === 'CONFIRMED';
 
   return (
-    <main style={{ minHeight: '100vh', background: '#f7f2ea', padding: '2rem 1.25rem' }}>
+    <main style={{ minHeight: '100vh', padding: '2rem 1.25rem' }}>
       <section style={{ maxWidth: 640, margin: '0 auto' }}>
         <p style={{ marginBottom: '1rem' }}>
-          <Link href="/tickets" style={{ color: '#8b2f2f', textDecoration: 'none', fontSize: '.9rem' }}>{t('tickets.back')}</Link>
+          <Link href="/tickets" style={{ color: '#c9a227', textDecoration: 'none', fontSize: '.9rem' }}>{t('tickets.back')}</Link>
         </p>
 
-        <p style={{ color: '#8b2f2f', letterSpacing: '.12em', textTransform: 'uppercase', fontSize: '.78rem', margin: '0 0 .4rem' }}>
+        <p className="eyebrow">
           {kindLabel(locale, booking.snapshot?.kind)} · {zoneLabel(locale, booking.snapshot?.category)}
         </p>
         <h1 style={{ fontFamily: 'Georgia, serif', fontSize: 'clamp(1.6rem, 5vw, 2.5rem)', lineHeight: 1.1, margin: '0 0 .5rem' }}>
@@ -40,7 +40,7 @@ export default function TicketDetailView({ booking }: { booking: BookingDetail }
         </h1>
         <p style={{ fontFamily: 'monospace', fontSize: '1rem', color: '#64564d', margin: '0 0 1.5rem' }}>{booking.reference}</p>
 
-        <div style={{ background: 'white', borderRadius: 10, padding: '1.5rem', boxShadow: '0 4px 16px #3d24120a', marginBottom: '1.25rem' }}>
+        <div className="card" style={{ marginBottom: '1.25rem' }}>
           <Row label={t('tickets.status')} value={booking.status.replace('_', ' ')} />
           <Row label={t('tickets.quantity')} value={`${booking.quantity}`} />
           <Row label={t('tickets.unitPrice')} value={money(booking.unit_price, dl)} />
@@ -49,7 +49,7 @@ export default function TicketDetailView({ booking }: { booking: BookingDetail }
         </div>
 
         {booking.snapshot?.coverage?.length > 0 && (
-          <div style={{ background: 'white', borderRadius: 10, padding: '1.5rem', boxShadow: '0 4px 16px #3d24120a', marginBottom: '1.25rem' }}>
+          <div className="card" style={{ marginBottom: '1.25rem' }}>
             <h2 style={{ fontFamily: 'Georgia, serif', fontSize: '1.1rem', margin: '0 0 .75rem' }}>{t('tickets.coverage')}</h2>
             {booking.snapshot.coverage.map((c, i) => (
               <p key={i} style={{ margin: '.25rem 0', fontSize: '.9rem', color: '#3d2a1e' }}>
@@ -60,7 +60,7 @@ export default function TicketDetailView({ booking }: { booking: BookingDetail }
         )}
 
         {isConfirmed && booking.tickets?.length > 0 && (
-          <div style={{ background: 'white', borderRadius: 10, padding: '1.5rem', boxShadow: '0 4px 16px #3d24120a' }}>
+          <div className="card">
             <h2 style={{ fontFamily: 'Georgia, serif', fontSize: '1.1rem', margin: '0 0 .75rem' }}>{t('tickets.yours')}</h2>
             {booking.tickets.map((ticket) => (
               <div key={ticket.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '.6rem 0', borderBottom: '1px solid #f0ebe3' }}>

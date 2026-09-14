@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { DEFAULT_VENUE, DEFAULT_VENUE_BN, ORGANISATION, ORGANISATION_BN } from '@/lib/brand';
+import { DEFAULT_VENUE, DEFAULT_VENUE_BN, FESTIVAL, FESTIVAL_BN, STAGE_PHOTOS } from '@/lib/brand';
 import AuditoriumMap, { AUDITORIUM_PHOTO, type AuditoriumCategory, type AuditoriumZone } from '@/components/AuditoriumMap';
 import { useCart } from '@/components/CartProvider';
 import { useLocale } from '@/components/LocaleProvider';
@@ -30,7 +30,7 @@ export default function CataloguePage() {
   const dl = dateLocale(locale);
   const [data, setData] = useState<{ shows: Show[]; products: Product[]; festival?: { name: string; name_bn?: string; venue: string; theater_photo?: string } }>();
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<{ title: string; description: string; kind: string }[]>([]);
+  const [results, setResults] = useState<{ title: string; description: string; kind: string; showId?: string; productId?: string }[]>([]);
   const [error, setError] = useState('');
   const [selectedShowId, setSelectedShowId] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
@@ -88,8 +88,8 @@ export default function CataloguePage() {
   const venueRaw = data?.festival?.venue || DEFAULT_VENUE;
   const venue = locale === 'bn' && venueRaw === DEFAULT_VENUE ? DEFAULT_VENUE_BN : venueRaw;
   const festivalName = localized(
-    data?.festival?.name || ORGANISATION,
-    data?.festival?.name_bn || ORGANISATION_BN,
+    data?.festival?.name || FESTIVAL,
+    data?.festival?.name_bn || FESTIVAL_BN,
     locale,
   );
 
@@ -114,6 +114,30 @@ export default function CataloguePage() {
 
   const theaterPhoto = data?.festival?.theater_photo || AUDITORIUM_PHOTO;
 
+  function showStill(show: Show, index: number) {
+    const art = show.artwork;
+    if (art && (art.startsWith('/') || art.startsWith('http'))) return art;
+    return STAGE_PHOTOS[index % STAGE_PHOTOS.length];
+  }
+
+  function handleAddSeason(product: Product) {
+    const outcome = cart.add({
+      productId: product.id,
+      name: localized(product.name, product.name_bn, locale),
+      category: product.category,
+      kind: product.kind,
+      showTitle: t('catalogue.season'),
+      startsAt: shows[0]?.starts_at || new Date().toISOString(),
+      unitPrice: product.price,
+      version: product.version,
+    });
+    setNotice(
+      outcome.ok
+        ? t('catalogue.addedSeason', { category: zoneLabel(locale, product.category) })
+        : outcome.message || t('catalogue.addFail'),
+    );
+  }
+
   function handleSelectZone(zone: AuditoriumZone) {
     if (!zone.productId || !selectedShow) return;
     const product = products.find((p) => p.id === zone.productId);
@@ -137,31 +161,69 @@ export default function CataloguePage() {
   }
 
   return (
-    <main style={{ minHeight: '100vh' }}>
-      <section className="container" style={{ padding: '2.5rem 0 1rem' }}>
+    <main className="catalogue-page">
+      <section className="container catalogue-page__intro">
         <p className="eyebrow">{t('catalogue.eyebrow', { venue })}</p>
-        <h1 style={{ fontSize: 'clamp(2.25rem, 7vw, 5rem)', lineHeight: .95, margin: '.5rem 0 1rem' }}>{t('catalogue.title')}</h1>
-        <p style={{ maxWidth: 640, fontSize: '1.1rem', lineHeight: 1.6, margin: '0 0 1.25rem' }}>
+        <h1>{t('catalogue.title')}</h1>
+        <p className="catalogue-page__lede">
           {t('catalogue.intro', { festival: festivalName, venue })}
         </p>
 
         <input
+          className="catalogue-page__search"
           aria-label={t('catalogue.search')}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder={t('catalogue.searchPlaceholder')}
-          style={{ maxWidth: 560, margin: '0 0 1rem' }}
         />
 
         {visibleResults.length > 0 && (
-          <div className="stack stack--sm" style={{ maxWidth: 700, marginBottom: '2rem' }}>
-            {visibleResults.map((result) => (
-              <article key={`${result.kind}-${result.title}`} className="card">
-                <strong>{result.title}</strong>
-                <p style={{ margin: '.35rem 0 0', color: 'var(--muted)' }}>{result.description}</p>
-              </article>
-            ))}
+          <div className="stack stack--sm catalogue-page__results">
+            {visibleResults.map((result) => {
+              const key = `${result.kind}-${result.productId || result.showId || result.title}`;
+              if (result.kind === 'show' && result.showId) {
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    className="card catalogue-search-hit"
+                    onClick={() => {
+                      setSelectedShowId(result.showId!);
+                      setQuery('');
+                      setResults([]);
+                    }}
+                  >
+                    <strong>{result.title}</strong>
+                    <p className="muted">{result.description}</p>
+                  </button>
+                );
+              }
+              if (result.productId) {
+                const product = products.find((p) => p.id === result.productId);
+                return (
+                  <article key={key} className="card catalogue-search-hit">
+                    <strong>{result.title}</strong>
+                    <p className="muted">{result.description}</p>
+                    {product && product.available > 0 ? (
+                      <Link href={`/book/${product.id}?version=${product.version}`} className="btn btn--ghost">
+                        {t('catalogue.bookNow')}
+                      </Link>
+                    ) : null}
+                  </article>
+                );
+              }
+              return (
+                <article key={key} className="card">
+                  <strong>{result.title}</strong>
+                  <p className="muted">{result.description}</p>
+                </article>
+              );
+            })}
           </div>
+        )}
+
+        {query.trim().length >= 2 && visibleResults.length === 0 && (
+          <p className="muted" role="status">{t('catalogue.searchEmpty')}</p>
         )}
 
         {error && <p role="alert" className="alert alert--error">{error}</p>}
@@ -169,39 +231,42 @@ export default function CataloguePage() {
       </section>
 
       {shows.length > 0 && (
-        <section className="container" style={{ padding: '0 0 2.5rem' }}>
-          <h2 style={{ fontSize: '1.6rem', margin: '0 0 1rem' }}>{t('catalogue.choose')}</h2>
+        <section className="container catalogue-page__shows">
+          <h2>{t('catalogue.choose')}</h2>
           <div className="grid grid--tight" role="tablist" aria-label={t('catalogue.performances')}>
-            {shows.map((show) => (
+            {shows.map((show, index) => (
               <button
                 key={show.id}
                 type="button"
                 role="tab"
                 aria-selected={effectiveShowId === show.id}
                 onClick={() => setSelectedShowId(show.id)}
-                className={`card${effectiveShowId === show.id ? ' card--selected' : ''}`}
-                style={{ textAlign: 'left', border: 0, cursor: 'pointer', width: '100%' }}
+                className={`card show-pick${effectiveShowId === show.id ? ' card--selected' : ''}`}
               >
-                <p className="eyebrow" style={{ margin: 0 }}>{show.genre}</p>
-                <h3 style={{ fontSize: '1.25rem', margin: '.4rem 0' }}>{localized(show.title, show.title_bn, locale)}</h3>
-                <time style={{ color: 'var(--muted)', fontSize: '.88rem' }}>
-                  {new Date(show.starts_at).toLocaleString(dl, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}
-                </time>
+                <img src={showStill(show, index)} alt="" />
+                <div className="show-pick__body">
+                  <p className="eyebrow">{show.genre}</p>
+                  <h3>{localized(show.title, show.title_bn, locale)}</h3>
+                  <time>
+                    {new Date(show.starts_at).toLocaleString(dl, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}
+                  </time>
+                </div>
               </button>
             ))}
           </div>
 
           {selectedShow && (
-            <div className="card" style={{ marginTop: '1.5rem' }}>
+            <div className="card catalogue-show">
               <div className="catalogue__show-head">
-                {selectedShow.artwork && (selectedShow.artwork.startsWith('/') || selectedShow.artwork.startsWith('http')) && (
-                   
-                  <img className="catalogue__poster" src={selectedShow.artwork} alt="" />
-                )}
+                <img
+                  className="catalogue__poster"
+                  src={showStill(selectedShow, Math.max(0, shows.findIndex((s) => s.id === selectedShow.id)))}
+                  alt=""
+                />
                 <div>
-                  <p className="eyebrow" style={{ margin: 0 }}>{selectedShow.genre} · {t('catalogue.daily')}</p>
-                  <h3 style={{ fontSize: '1.4rem', margin: '.35rem 0 .5rem' }}>{localized(selectedShow.title, selectedShow.title_bn, locale)}</h3>
-                  <p style={{ color: 'var(--muted)', lineHeight: 1.55, margin: '0 0 1.25rem', maxWidth: 640 }}>
+                  <p className="eyebrow">{selectedShow.genre} · {t('catalogue.daily')}</p>
+                  <h3>{localized(selectedShow.title, selectedShow.title_bn, locale)}</h3>
+                  <p className="catalogue-show__synopsis">
                     {localized(selectedShow.synopsis, selectedShow.synopsis_bn, locale)}
                   </p>
                 </div>
@@ -209,12 +274,10 @@ export default function CataloguePage() {
 
               <AuditoriumMap zones={zones} photoUrl={theaterPhoto} onSelectZone={handleSelectZone} />
 
-              <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: '.85rem', margin: '1rem 0 0' }}>
-                {t('catalogue.mapHint')}
-              </p>
+              <p className="catalogue-show__hint">{t('catalogue.mapHint')}</p>
 
               {notice && (
-                <p role="status" className="alert alert--info" style={{ textAlign: 'center', marginTop: '1rem' }}>{notice}</p>
+                <p role="status" className="alert alert--info catalogue-show__notice">{notice}</p>
               )}
             </div>
           )}
@@ -222,19 +285,28 @@ export default function CataloguePage() {
       )}
 
       {seasonProducts.length > 0 && (
-        <section className="container" style={{ padding: '0 0 3.5rem' }}>
-          <h2 style={{ fontSize: '1.6rem', margin: '0 0 1rem' }}>{t('catalogue.season')}</h2>
+        <section className="container catalogue-page__season">
+          <h2>{t('catalogue.season')}</h2>
           <div className="grid">
             {seasonProducts.map((product) => (
-              <article key={product.id} className="card card--dark">
+              <article key={product.id} className="card catalogue-season">
                 <p className="card--eyebrow">{kindLabel(locale, product.kind)} · {zoneLabel(locale, product.category)}</p>
-                <h3 style={{ fontSize: '1.3rem', margin: '.4rem 0' }}>{localized(product.name, product.name_bn, locale)}</h3>
-                <strong style={{ fontSize: '1.25rem' }}>{money(product.price, dl)}</strong>
-                <p style={{ color: '#d8c9bd', fontSize: '.9rem' }}>
+                <h3>{localized(product.name, product.name_bn, locale)}</h3>
+                <strong>{money(product.price, dl)}</strong>
+                <p className="muted">
                   {t('catalogue.available', { count: product.available, shows: product.coverage?.length || 0 })}
                 </p>
                 {product.available > 0
-                  ? <Link href={`/book/${product.id}?version=${product.version}`} className="btn btn--brass btn--block">{t('catalogue.bookNow')}</Link>
+                  ? (
+                    <div className="stack stack--sm">
+                      <button type="button" className="btn btn--brass btn--block" onClick={() => handleAddSeason(product)}>
+                        {t('catalogue.addToCart')}
+                      </button>
+                      <Link href={`/book/${product.id}?version=${product.version}`} className="btn btn--ghost btn--block">
+                        {t('catalogue.bookNow')}
+                      </Link>
+                    </div>
+                  )
                   : <button type="button" disabled className="btn btn--brass btn--block">{t('catalogue.soldOut')}</button>}
               </article>
             ))}

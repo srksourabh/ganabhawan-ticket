@@ -26,11 +26,18 @@ Verified by `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build:
 
 ## Still pending / launch-gated
 
-- Live Razorpay sandbox credentials and end-to-end capture tests (AC05–AC10).
-- Hosted PostgreSQL (Neon pooled URL) + Cloudflare Hyperdrive binding; production secrets in Wrangler.
-- Cloudflare account login (`wrangler login`) and `npm run deploy:vinext`.
-- Full bilingual UI, admin inventory dashboard, physical desk exchange, refund self-service, reconciliation reports, concurrency/load drills, and commercial decisions in `DECISIONS.md`.
-- Chroma hosted endpoint for production catalogue search.
+- Live Razorpay sandbox credentials and end-to-end capture tests (AC05–AC10) — Checkout UI is wired; set `PAYMENT_PROVIDER=razorpay` + keys then sandbox-test.
+- Hold expiry cron: GitHub Actions workflow `cron-holds.yml` (set `CRON_SECRET` + `APP_URL` repo secrets).
+- Full bilingual copy review (D22), physical desk exchange, refund self-service, reconciliation reports, concurrency/load drills.
+- Commercial decisions in `DECISIONS.md` (D10–D16 block paid public sales).
+- Optional: Cloudflare Hyperdrive; hosted Chroma (Postgres search fallback is live).
+
+## Paid launch flip (do not enable until D10–D16 signed)
+
+1. Razorpay sandbox capture verified end-to-end.
+2. Real OTP/email delivery configured.
+3. Capacities and prices approved in admin.
+4. Then set `ALLOW_PUBLIC_SALES=true`, `PAYMENT_PROVIDER=razorpay`, `APP_MODE=live`, redeploy secrets.
 
 ## Alignment rules
 

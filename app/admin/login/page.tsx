@@ -38,7 +38,7 @@ export default function AdminLoginPage() {
   return (
     <main className="admin-login">
       <form className="admin-login__card" onSubmit={onSubmit}>
-        <p className="eyebrow">Samatat Sanskriti</p>
+        <p className="eyebrow">সমতট নাট্যমেলা</p>
         <h1>Admin sign-in</h1>
         <p className="muted">Use your email (or username) and password to manage the festival.</p>
 

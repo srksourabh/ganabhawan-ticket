@@ -132,12 +132,19 @@ export async function admit(staff: User, input: AdmitInput): Promise<AdmitResult
     // Insert admission — unique constraint (ticket_id, show_id) catches re-admission
     let admissionId: string;
     try {
+      await c.query('SAVEPOINT admit_insert');
       const ins = await c.query<{ id: string }>(
         'INSERT INTO admissions(ticket_id,show_id,request_id,gate,device_id,actor_id) VALUES($1,$2,$3,$4,$5,$6) RETURNING id',
         [ticket_id, input.showId, input.requestId, input.gateId, input.deviceId, staff.id],
       );
+      await c.query('RELEASE SAVEPOINT admit_insert');
       admissionId = ins.rows[0].id;
     } catch (err: unknown) {
+      try {
+        await c.query('ROLLBACK TO SAVEPOINT admit_insert');
+      } catch {
+        // Savepoint may already be rolled back.
+      }
       // Unique violation = already admitted
       const pgErr = err as { code?: string };
       if (pgErr.code === '23505') {

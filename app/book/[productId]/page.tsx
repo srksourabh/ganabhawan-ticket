@@ -4,7 +4,9 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useLocale } from '@/components/LocaleProvider';
+import { FESTIVAL, FESTIVAL_BN } from '@/lib/brand';
 import { dateLocale } from '@/lib/i18n';
+import { confirmRazorpayPayment, openRazorpayCheckout } from '@/lib/razorpay-checkout';
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
 
@@ -20,24 +22,7 @@ function useCountdown(expiresAt: string | null) {
 }
 
 type HoldResult = { id: string; reference: string; total: number; currency: string; expires_at: string | null; unit_price: number; quantity: number };
-type OrderResult = { orderId: string; provider: 'development' | 'razorpay'; amount: number; currency: string; bookingId: string };
-
-const s = {
-  page: { minHeight: '100vh', background: '#f7f2ea', padding: '2rem 1.25rem' },
-  inner: { maxWidth: 520, margin: '0 auto' },
-  card: { background: 'white', borderRadius: 12, padding: '2rem', boxShadow: '0 8px 32px #3d24120d' },
-  eyebrow: { color: '#8b2f2f', letterSpacing: '.12em', textTransform: 'uppercase' as const, fontSize: '.78rem', margin: '0 0 .4rem' },
-  heading: { fontFamily: 'Georgia, serif', fontSize: '1.8rem', margin: '0 0 1.25rem', lineHeight: 1.1 },
-  label: { display: 'block', fontSize: '.9rem', fontWeight: 500, marginBottom: '.35rem', color: '#3d2a1e' },
-  select: { padding: '.7rem .9rem', border: '1px solid #b9a99a', borderRadius: 6, fontSize: '1rem', background: '#fdfaf7', width: '100%', maxWidth: 160 },
-  btn: { width: '100%', padding: '.9rem', background: '#8b2f2f', color: 'white', border: 0, borderRadius: 6, fontSize: '1rem', fontWeight: 600, cursor: 'pointer' },
-  btnDisabled: { opacity: .5, cursor: 'not-allowed' as const },
-  btnDev: { width: '100%', padding: '.9rem', background: '#2a6b3b', color: 'white', border: 0, borderRadius: 6, fontSize: '1rem', fontWeight: 600, cursor: 'pointer', marginTop: '.75rem' },
-  error: { padding: '.8rem 1rem', background: '#fff0f0', border: '1px solid #e8c0c0', borderRadius: 6, color: '#8b2f2f', fontSize: '.9rem', marginTop: '.75rem' },
-  info: { padding: '.8rem 1rem', background: '#fffbf0', border: '1px solid #e8d9a0', borderRadius: 6, fontSize: '.9rem', marginTop: '.75rem' },
-  row: { display: 'flex', justifyContent: 'space-between', padding: '.5rem 0', borderBottom: '1px solid #f0ebe3' },
-  timer: { display: 'inline-block', fontFamily: 'monospace', fontWeight: 700, color: '#8b2f2f', fontSize: '1.1rem' },
-};
+type OrderResult = { orderId: string; provider: 'development' | 'razorpay'; amount: number; currency: string; keyId: string; bookingId: string };
 
 function fmtSeconds(value: number) {
   const m = Math.floor(value / 60);
@@ -64,6 +49,7 @@ function BookPageInner() {
   const { locale, t } = useLocale();
   const dl = dateLocale(locale);
   const version = Number(searchParams.get('version') ?? 0);
+  const festivalName = locale === 'bn' ? FESTIVAL_BN : FESTIVAL;
 
   const [quantity, setQuantity] = useState(1);
   const [stage, setStage] = useState<'select' | 'held' | 'ordered' | 'confirmed'>('select');
@@ -141,44 +127,60 @@ function BookPageInner() {
     }
   }
 
+  async function payWithRazorpay() {
+    if (!order || order.provider !== 'razorpay') return;
+    setError('');
+    setLoading(true);
+    try {
+      const paid = await openRazorpayCheckout(order, {
+        name: festivalName,
+        description: t('book.title'),
+      });
+      await confirmRazorpayPayment(paid);
+      setStage('confirmed');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Payment failed.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   if (stage === 'confirmed') {
     return (
-      <div style={s.page}>
-        <div style={s.inner}>
-          <div style={{ ...s.card, textAlign: 'center' }}>
-            <h1 style={{ ...s.heading, textAlign: 'center' }}>{t('book.confirmed')}</h1>
-            <p style={{ color: '#64564d' }}>{t('book.ready')}</p>
-            <p style={{ fontFamily: 'monospace', fontSize: '1.1rem', fontWeight: 700 }}>{hold?.reference}</p>
-            <Link href="/tickets" style={{ ...s.btn, display: 'inline-block', marginTop: '1rem', textDecoration: 'none', textAlign: 'center' }}>
-              {t('book.viewTickets')}
-            </Link>
+      <main className="page-pad">
+        <section className="container" style={{ maxWidth: 520 }}>
+          <div className="card stack" style={{ textAlign: 'center' }}>
+            <h1 className="h2">{t('book.confirmed')}</h1>
+            <p className="muted">{t('book.ready')}</p>
+            <p style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700 }}>{hold?.reference}</p>
+            <Link href="/tickets" className="btn btn--primary">{t('book.viewTickets')}</Link>
           </div>
-        </div>
-      </div>
+        </section>
+      </main>
     );
   }
 
   return (
-    <div style={s.page}>
-      <div style={s.inner}>
+    <main className="page-pad">
+      <section className="container" style={{ maxWidth: 520 }}>
         <p style={{ marginBottom: '1rem' }}>
-          <Link href="/catalogue" style={{ color: '#8b2f2f', textDecoration: 'none', fontSize: '.9rem' }}>{t('book.back')}</Link>
+          <Link href="/catalogue" className="muted">{t('book.back')}</Link>
         </p>
-        <div style={s.card}>
-          <p style={s.eyebrow}>{t('book.eyebrow')}</p>
-          <h1 style={s.heading}>{t('book.title')}</h1>
+        <div className="card stack">
+          <p className="eyebrow">{t('book.eyebrow')}</p>
+          <h1 className="h2">{t('book.title')}</h1>
 
           {stage === 'select' && (
             <>
-              <label htmlFor="qty" style={s.label}>{t('book.qty')} <span style={{ fontWeight: 400, color: '#64564d' }}>{t('book.max')}</span></label>
-              <select id="qty" style={s.select} value={quantity} onChange={e => handleQuantityChange(Number(e.target.value))} disabled={loading}>
-                {[1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
-              {error && <p role="alert" style={s.error}>{error}</p>}
-              <p style={{ fontSize: '.82rem', color: '#64564d', margin: '1rem 0' }}>
-                {t('book.hint')}
-              </p>
-              <button style={{ ...s.btn, ...(loading ? s.btnDisabled : {}) }} disabled={loading} onClick={placeHold}>
+              <label className="field" htmlFor="qty">
+                <span>{t('book.qty')} <span className="muted">{t('book.max')}</span></span>
+                <select id="qty" value={quantity} onChange={(e) => handleQuantityChange(Number(e.target.value))} disabled={loading}>
+                  {[1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+              {error && <p role="alert" className="banner banner--err">{error}</p>}
+              <p className="muted">{t('book.hint')}</p>
+              <button type="button" className="btn btn--primary btn--block" disabled={loading} onClick={placeHold}>
                 {loading ? t('book.reserving') : t('book.reserve')}
               </button>
             </>
@@ -186,42 +188,45 @@ function BookPageInner() {
 
           {(stage === 'held' || stage === 'ordered') && hold && (
             <>
-              <div style={s.row}><span>{t('book.reference')}</span><span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{hold.reference}</span></div>
-              <div style={s.row}><span>{t('tickets.quantity')}</span><span>{hold.quantity}</span></div>
-              <div style={s.row}><span>{t('tickets.unitPrice')}</span><span>{money(hold.unit_price, dl)}</span></div>
-              <div style={{ ...s.row, fontWeight: 700, fontSize: '1.05rem', borderBottom: 'none' }}><span>{t('cart.total')}</span><span>{money(hold.total, dl)}</span></div>
+              <div className="stack stack--sm">
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{t('book.reference')}</span><strong style={{ fontFamily: 'ui-monospace, monospace' }}>{hold.reference}</strong></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{t('tickets.quantity')}</span><span>{hold.quantity}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{t('tickets.unitPrice')}</span><span>{money(hold.unit_price, dl)}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}><span>{t('cart.total')}</span><span>{money(hold.total, dl)}</span></div>
+              </div>
 
               {countdown !== null && countdown > 0 && (
-                <div style={s.info}>
-                  {t('book.holdExpires')} <span style={s.timer}>{fmtSeconds(countdown)}</span>{t('book.holdComplete')}
-                </div>
+                <p className="banner banner--ok" role="status">
+                  {t('book.holdExpires')} <strong>{fmtSeconds(countdown)}</strong>{t('book.holdComplete')}
+                </p>
               )}
               {countdown === 0 && (
-                <div style={s.error}>{t('book.holdExpired')} <Link href={`/book/${productId}?version=${version}`} style={{ color: '#8b2f2f' }}>{t('book.startOver')}</Link></div>
+                <p className="banner banner--err">
+                  {t('book.holdExpired')} <Link href={`/book/${productId}?version=${version}`}>{t('book.startOver')}</Link>
+                </p>
               )}
 
-              {error && <p role="alert" style={s.error}>{error}</p>}
+              {error && <p role="alert" className="banner banner--err">{error}</p>}
 
               {stage === 'ordered' && order?.provider === 'development' && (
-                <button style={{ ...s.btnDev, ...(loading ? s.btnDisabled : {}) }} disabled={loading} onClick={confirmDevelopment}>
+                <button type="button" className="btn btn--primary btn--block" disabled={loading} onClick={confirmDevelopment}>
                   {loading ? t('book.processing') : t('book.payDev')}
                 </button>
               )}
 
               {stage === 'ordered' && order?.provider === 'razorpay' && (
-                <div style={s.info}>
-                  <strong>Razorpay</strong> · <code style={{ fontFamily: 'monospace' }}>{order.orderId}</code>
-                  <p style={{ margin: '.5rem 0 0' }}>{money(order.amount, dl)}</p>
-                </div>
+                <button type="button" className="btn btn--primary btn--block" disabled={loading} onClick={payWithRazorpay}>
+                  {loading ? t('book.processing') : t('book.payRazorpay', { amount: money(order.amount, dl) })}
+                </button>
               )}
 
               {stage === 'held' && !error && (
-                <div style={s.info}>{t('book.creatingOrder')}</div>
+                <p className="muted">{t('book.creatingOrder')}</p>
               )}
             </>
           )}
         </div>
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }

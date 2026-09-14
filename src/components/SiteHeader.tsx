@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { Show, SignInButton, UserButton } from '@clerk/nextjs';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
-import { ORGANISATION, ORGANISATION_BN } from '@/lib/brand';
+import { BRAND_LOGO, FESTIVAL, FESTIVAL_BN } from '@/lib/brand';
 import { useCart } from './CartProvider';
 import LocaleToggle from './LocaleToggle';
 import { useLocale } from './LocaleProvider';
@@ -66,15 +66,18 @@ export default function SiteHeader() {
     setInstallPrompt(null);
   }, [installPrompt]);
 
-  const brandName = locale === 'bn' ? ORGANISATION_BN : ORGANISATION;
+  const brandName = locale === 'bn' ? FESTIVAL_BN : FESTIVAL;
   const cartAria = count === 1 ? t('nav.cartBadgeOne') : t('nav.cartBadge', { count });
 
   return (
     <header className="site-header safe-x">
       <div className="site-header__inner">
         <Link href="/" className="site-header__brand" onClick={() => setOpen(false)} lang={locale === 'bn' ? 'bn' : undefined}>
-          {brandName}
-          <small>{t('nav.venue')}</small>
+          <img src={BRAND_LOGO} alt="" className="site-header__logo" width={36} height={36} />
+          <span className="site-header__brand-text">
+            {brandName}
+            <small>{t('nav.venue')}</small>
+          </span>
         </Link>
 
         <button

@@ -6,12 +6,17 @@ import { devMode } from './env';
 export async function catalogue() {
  const festival=(await query<Festival>('SELECT * FROM festivals ORDER BY created_at LIMIT 1'))[0];
  if(!festival) return {festival:null,shows:[],products:[],development:devMode()};
+ if(festival.status!=='PUBLISHED') {
+  return {festival,shows:[],products:[],development:devMode()};
+ }
  const shows=await query<Show>("SELECT * FROM shows WHERE festival_id=$1 AND status='PUBLISHED' ORDER BY starts_at",[festival.id]);
  const products=await query<Product>(`SELECT p.*, GREATEST(0,LEAST(COALESCE(MIN(i.allocation-i.held-i.committed),0),
  COALESCE(p.cap-(SELECT COALESCE(sum(quantity),0) FROM bookings b WHERE b.product_id=p.id AND b.status IN ('HELD','PAYMENT_PENDING','CONFIRMED')),2147483647)))::int available,
  jsonb_agg(jsonb_build_object('id',s.id,'title',s.title,'title_bn',s.title_bn,'starts_at',s.starts_at,'status',s.status) ORDER BY s.starts_at) coverage
  FROM products p JOIN product_coverage pc ON pc.product_id=p.id JOIN pools i ON i.id=pc.pool_id JOIN shows s ON s.id=pc.show_id
- WHERE p.festival_id=$1 AND p.enabled=true GROUP BY p.id ORDER BY p.price`,[festival.id]);
+ WHERE p.festival_id=$1 AND p.enabled=true AND s.status='PUBLISHED'
+ GROUP BY p.id
+ ORDER BY p.price`,[festival.id]);
  return {festival,shows,products,development:devMode()};
 }
 export async function adminCatalogue() {
@@ -96,7 +101,7 @@ const ZONES: {zone:'Premier'|'Superior'|'Balcony';ceiling:number;price:number}[]
 ];
 export interface ShowInput {
  title:string; titleBn:string; troupe:string; synopsis:string; synopsisBn:string;
- startsAt:string; runtime:number; genre:string; language?:string; artwork?:string;
+ startsAt:string; runtime:number; genre:string; language?:string; artwork?:string; status?:string;
 }
 export async function upsertShow(user:User, input:ShowInput) {
  return transaction(async c=>{
@@ -107,11 +112,13 @@ export async function upsertShow(user:User, input:ShowInput) {
   const startsAt=new Date(input.startsAt);
   requireValue(!Number.isNaN(startsAt.getTime()),'A valid start time is required.',400);
   requireValue(Number.isInteger(input.runtime) && input.runtime>0,'Runtime must be a positive number of minutes.',400);
+  const status=String(input.status??'DRAFT');
+  requireValue(['DRAFT','PUBLISHED','CANCELLED'].includes(status),'Invalid show status.',400);
   const endsAt=new Date(startsAt.getTime()+input.runtime*60000);
   const show=(await one<Show>(c,`INSERT INTO shows(festival_id,title,title_bn,troupe,synopsis,synopsis_bn,starts_at,ends_at,language,runtime,genre,artwork,status)
-   VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'DRAFT') RETURNING *`,
+   VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
    [festival!.id,input.title,input.titleBn,input.troupe,input.synopsis,input.synopsisBn,startsAt.toISOString(),endsAt.toISOString(),
-    input.language??'Bengali',input.runtime,input.genre,input.artwork??'red']))!;
+    input.language??'Bengali',input.runtime,input.genre,input.artwork??'red',status]))!;
   const seasonProducts=(await c.query("SELECT * FROM products WHERE festival_id=$1 AND kind='SEASON'",[festival!.id])).rows;
   for(const {zone,ceiling,price} of ZONES) {
    const capacity=(await one(c,'INSERT INTO capacities(show_id,zone,ceiling) VALUES($1,$2,$3) RETURNING *',[show.id,zone,ceiling]))!;

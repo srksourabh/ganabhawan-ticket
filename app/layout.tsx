@@ -1,6 +1,6 @@
 import { ClerkProvider } from '@clerk/nextjs';
 import type { Metadata, Viewport } from 'next';
-import { ORGANISATION, SITE_DESCRIPTION, SITE_TITLE } from '@/lib/brand';
+import { FESTIVAL_BN, SITE_DESCRIPTION, SITE_TITLE } from '@/lib/brand';
 import { CartProvider } from '@/components/CartProvider';
 import ClerkSync from '@/components/ClerkSync';
 import { LocaleProvider } from '@/components/LocaleProvider';
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: ORGANISATION,
+    title: FESTIVAL_BN,
   },
   icons: {
     icon: [
@@ -36,14 +36,14 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   viewportFit: 'cover',
-  themeColor: '#241b17',
+  themeColor: '#0a0a0a',
 };
 
-const localeBootScript = `(function(){try{var k='samatat-locale';var l=localStorage.getItem(k);if(l!=='en'&&l!=='bn'){var m=document.cookie.match(/(?:^|; )samatat-locale=([^;]*)/);l=m?decodeURIComponent(m[1]):'en'}if(l!=='en'&&l!=='bn')l='en';document.documentElement.lang=l;document.documentElement.dataset.locale=l}catch(e){}})();`;
+const localeBootScript = `(function(){try{var k='samatat-locale';var l=localStorage.getItem(k);if(l!=='en'&&l!=='bn'){var m=document.cookie.match(/(?:^|; )samatat-locale=([^;]*)/);l=m?decodeURIComponent(m[1]):'bn'}if(l!=='en'&&l!=='bn')l='bn';document.documentElement.lang=l;document.documentElement.dataset.locale=l}catch(e){}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="bn" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: localeBootScript }} />
       </head>
@@ -52,8 +52,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           afterSignOutUrl="/"
           appearance={{
             variables: {
-              colorPrimary: '#8b2f2f',
-              colorBackground: '#f7f2ea',
+              colorPrimary: '#c9a227',
+              colorBackground: '#1a1a1a',
               borderRadius: '0.5rem',
             },
           }}

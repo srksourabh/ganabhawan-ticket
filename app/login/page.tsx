@@ -5,23 +5,23 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import GoogleSignInButton from '@/components/GoogleSignInButton';
 import { useLocale } from '@/components/LocaleProvider';
-import { ORGANISATION, ORGANISATION_BN } from '@/lib/brand';
+import { FESTIVAL, FESTIVAL_BN } from '@/lib/brand';
 
 const styles = {
-  page: { minHeight: '100vh', background: '#f7f2ea', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem 1.25rem' },
-  card: { width: '100%', maxWidth: 420, background: 'white', borderRadius: 12, padding: '2.5rem 2rem', boxShadow: '0 8px 32px #3d24120d' },
-  eyebrow: { color: '#8b2f2f', letterSpacing: '.12em', textTransform: 'uppercase' as const, fontSize: '.78rem', margin: '0 0 .5rem' },
-  heading: { fontFamily: 'Georgia, serif', fontSize: '2rem', margin: '0 0 1.5rem', lineHeight: 1.1 },
-  label: { display: 'block', fontSize: '.9rem', fontWeight: 500, marginBottom: '.35rem', color: '#3d2a1e' },
-  input: { width: '100%', padding: '.8rem 1rem', border: '1px solid #b9a99a', borderRadius: 6, fontSize: '1rem', background: '#fdfaf7', outline: 'none' },
-  btn: { width: '100%', padding: '.85rem', background: '#8b2f2f', color: 'white', border: 0, borderRadius: 6, fontSize: '1rem', fontWeight: 600, cursor: 'pointer', marginTop: '.75rem' },
+  page: { minHeight: '100vh', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem 1.25rem' },
+  card: { width: '100%', maxWidth: 420, background: '#1a1a1a', borderRadius: 12, padding: '2.5rem 2rem', border: '1px solid rgba(201,162,39,.18)' },
+  eyebrow: { color: '#c9a227', letterSpacing: '.12em', textTransform: 'uppercase' as const, fontSize: '.78rem', margin: '0 0 .5rem' },
+  heading: { fontFamily: 'Georgia, serif', fontSize: '2rem', margin: '0 0 1.5rem', lineHeight: 1.1, color: '#f5f5f5' },
+  label: { display: 'block', fontSize: '.9rem', fontWeight: 500, marginBottom: '.35rem', color: '#f5f5f5' },
+  input: { width: '100%', padding: '.8rem 1rem', border: '1px solid #3a3a3a', borderRadius: 6, fontSize: '1rem', background: '#141414', color: '#f5f5f5', outline: 'none' },
+  btn: { width: '100%', padding: '.85rem', background: '#c9a227', color: '#0a0a0a', border: 0, borderRadius: 6, fontSize: '1rem', fontWeight: 600, cursor: 'pointer', marginTop: '.75rem' },
   btnDisabled: { opacity: .55, cursor: 'not-allowed' as const },
-  error: { padding: '.8rem 1rem', background: '#fff0f0', border: '1px solid #e8c0c0', borderRadius: 6, color: '#8b2f2f', fontSize: '.9rem', marginTop: '.75rem' },
-  info: { padding: '.8rem 1rem', background: '#fffbf0', border: '1px solid #e8d9a0', borderRadius: 6, fontSize: '.9rem', marginTop: '.75rem' },
-  devCode: { display: 'inline-block', marginTop: '.5rem', padding: '.4rem .8rem', background: '#f7f2ea', borderRadius: 4, fontFamily: 'monospace', fontWeight: 700, fontSize: '1.2rem', letterSpacing: '.15em', color: '#241b17' },
-  muted: { fontSize: '.85rem', color: '#64564d', marginTop: '1.25rem', textAlign: 'center' as const },
-  divider: { display: 'flex', alignItems: 'center', gap: '.75rem', margin: '1.25rem 0', color: '#64564d', fontSize: '.8rem' },
-  rule: { flex: 1, height: 1, background: '#e0d5c8' },
+  error: { padding: '.8rem 1rem', background: '#2a1518', border: '1px solid #722f37', borderRadius: 6, color: '#f0c9ce', fontSize: '.9rem', marginTop: '.75rem' },
+  info: { padding: '.8rem 1rem', background: '#1f1a10', border: '1px solid #c9a227', borderRadius: 6, fontSize: '.9rem', marginTop: '.75rem', color: '#f5f5f5' },
+  devCode: { display: 'inline-block', marginTop: '.5rem', padding: '.4rem .8rem', background: '#0a0a0a', borderRadius: 4, fontFamily: 'monospace', fontWeight: 700, fontSize: '1.2rem', letterSpacing: '.15em', color: '#dbb84d' },
+  muted: { fontSize: '.85rem', color: '#a0a0a0', marginTop: '1.25rem', textAlign: 'center' as const },
+  divider: { display: 'flex', alignItems: 'center', gap: '.75rem', margin: '1.25rem 0', color: '#a0a0a0', fontSize: '.8rem' },
+  rule: { flex: 1, height: 1, background: '#2a2a2a' },
 };
 
 function LoginForm() {
@@ -82,7 +82,7 @@ function LoginForm() {
     }
   }
 
-  const brand = locale === 'bn' ? ORGANISATION_BN : ORGANISATION;
+  const brand = locale === 'bn' ? FESTIVAL_BN : FESTIVAL;
 
   if (step === 'contact') {
     return (

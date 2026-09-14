@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useCart, type CartItem } from '@/components/CartProvider';
 import { useLocale } from '@/components/LocaleProvider';
-import { ORGANISATION, ORGANISATION_BN } from '@/lib/brand';
+import { FESTIVAL, FESTIVAL_BN } from '@/lib/brand';
 import { dateLocale, kindLabel, zoneLabel, type MessageKey } from '@/lib/i18n';
+import { confirmRazorpayPayment, openRazorpayCheckout } from '@/lib/razorpay-checkout';
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
 
@@ -86,10 +87,13 @@ export default function CheckoutPage() {
       if (!confirmRes.ok) throw new Error(confirmed.error || 'Payment confirmation failed.');
       setLines((prev) => updateLine(prev, item.productId, { status: 'confirmed', message: hold.reference }));
     } else {
-      setLines((prev) => updateLine(prev, item.productId, {
-        status: 'ordered',
-        message: `Razorpay order ${order.orderId} created for ${money(order.amount, dl)}. Complete payment, then check My tickets.`,
-      }));
+      const festivalName = locale === 'bn' ? FESTIVAL_BN : FESTIVAL;
+      const paid = await openRazorpayCheckout(order, {
+        name: festivalName,
+        description: `${item.name} × ${item.quantity}`,
+      });
+      await confirmRazorpayPayment(paid);
+      setLines((prev) => updateLine(prev, item.productId, { status: 'confirmed', message: hold.reference }));
     }
 
     cart.remove(item.productId);
@@ -99,7 +103,6 @@ export default function CheckoutPage() {
     setRunning(true);
     setDone(false);
     let anyFailure = false;
-    let anyNonDevelopment = false;
 
     for (const line of lines) {
       try {
@@ -113,15 +116,10 @@ export default function CheckoutPage() {
       }
     }
 
-    setLines((current) => {
-      anyNonDevelopment = current.some((l) => l.status === 'ordered');
-      return current;
-    });
-
     setRunning(false);
     setDone(true);
 
-    if (!anyFailure && !anyNonDevelopment) {
+    if (!anyFailure) {
       cart.clear();
       router.push('/tickets');
     }
@@ -129,8 +127,8 @@ export default function CheckoutPage() {
 
   if (!authChecked) {
     return (
-      <main style={{ minHeight: '100vh' }}>
-        <section className="container" style={{ padding: '2.5rem 0', maxWidth: 560 }}>
+      <main className="page-pad">
+        <section className="container" style={{ maxWidth: 560 }}>
           <p role="status">{t('checkout.checking')}</p>
         </section>
       </main>
@@ -139,10 +137,10 @@ export default function CheckoutPage() {
 
   if (lines.length === 0) {
     return (
-      <main style={{ minHeight: '100vh' }}>
-        <section className="container" style={{ padding: '2.5rem 0', maxWidth: 560 }}>
-          <div className="card" style={{ textAlign: 'center' }}>
-            <p style={{ margin: '0 0 1rem' }}>{done ? t('checkout.processed') : t('checkout.empty')}</p>
+      <main className="page-pad">
+        <section className="container" style={{ maxWidth: 560 }}>
+          <div className="card stack" style={{ textAlign: 'center' }}>
+            <p>{done ? t('checkout.processed') : t('checkout.empty')}</p>
             <Link href="/catalogue" className="btn btn--primary">{t('cart.browse')}</Link>
           </div>
         </section>
@@ -153,45 +151,42 @@ export default function CheckoutPage() {
   const total = lines.reduce((sum, l) => sum + l.item.unitPrice * l.item.quantity, 0);
 
   return (
-    <main style={{ minHeight: '100vh' }}>
-      <section className="container" style={{ padding: '2.5rem 0 3.5rem', maxWidth: 640 }}>
-        <p className="eyebrow">{locale === 'bn' ? ORGANISATION_BN : ORGANISATION}</p>
-        <h1 style={{ fontSize: 'clamp(2rem, 6vw, 3rem)', margin: '0 0 .5rem' }}>{t('checkout.title')}</h1>
-        <p style={{ color: 'var(--muted)', margin: '0 0 1.5rem' }}>{t('checkout.intro')}</p>
+    <main className="page-pad">
+      <section className="container" style={{ maxWidth: 640 }}>
+        <p className="eyebrow">{locale === 'bn' ? FESTIVAL_BN : FESTIVAL}</p>
+        <h1 className="h2">{t('checkout.title')}</h1>
+        <p className="muted">{t('checkout.intro')}</p>
 
         <div className="stack">
           {lines.map((line) => (
-            <article key={line.item.productId} className="card">
+            <article key={line.item.productId} className="card stack stack--sm">
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '.75rem', flexWrap: 'wrap' }}>
                 <div>
-                  <p className="eyebrow" style={{ margin: 0 }}>{kindLabel(locale, line.item.kind)} · {zoneLabel(locale, line.item.category)}</p>
-                  <h3 style={{ fontSize: '1.1rem', margin: '.3rem 0' }}>{line.item.name}</h3>
+                  <p className="eyebrow">{kindLabel(locale, line.item.kind)} · {zoneLabel(locale, line.item.category)}</p>
+                  <h3 className="h3">{line.item.name}</h3>
                   {line.item.showTitle && (
-                    <p style={{ color: 'var(--muted)', fontSize: '.85rem', margin: 0 }}>
+                    <p className="muted">
                       {line.item.showTitle} · {new Date(line.item.startsAt).toLocaleString(dl, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}
                     </p>
                   )}
-                  <p style={{ margin: '.4rem 0 0', fontSize: '.9rem' }}>{line.item.quantity} × {money(line.item.unitPrice, dl)}</p>
+                  <p>{line.item.quantity} × {money(line.item.unitPrice, dl)}</p>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <span
-                    className={`alert ${line.status === 'error' ? 'alert--error' : line.status === 'confirmed' ? 'alert--success' : 'alert--info'}`}
-                    style={{ margin: 0, display: 'inline-block' }}
-                    role="status"
-                  >
-                    {t(STATUS_KEYS[line.status])}
-                  </span>
-                </div>
+                <span
+                  className={`banner ${line.status === 'error' ? 'banner--err' : line.status === 'confirmed' ? 'banner--ok' : ''}`}
+                  role="status"
+                >
+                  {t(STATUS_KEYS[line.status])}
+                </span>
               </div>
               {line.message && (
-                <p style={{ margin: '.75rem 0 0', fontSize: '.85rem', color: line.status === 'error' ? 'var(--burgundy)' : 'var(--muted)' }}>
+                <p className={line.status === 'error' ? 'banner banner--err' : 'muted'}>
                   {line.status === 'confirmed' ? t('checkout.ref', { ref: line.message }) : line.message}
                 </p>
               )}
             </article>
           ))}
 
-          <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700, fontSize: '1.1rem' }}>
+          <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700 }}>
             <span>{t('cart.total')}</span>
             <span>{money(total, dl)}</span>
           </div>
@@ -201,7 +196,7 @@ export default function CheckoutPage() {
           </button>
 
           {done && lines.some((l) => l.status === 'error') && (
-            <p role="alert" className="alert alert--error">{t('checkout.partialFail')}</p>
+            <p role="alert" className="banner banner--err">{t('checkout.partialFail')}</p>
           )}
         </div>
       </section>
