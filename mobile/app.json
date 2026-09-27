@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "Samatat Natyomela",
+    "slug": "samatat-natyomela",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "in.samatat.natyomela",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Scan ticket QR codes at the Ganabhawan door."
+      }
+    },
+    "android": {
+      "package": "in.samatat.natyomela",
+      "permissions": ["android.permission.CAMERA"],
+      "adaptiveIcon": {
+        "backgroundColor": "#f7f4ef",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Scan ticket QR codes at the Ganabhawan door.",
+          "recordAudioAndroid": false
+        }
+      ]
+    ]
+  }
+}

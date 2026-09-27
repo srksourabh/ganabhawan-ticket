@@ -9,7 +9,7 @@ export async function POST(request: Request): Promise<Response> {
       body.code ?? '',
       body.mfaCode ?? '',
     );
-    const response = jsonOk({ user: result.user });
+    const response = jsonOk({ user: result.user, sessionToken: result.sessionToken });
     return setSessionCookie(response, result.sessionToken!);
   } catch (error) {
     return jsonError(error);

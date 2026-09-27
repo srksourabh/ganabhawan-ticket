@@ -440,7 +440,7 @@ export default function AdminPage() {
                   <input
                     name="artwork"
                     defaultValue={isPosterUrl(editingShow?.artwork || '') ? editingShow?.artwork : ''}
-                    placeholder="/uploads/posters/… or https://…"
+                    placeholder="/api/posters/… or https://…"
                     onChange={(e) => setPosterPreview(e.target.value)}
                   />
                 </label>

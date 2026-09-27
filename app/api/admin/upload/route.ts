@@ -1,7 +1,5 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import path from 'node:path';
-import { randomBytes } from 'node:crypto';
 import { authenticated } from '@/lib/auth';
+import { query } from '@/lib/db';
 import { jsonOk, jsonError } from '@/lib/http';
 import { AppError } from '@/lib/errors';
 
@@ -17,14 +15,14 @@ export async function POST(request: Request): Promise<Response> {
     if (!ALLOWED.has(file.type)) throw new AppError(400, 'Use a JPEG, PNG, WebP, or GIF image.');
     if (file.size <= 0 || file.size > MAX_BYTES) throw new AppError(400, 'Image must be under 2.5 MB.');
 
-    const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : file.type === 'image/gif' ? 'gif' : 'jpg';
-    const name = `${Date.now()}-${randomBytes(4).toString('hex')}.${ext}`;
-    const dir = path.join(process.cwd(), 'public', 'uploads', 'posters');
-    await mkdir(dir, { recursive: true });
-    const buffer = Buffer.from(await file.arrayBuffer());
-    await writeFile(path.join(dir, name), buffer);
-    const url = `/uploads/posters/${name}`;
-    return jsonOk({ url });
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const rows = await query<{ id: string }>(
+      'INSERT INTO posters(content_type, data) VALUES($1, $2) RETURNING id',
+      [file.type, bytes.toString('base64')],
+    );
+    const id = rows[0]?.id;
+    if (!id) throw new AppError(500, 'Poster could not be stored.');
+    return jsonOk({ url: `/api/posters/${id}` });
   } catch (error) {
     return jsonError(error);
   }

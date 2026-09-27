@@ -1,5 +1,5 @@
 import { randomInt } from 'node:crypto';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { auth, currentUser as clerkCurrentUser } from '@clerk/nextjs/server';
 import { query, transaction, one } from './db';
 import { devMode } from './env';
@@ -198,7 +198,9 @@ async function userFromClerkSession(): Promise<User | null> {
 }
 
 export async function currentUser(): Promise<User | null> {
-  const value = (await cookies()).get('festival_session')?.value;
+  const authorization = (await headers()).get('authorization') ?? '';
+  const bearer = authorization.toLowerCase().startsWith('bearer ') ? authorization.slice(7).trim() : '';
+  const value = bearer || (await cookies()).get('festival_session')?.value;
   if (value) {
     const row = (
       await query<User>(

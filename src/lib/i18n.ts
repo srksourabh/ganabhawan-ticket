@@ -121,7 +121,7 @@ const en: Dict = {
   'catalogue.soldOut': 'Sold out',
 
   'map.aria': 'Auditorium seating map — select a zone to add tickets',
-  'map.stage': 'STAGE',
+  'map.stage': 'This is the stage',
   'map.soldOut': 'Sold out',
   'map.available': '{count} available',
   'map.zoneAria': '{category} zone, {price}, {availability}',
@@ -190,6 +190,7 @@ const en: Dict = {
 
   'gate.title': 'Gate admission',
   'gate.sub': 'Scan or enter a ticket token',
+  'gate.install': 'On the door phone, open the browser menu and choose Add to Home Screen. This screen is the scanner.',
   'gate.token': 'Ticket token',
   'gate.showId': 'Performance',
   'gate.camera': 'Open camera',
@@ -336,7 +337,7 @@ const bn: Dict = {
   'catalogue.soldOut': 'শেষ',
 
   'map.aria': 'অডিটোরিয়াম সিটিং ম্যাপ — টিকিট যোগ করতে জোন নির্বাচন করুন',
-  'map.stage': 'মঞ্চ',
+  'map.stage': 'এটাই মঞ্চ',
   'map.soldOut': 'শেষ',
   'map.available': '{count}টি উপলব্ধ',
   'map.zoneAria': '{category} জোন, {price}, {availability}',
@@ -405,6 +406,7 @@ const bn: Dict = {
 
   'gate.title': 'গেট প্রবেশ',
   'gate.sub': 'টিকিট টোকেন স্ক্যান বা লিখুন',
+  'gate.install': 'গেটের ফোনে ব্রাউজার মেনু থেকে হোম স্ক্রিনে যোগ করুন। এই পর্দাই স্ক্যানার।',
   'gate.token': 'টিকিট টোকেন',
   'gate.showId': 'নাটক',
   'gate.camera': 'ক্যামেরা খুলুন',

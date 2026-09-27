@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { DEFAULT_VENUE, DEFAULT_VENUE_BN, FESTIVAL, FESTIVAL_BN, STAGE_PHOTOS } from '@/lib/brand';
-import type { AuditoriumCategory, AuditoriumZone } from '@/components/AuditoriumMap';
+import AuditoriumMap, { AUDITORIUM_PHOTO, type AuditoriumCategory, type AuditoriumZone } from '@/components/AuditoriumMap';
 import { useCart } from '@/components/CartProvider';
 import { useLocale } from '@/components/LocaleProvider';
 import { dateLocale, localized, zoneLabel, zoneWhere } from '@/lib/i18n';
@@ -34,6 +34,7 @@ export default function CataloguePage() {
   const [error, setError] = useState('');
   const [selectedShowId, setSelectedShowId] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
+  const [pickedZone, setPickedZone] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,6 +93,7 @@ export default function CataloguePage() {
     locale,
   );
 
+  const theaterPhoto = data?.festival?.theater_photo || AUDITORIUM_PHOTO;
   const effectiveShowId = selectedShowId ?? shows[0]?.id ?? null;
   const selectedShow = shows.find((show) => show.id === effectiveShowId) ?? null;
 
@@ -278,9 +280,15 @@ export default function CataloguePage() {
               <time>
                 {new Date(selectedShow.starts_at).toLocaleString(dl, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}
               </time>
+              <AuditoriumMap
+                zones={zones}
+                photoUrl={theaterPhoto}
+                selectedProductId={zones.find((zone) => zone.category === pickedZone)?.productId ?? null}
+                onSelectZone={(zone) => setPickedZone(zone.category)}
+              />
               <ul className="pick__zones">
                 {zones.map((zone) => (
-                  <li key={zone.category}>
+                  <li key={zone.category} className={pickedZone === zone.category ? 'pick__zone--on' : undefined}>
                     <div>
                       <strong>{zoneLabel(locale, zone.category)}</strong>
                       <p>{zoneWhere(locale, zone.category)}</p>

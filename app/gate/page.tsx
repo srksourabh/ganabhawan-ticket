@@ -22,6 +22,15 @@ export default function GatePage() {
   const [result, setResult] = useState<ScanResult | null>(null);
 
   useEffect(() => {
+    const link = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+    const previous = link?.getAttribute('href');
+    if (link) link.setAttribute('href', '/gate.webmanifest');
+    return () => {
+      if (link && previous) link.setAttribute('href', previous);
+    };
+  }, []);
+
+  useEffect(() => {
     fetch('/api/catalogue')
       .then((res) => (res.ok ? res.json() : null))
       .then((body: { shows?: ShowOption[] } | null) => {
@@ -110,6 +119,7 @@ export default function GatePage() {
         <p className="eyebrow">{t('gate.title')}</p>
         <h1>{t('gate.title')}</h1>
         <p className="muted">{t('gate.sub')}</p>
+        <p className="muted">{t('gate.install')}</p>
       </div>
 
       {result ? (

@@ -494,8 +494,8 @@ input:focus, select:focus, textarea:focus {
 }
 .auditorium__stage-chip {
   fill: #f7e7c6;
-  font-size: 3.4px;
-  letter-spacing: .22em;
+  font-size: 2.6px;
+  letter-spacing: .04em;
   font-family: var(--font-body);
   font-weight: 700;
   pointer-events: none;
@@ -1226,6 +1226,7 @@ html[lang='bn'] .catalogue-page h2 {
   padding: .75rem 0;
   border-top: 1px solid var(--border);
 }
+.pick__zone--on { background: #fff7ea; margin: 0 -.4rem; padding-left: .4rem; padding-right: .4rem; border-radius: 10px; }
 .pick__zones p { margin: .1rem 0; color: var(--muted); font-size: .88rem; }
 .pick__zones strong { display: block; }
 .pick__actions { display: flex; flex-direction: column; gap: .35rem; }
