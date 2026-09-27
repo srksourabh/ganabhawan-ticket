@@ -107,6 +107,9 @@ export default function SiteHeader() {
           </Link>
 
           <Link href="/tickets" className="site-header__link" onClick={() => setOpen(false)}>{t('nav.tickets')}</Link>
+          {user && user.role !== 'customer' && (
+            <Link href="/gate" className="site-header__link" onClick={() => setOpen(false)}>{t('nav.gate')}</Link>
+          )}
           <Link href="/admin" className="site-header__link" onClick={() => setOpen(false)}>{t('nav.admin')}</Link>
 
           <Show when="signed-in">

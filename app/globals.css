@@ -1183,6 +1183,64 @@ html[lang='bn'] .catalogue-page h2 {
   .catalogue__poster { max-width: none; width: min(100%, 280px); }
 }
 
+.pick-rail {
+  display: flex;
+  gap: .6rem;
+  overflow-x: auto;
+  padding-bottom: .4rem;
+  margin: 0 0 1rem;
+}
+.show-rail {
+  flex: 0 0 108px;
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 12px;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+.show-rail img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 11px 11px 0 0; display: block; }
+.show-rail span { display: block; padding: .4rem .45rem .5rem; font-size: .78rem; line-height: 1.2; }
+.show-rail--on { border-color: var(--burgundy); box-shadow: 0 0 0 1px var(--burgundy); }
+.pick {
+  display: grid;
+  gap: 1rem;
+  align-items: start;
+}
+.pick__poster {
+  width: 100%;
+  max-height: 420px;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border-radius: 14px;
+  background: #fff;
+}
+.pick__side h3 { margin: .15rem 0 .25rem; font-size: 1.45rem; }
+.pick__zones { list-style: none; margin: .8rem 0; padding: 0; }
+.pick__zones li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: .6rem;
+  align-items: center;
+  padding: .75rem 0;
+  border-top: 1px solid var(--border);
+}
+.pick__zones p { margin: .1rem 0; color: var(--muted); font-size: .88rem; }
+.pick__zones strong { display: block; }
+.pick__actions { display: flex; flex-direction: column; gap: .35rem; }
+.ticket-pass {
+  text-align: center;
+  padding: 1rem 0 1.2rem;
+  border-bottom: 1px solid var(--border);
+}
+.ticket-pass img { background: #fff; border-radius: 12px; }
+.ticket-pass__ref { font-family: ui-monospace, monospace; font-weight: 700; margin: .4rem 0 .15rem; }
+.ticket-pass a { color: var(--burgundy); font-weight: 600; }
+@media (min-width: 800px) {
+  .pick { grid-template-columns: minmax(200px, 280px) 1fr; }
+}
+
 .ledger-cards {
   display: grid;
   gap: .75rem;

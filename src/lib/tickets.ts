@@ -177,6 +177,28 @@ export async function ticketPdf(user: User, ticketId: string): Promise<Uint8Arra
   return pdfDoc.save();
 }
 
+export async function ticketPass(user: User, ticketId: string) {
+  const rows = await query<{
+    reference: string;
+    status: string;
+    user_id: string;
+    encrypted_token: string;
+  }>(
+    `SELECT t.reference, t.status, b.user_id, c.encrypted_token
+     FROM tickets t
+     JOIN bookings b ON b.id=t.booking_id
+     JOIN credentials c ON c.ticket_id=t.id AND c.status='ACTIVE'
+     WHERE t.id=$1`,
+    [ticketId],
+  );
+  const row = rows[0];
+  requireValue(row, 'Ticket not found.', 404);
+  requireValue(row.user_id === user.id || user.role === 'owner', 'Access denied.', 403);
+  requireValue(row.status === 'ACTIVE', 'Ticket is not active.', 409);
+  const qr = await QRCode.toDataURL(decrypt(row.encrypted_token), { width: 480, margin: 1 });
+  return { qr, reference: row.reference };
+}
+
 export async function deliverBooking(bookingId: string): Promise<void> {
   const appUrl = process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'https://localhost:3000';
 

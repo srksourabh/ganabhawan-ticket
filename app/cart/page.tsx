@@ -65,7 +65,7 @@ export default function CartPage() {
               <span>{money(cart.total, dl)}</span>
             </div>
 
-            <Link href="/cart/checkout" className="btn btn--primary btn--block">{t('cart.checkout')}</Link>
+            <Link href="/cart/checkout" className="btn btn--primary btn--block">{t('book.reserve')}</Link>
           </div>
         )}
       </section>

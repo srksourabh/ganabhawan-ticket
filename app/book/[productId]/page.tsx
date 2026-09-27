@@ -3,9 +3,10 @@
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useCart } from '@/components/CartProvider';
 import { useLocale } from '@/components/LocaleProvider';
 import { FESTIVAL, FESTIVAL_BN } from '@/lib/brand';
-import { dateLocale } from '@/lib/i18n';
+import { dateLocale, localized } from '@/lib/i18n';
 import { createClientPaymentOrder, payExistingOrder, prefillFromContact, type RazorpayOrder } from '@/lib/razorpay-checkout';
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
@@ -21,6 +22,17 @@ function useCountdown(expiresAt: string | null) {
   return Math.max(0, Math.floor((new Date(expiresAt).getTime() - now) / 1000));
 }
 
+type Coverage = { title: string; title_bn?: string; starts_at: string };
+type CatalogueProduct = {
+  id: string;
+  name: string;
+  name_bn: string;
+  category: string;
+  kind: string;
+  price: number;
+  version: number;
+  coverage?: Coverage[];
+};
 type HoldResult = { id: string; reference: string; total: number; currency: string; expires_at: string | null; unit_price: number; quantity: number };
 type OrderResult = RazorpayOrder & { provider: 'development' | 'razorpay' };
 
@@ -46,6 +58,7 @@ function BookPageInner() {
   const { productId } = useParams<{ productId: string }>();
   const searchParams = useSearchParams();
   const router = useRouter();
+  const cart = useCart();
   const { locale, t } = useLocale();
   const dl = dateLocale(locale);
   const version = Number(searchParams.get('version') ?? 0);
@@ -54,6 +67,8 @@ function BookPageInner() {
   const [quantity, setQuantity] = useState(1);
   const [name, setName] = useState('');
   const [contact, setContact] = useState('');
+  const [product, setProduct] = useState<CatalogueProduct | null>(null);
+  const [added, setAdded] = useState(false);
   const [stage, setStage] = useState<'select' | 'held' | 'ordered' | 'confirmed'>('select');
   const [hold, setHold] = useState<HoldResult | null>(null);
   const [order, setOrder] = useState<OrderResult | null>(null);
@@ -64,6 +79,16 @@ function BookPageInner() {
   const attemptId = useRef('');
   const resumed = useRef(false);
   const countdown = useCountdown(hold?.expires_at ?? null);
+
+  useEffect(() => {
+    fetch('/api/catalogue')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body: { products?: CatalogueProduct[] } | null) => {
+        const match = body?.products?.find((item) => item.id === productId) ?? null;
+        setProduct(match);
+      })
+      .catch(() => setProduct(null));
+  }, [productId]);
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -187,6 +212,49 @@ function BookPageInner() {
     }
   }, [me.contact, me.name, placeHold, productId, quantity, version]);
 
+  async function addToCart() {
+    if (!product) {
+      setError(t('catalogue.error'));
+      return;
+    }
+    const buyerName = name.trim();
+    const buyerContact = contact.trim();
+    setError('');
+    setLoading(true);
+    try {
+      const recorded = await fetch('/api/booking-attempts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: buyerName, contact: buyerContact, productId, quantity }),
+      });
+      const recordedBody = await recorded.json().catch(() => ({}));
+      if (!recorded.ok) {
+        setError(recordedBody.error || 'Enter your name and mobile or email.');
+        return;
+      }
+      const show = product.coverage?.[0];
+      const outcome = cart.add({
+        productId: product.id,
+        name: localized(product.name, product.name_bn, locale),
+        category: product.category,
+        kind: product.kind,
+        showTitle: show ? localized(show.title, show.title_bn, locale) : '',
+        startsAt: show?.starts_at || new Date().toISOString(),
+        unitPrice: product.price,
+        version: product.version || version,
+      }, quantity);
+      if (!outcome.ok) {
+        setError(outcome.message || t('catalogue.addFail'));
+        return;
+      }
+      setAdded(true);
+    } catch {
+      setError('Network error. Please check your connection and try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function retryPayment() {
     if (!order) return;
     setError('');
@@ -235,10 +303,14 @@ function BookPageInner() {
                 </select>
               </label>
               {error && <p role="alert" className="banner banner--err">{error}</p>}
+              {added && <p className="banner banner--ok" role="status">{t('book.added')}</p>}
               <p className="muted">{t('book.who')}</p>
-              <button type="button" className="btn btn--primary btn--block" disabled={loading} onClick={() => { void placeHold(); }}>
-                {loading ? t('book.reserving') : t('book.reserve')}
+              <button type="button" className={added ? 'btn btn--ghost btn--block' : 'btn btn--primary btn--block'} disabled={loading || !product} onClick={() => { void addToCart(); }}>
+                {loading ? t('book.reserving') : t('catalogue.addToCart')}
               </button>
+              {added && (
+                <Link href="/cart" className="btn btn--primary btn--block">{t('book.reserve')}</Link>
+              )}
             </>
           )}
 

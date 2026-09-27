@@ -1,13 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { DEFAULT_VENUE, DEFAULT_VENUE_BN, FESTIVAL, FESTIVAL_BN, STAGE_PHOTOS } from '@/lib/brand';
-import AuditoriumMap, { AUDITORIUM_PHOTO, type AuditoriumCategory, type AuditoriumZone } from '@/components/AuditoriumMap';
+import type { AuditoriumCategory, AuditoriumZone } from '@/components/AuditoriumMap';
 import { useCart } from '@/components/CartProvider';
 import { useLocale } from '@/components/LocaleProvider';
-import { dateLocale, kindLabel, localized, zoneLabel } from '@/lib/i18n';
+import { dateLocale, localized, zoneLabel, zoneWhere } from '@/lib/i18n';
 
 type Show = { id: string; title: string; title_bn: string; synopsis: string; synopsis_bn: string; starts_at: string; genre: string; artwork?: string };
 type Product = {
@@ -27,7 +26,6 @@ const ZONE_ORDER: AuditoriumCategory[] = ['Premier', 'Superior', 'Balcony'];
 
 export default function CataloguePage() {
   const cart = useCart();
-  const router = useRouter();
   const { locale, t } = useLocale();
   const dl = dateLocale(locale);
   const [data, setData] = useState<{ shows: Show[]; products: Product[]; festival?: { name: string; name_bn?: string; venue: string; theater_photo?: string } }>();
@@ -85,7 +83,6 @@ export default function CataloguePage() {
 
   const shows = useMemo(() => data?.shows || [], [data]);
   const products = useMemo(() => data?.products || [], [data]);
-  const seasonProducts = useMemo(() => products.filter((p) => p.kind === 'SEASON'), [products]);
   const visibleResults = query.trim().length >= 2 ? results : [];
   const venueRaw = data?.festival?.venue || DEFAULT_VENUE;
   const venue = locale === 'bn' && venueRaw === DEFAULT_VENUE ? DEFAULT_VENUE_BN : venueRaw;
@@ -114,8 +111,6 @@ export default function CataloguePage() {
     });
   }, [products, selectedShow]);
 
-  const theaterPhoto = data?.festival?.theater_photo || AUDITORIUM_PHOTO;
-
   function showStill(show: Show, index: number) {
     const art = show.artwork;
     if (art && (art.startsWith('/') || art.startsWith('http'))) return art;
@@ -140,11 +135,36 @@ export default function CataloguePage() {
     );
   }
 
-  function handleSelectZone(zone: AuditoriumZone) {
-    if (!zone.productId || zone.available <= 0) return;
+  function addLine(product: Product, showTitle: string, startsAt: string, added: string) {
+    const outcome = cart.add({
+      productId: product.id,
+      name: localized(product.name, product.name_bn, locale),
+      category: product.category,
+      kind: product.kind,
+      showTitle,
+      startsAt,
+      unitPrice: product.price,
+      version: product.version,
+    });
+    setNotice(outcome.ok ? added : outcome.message || t('catalogue.addFail'));
+  }
+
+  function handleAddDaily(zone: AuditoriumZone) {
+    if (!selectedShow || !zone.productId || zone.available <= 0) return;
     const product = products.find((p) => p.id === zone.productId);
     if (!product) return;
-    router.push(`/book/${product.id}?version=${product.version}`);
+    addLine(
+      product,
+      localized(selectedShow.title, selectedShow.title_bn, locale),
+      selectedShow.starts_at,
+      t('catalogue.added', { category: zoneLabel(locale, zone.category), title: localized(selectedShow.title, selectedShow.title_bn, locale) }),
+    );
+  }
+
+  function handleAddSeasonFor(category: string) {
+    const product = products.find((p) => p.kind === 'SEASON' && p.category === category);
+    if (!product || product.available <= 0) return;
+    handleAddSeason(product);
   }
 
   return (
@@ -192,9 +212,19 @@ export default function CataloguePage() {
                     <strong>{result.title}</strong>
                     <p className="muted">{result.description}</p>
                     {product && product.available > 0 ? (
-                      <Link href={`/book/${product.id}?version=${product.version}`} className="btn btn--ghost">
-                        {t('catalogue.bookNow')}
-                      </Link>
+                      <button type="button" className="btn btn--ghost" onClick={() => {
+                        const show = shows.find((item) => product.coverage.some((c) => c.id === item.id));
+                        addLine(
+                          product,
+                          product.kind === 'SEASON' ? t('catalogue.season') : localized(show?.title || product.name, show?.title_bn || product.name_bn, locale),
+                          show?.starts_at || shows[0]?.starts_at || new Date().toISOString(),
+                          product.kind === 'SEASON'
+                            ? t('catalogue.addedSeason', { category: zoneLabel(locale, product.category) })
+                            : t('catalogue.added', { category: zoneLabel(locale, product.category), title: show?.title || product.name }),
+                        );
+                      }}>
+                        {t('catalogue.addToCart')}
+                      </button>
                     ) : null}
                   </article>
                 );
@@ -217,10 +247,10 @@ export default function CataloguePage() {
         {!data && !error && <p role="status">{t('catalogue.loading')}</p>}
       </section>
 
-      {shows.length > 0 && (
+      {shows.length > 0 && selectedShow && (
         <section className="container catalogue-page__shows">
           <h2>{t('catalogue.choose')}</h2>
-          <div className="grid grid--tight" role="tablist" aria-label={t('catalogue.performances')}>
+          <div className="pick-rail" role="tablist" aria-label={t('catalogue.performances')}>
             {shows.map((show, index) => (
               <button
                 key={show.id}
@@ -228,75 +258,63 @@ export default function CataloguePage() {
                 role="tab"
                 aria-selected={effectiveShowId === show.id}
                 onClick={() => setSelectedShowId(show.id)}
-                className={`card show-pick${effectiveShowId === show.id ? ' card--selected' : ''}`}
+                className={`show-rail${effectiveShowId === show.id ? ' show-rail--on' : ''}`}
               >
                 <img src={showStill(show, index)} alt="" />
-                <div className="show-pick__body">
-                  <p className="eyebrow">{show.genre}</p>
-                  <h3>{localized(show.title, show.title_bn, locale)}</h3>
-                  <time>
-                    {new Date(show.starts_at).toLocaleString(dl, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}
-                  </time>
-                </div>
+                <span>{localized(show.title, show.title_bn, locale)}</span>
               </button>
             ))}
           </div>
 
-          {selectedShow && (
-            <div className="card catalogue-show">
-              <div className="catalogue__show-head">
-                <img
-                  className="catalogue__poster"
-                  src={showStill(selectedShow, Math.max(0, shows.findIndex((s) => s.id === selectedShow.id)))}
-                  alt=""
-                />
-                <div>
-                  <p className="eyebrow">{selectedShow.genre} · {t('catalogue.daily')}</p>
-                  <h3>{localized(selectedShow.title, selectedShow.title_bn, locale)}</h3>
-                  <p className="catalogue-show__synopsis">
-                    {localized(selectedShow.synopsis, selectedShow.synopsis_bn, locale)}
-                  </p>
-                </div>
-              </div>
-
-              <AuditoriumMap zones={zones} photoUrl={theaterPhoto} onSelectZone={handleSelectZone} />
-
-              <p className="catalogue-show__hint">{t('catalogue.mapHint')}</p>
-
-              {notice && (
-                <p role="status" className="alert alert--info catalogue-show__notice">{notice}</p>
+          <div className="pick">
+            <img
+              className="pick__poster"
+              src={showStill(selectedShow, Math.max(0, shows.findIndex((s) => s.id === selectedShow.id)))}
+              alt=""
+            />
+            <div className="pick__side">
+              <p className="eyebrow">{selectedShow.genre}</p>
+              <h3>{localized(selectedShow.title, selectedShow.title_bn, locale)}</h3>
+              <time>
+                {new Date(selectedShow.starts_at).toLocaleString(dl, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}
+              </time>
+              <ul className="pick__zones">
+                {zones.map((zone) => (
+                  <li key={zone.category}>
+                    <div>
+                      <strong>{zoneLabel(locale, zone.category)}</strong>
+                      <p>{zoneWhere(locale, zone.category)}</p>
+                      <p>
+                        {t('catalogue.daily')} {money(zone.price, dl)}
+                        {' · '}
+                        {zone.available > 0 ? t('map.available', { count: zone.available }) : t('map.soldOut')}
+                      </p>
+                      {zone.seasonPrice != null && (
+                        <p>
+                          {t('catalogue.season')} {money(zone.seasonPrice, dl)}
+                          {zone.seasonAvailable != null ? ` · ${zone.seasonAvailable > 0 ? t('map.available', { count: zone.seasonAvailable }) : t('map.soldOut')}` : ''}
+                        </p>
+                      )}
+                    </div>
+                    <div className="pick__actions">
+                      <button type="button" className="btn btn--primary" disabled={zone.available <= 0 || !zone.productId} onClick={() => handleAddDaily(zone)}>
+                        {zone.available > 0 ? t('catalogue.addDaily') : t('catalogue.soldOut')}
+                      </button>
+                      {zone.seasonPrice != null && (
+                        <button type="button" className="btn btn--ghost" disabled={(zone.seasonAvailable ?? 0) <= 0} onClick={() => handleAddSeasonFor(zone.category)}>
+                          {(zone.seasonAvailable ?? 0) > 0 ? t('catalogue.addSeason') : t('catalogue.soldOut')}
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <p className="muted">{t('catalogue.mapHint')}</p>
+              {notice && <p role="status" className="alert alert--info">{notice}</p>}
+              {cart.count > 0 && (
+                <Link href="/cart" className="btn btn--primary">{t('book.reserve')}</Link>
               )}
             </div>
-          )}
-        </section>
-      )}
-
-      {seasonProducts.length > 0 && (
-        <section className="container catalogue-page__season">
-          <h2>{t('catalogue.season')}</h2>
-          <div className="grid">
-            {seasonProducts.map((product) => (
-              <article key={product.id} className="card catalogue-season">
-                <p className="card--eyebrow">{kindLabel(locale, product.kind)} · {zoneLabel(locale, product.category)}</p>
-                <h3>{localized(product.name, product.name_bn, locale)}</h3>
-                <strong>{money(product.price, dl)}</strong>
-                <p className="muted">
-                  {t('catalogue.available', { count: product.available, shows: product.coverage?.length || 0 })}
-                </p>
-                {product.available > 0
-                  ? (
-                    <div className="stack stack--sm">
-                      <Link href={`/book/${product.id}?version=${product.version}`} className="btn btn--primary btn--block">
-                        {t('catalogue.bookNow')}
-                      </Link>
-                      <button type="button" className="btn btn--ghost btn--block" onClick={() => handleAddSeason(product)}>
-                        {t('catalogue.addToCart')}
-                      </button>
-                    </div>
-                  )
-                  : <button type="button" disabled className="btn btn--brass btn--block">{t('catalogue.soldOut')}</button>}
-              </article>
-            ))}
           </div>
         </section>
       )}

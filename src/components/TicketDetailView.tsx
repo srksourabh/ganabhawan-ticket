@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { useLocale } from '@/components/LocaleProvider';
 import { dateLocale, kindLabel, zoneLabel } from '@/lib/i18n';
 import PayBookingButton from '@/components/PayBookingButton';
@@ -64,19 +65,17 @@ export default function TicketDetailView({ booking, contact }: { booking: Bookin
           <div className="card">
             <h2 style={{ fontFamily: 'Georgia, serif', fontSize: '1.1rem', margin: '0 0 .75rem' }}>{t('tickets.yours')}</h2>
             {booking.tickets.map((ticket) => (
-              <div key={ticket.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '.6rem 0', borderBottom: '1px solid #f0ebe3' }}>
-                <div>
-                  <p style={{ margin: 0, fontFamily: 'monospace', fontWeight: 600 }}>{ticket.reference}</p>
-                  <p style={{ margin: '.15rem 0 0', fontSize: '.82rem', color: '#64564d' }}>
-                    {t('tickets.ticketMeta', {
-                      ordinal: ticket.ordinal,
-                      kind: ticket.credentialKind,
-                      scan: ticket.admitted > 0 ? t('tickets.admitted') : t('tickets.notScanned'),
-                    })}
-                  </p>
-                </div>
-                <a href={`/api/tickets/${ticket.id}/pdf`} target="_blank" rel="noopener noreferrer"
-                  style={{ color: '#8b2f2f', textDecoration: 'none', fontWeight: 600, fontSize: '.9rem', whiteSpace: 'nowrap' as const }}>
+              <div key={ticket.id} className="ticket-pass">
+                <DoorCode ticketId={ticket.id} />
+                <p className="ticket-pass__ref">{ticket.reference}</p>
+                <p className="muted">
+                  {t('tickets.ticketMeta', {
+                    ordinal: ticket.ordinal,
+                    kind: ticket.credentialKind,
+                    scan: ticket.admitted > 0 ? t('tickets.admitted') : t('tickets.notScanned'),
+                  })}
+                </p>
+                <a href={`/api/tickets/${ticket.id}/pdf`} target="_blank" rel="noopener noreferrer">
                   {t('tickets.downloadPdf')}
                 </a>
               </div>
@@ -102,6 +101,34 @@ export default function TicketDetailView({ booking, contact }: { booking: Bookin
         )}
       </section>
     </main>
+  );
+}
+
+function DoorCode({ ticketId }: { ticketId: string }) {
+  const { t } = useLocale();
+  const [qr, setQr] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/tickets/${ticketId}/pass`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body: { qr?: string } | null) => {
+        if (!cancelled) setQr(body?.qr || '');
+      })
+      .catch(() => {
+        if (!cancelled) setQr('');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ticketId]);
+
+  if (!qr) return null;
+  return (
+    <div>
+      <img src={qr} alt="" width={240} height={240} />
+      <p>{t('tickets.showAtDoor')}</p>
+    </div>
   );
 }
 

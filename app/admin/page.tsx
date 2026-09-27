@@ -275,6 +275,7 @@ export default function AdminPage() {
         </div>
         <div className="admin__tabs" role="tablist">
           <Link className="btn btn--primary" href="/admin/accounts">Accounts</Link>
+          <Link className="btn btn--ghost" href="/gate">Check tickets</Link>
           {([
             ['festival', 'Festival & theatre'],
             ['shows', 'Dramas'],
