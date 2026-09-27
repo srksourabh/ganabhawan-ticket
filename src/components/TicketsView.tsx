@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useLocale } from '@/components/LocaleProvider';
 import { FESTIVAL, FESTIVAL_BN } from '@/lib/brand';
 import { dateLocale } from '@/lib/i18n';
+import PayBookingButton from '@/components/PayBookingButton';
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
 
@@ -88,10 +89,18 @@ export default function TicketsView({
                 </p>
               ))}
 
-              <div style={{ marginTop: '1rem', display: 'flex', gap: '.75rem', flexWrap: 'wrap' }}>
+              <div style={{ marginTop: '1rem', display: 'flex', gap: '.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
                 <Link href={`/tickets/${b.id}`} style={{ color: '#c9a227', textDecoration: 'none', fontWeight: 600, fontSize: '.9rem' }}>
                   {t('tickets.view')}
                 </Link>
+                {(b.status === 'HELD' || b.status === 'PAYMENT_PENDING') && (
+                  <PayBookingButton
+                    bookingId={b.id}
+                    amount={b.total}
+                    description={`${b.snapshot?.name ?? b.reference}`}
+                    contact={contact}
+                  />
+                )}
                 {b.status === 'CONFIRMED' && b.tickets?.map((ticket) => (
                   <a key={ticket.id} href={`/api/tickets/${ticket.id}/pdf`} target="_blank" rel="noopener noreferrer"
                     style={{ color: '#c9a227', textDecoration: 'none', fontWeight: 600, fontSize: '.9rem' }}>

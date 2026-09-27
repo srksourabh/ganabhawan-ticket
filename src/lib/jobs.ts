@@ -1,7 +1,9 @@
-import { query, transaction } from './db';
+import { query } from './db';
 import { expireHolds } from './commerce';
 import { deliverBooking } from './tickets';
-import { devMode } from './env';
+import { usingDevelopmentPayments } from './env';
+import { reconcileOpenRazorpayPayments } from './payments';
+import { razorpayRefundPayment } from './razorpay';
 
 const MAX_ATTEMPTS = 5;
 
@@ -11,11 +13,16 @@ function backoffMinutes(attempts: number): number {
 }
 
 export async function processJobs(limit = 20): Promise<number> {
-  // Always run expireHolds on every tick
   try {
     await expireHolds();
   } catch (err) {
     console.error('[jobs] expireHolds error', err);
+  }
+
+  try {
+    await reconcileOpenRazorpayPayments();
+  } catch (err) {
+    console.error('[jobs] reconcile payments error', err);
   }
 
   // Claim pending/runnable jobs
@@ -86,21 +93,33 @@ async function handleJob(kind: string, payload: Record<string, unknown>): Promis
       const refundId = payload['refundId'] as string | undefined;
       if (!refundId) throw new Error('REFUND job missing refundId');
 
-      if (devMode() || process.env.PAYMENT_PROVIDER === 'development') {
-        await transaction(async (c) => {
-          const refund = (
-            await c.query<{ id: string; state: string }>(
-              "SELECT * FROM refunds WHERE id=$1 AND state IN ('REQUESTED','PROCESSING')",
-              [refundId],
-            )
-          ).rows[0];
-          if (!refund) return;
-          await c.query("UPDATE refunds SET state='SUCCEEDED' WHERE id=$1", [refundId]);
-        });
-      } else {
-        // Live mode: leave PENDING for manual reconciliation / Razorpay webhooks
-        console.log(`[jobs] REFUND ${refundId}: leaving for live provider`);
+      const refund = (
+        await query<{
+          id: string;
+          amount: number;
+          state: string;
+          provider_refund_id: string | null;
+          provider_payment_id: string;
+        }>(
+          `SELECT r.id, r.amount, r.state, r.provider_refund_id, p.provider_payment_id
+           FROM refunds r JOIN payments p ON p.id = r.payment_id
+           WHERE r.id=$1 AND r.state IN ('REQUESTED','PROCESSING')`,
+          [refundId],
+        )
+      )[0];
+      if (!refund) return;
+
+      if (usingDevelopmentPayments()) {
+        await query("UPDATE refunds SET state='SUCCEEDED' WHERE id=$1", [refundId]);
+        break;
       }
+
+      await query("UPDATE refunds SET state='PROCESSING' WHERE id=$1", [refundId]);
+      const providerRefund = await razorpayRefundPayment(refund.provider_payment_id, Number(refund.amount));
+      await query("UPDATE refunds SET state='SUCCEEDED', provider_refund_id=$1 WHERE id=$2", [
+        providerRefund.id,
+        refundId,
+      ]);
       break;
     }
 

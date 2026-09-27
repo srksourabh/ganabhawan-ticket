@@ -3,6 +3,7 @@ import { transaction, one, query, type Client } from './db';
 import { requireValue } from './errors';
 import { token, hash, encrypt } from './security';
 import { audit, job } from './audit';
+import { markAttemptsConfirmed } from './attempts';
 import { devMode, assertLiveConfiguration } from './env';
 import type { User } from './types';
 export async function movement(c:Client,poolId:string,operation:string,held:number,committed:number,reason:string) {
@@ -53,7 +54,7 @@ export interface CapturedPayment { id:string;orderId:string;amount:number;curren
 export async function fulfill(bookingId:string,payment:CapturedPayment) {
  return transaction(async c=>{
   const b=await one(c,'SELECT * FROM bookings WHERE id=$1 FOR UPDATE',[bookingId]); requireValue(b,'Booking not found.',404);
-  requireValue(payment.status==='captured' && payment.amount===b.total && payment.currency===b.currency,'Captured payment does not match this booking.',400);
+  requireValue(payment.status==='captured' && Number(payment.amount)===Number(b.total) && payment.currency===b.currency,'Captured payment does not match this booking.',400);
   const attempt=await one(c,'SELECT * FROM payment_attempts WHERE booking_id=$1 AND provider_order_id=$2',[bookingId,payment.orderId]); requireValue(attempt,'Payment order mismatch.',400);
   const existing=await one(c,'SELECT * FROM payments WHERE provider_payment_id=$1',[payment.id]);
   if(existing) { requireValue(existing.booking_id===bookingId,'Payment belongs to another booking.',400); return b; }
@@ -83,6 +84,7 @@ export async function fulfill(bookingId:string,payment:CapturedPayment) {
    const qr=token(); await c.query("INSERT INTO credentials(ticket_id,digest,encrypted_token,kind,status) VALUES($1,$2,$3,'DIGITAL','ACTIVE')",[ticket.id,hash(qr),encrypt(qr)]);
   }
   await c.query("UPDATE bookings SET status='CONFIRMED' WHERE id=$1",[b.id]);
+  await markAttemptsConfirmed(c, b.id);
   await job(c,'DELIVERY','confirmation:'+b.id,{bookingId:b.id});
   await audit(c,b.user_id,'booking.confirmed',b.id,{paymentId:record.id});
   return {...b,status:'CONFIRMED'};

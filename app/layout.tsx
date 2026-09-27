@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'black-translucent',
+    statusBarStyle: 'default',
     title: FESTIVAL_BN,
   },
   icons: {
@@ -36,7 +36,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   viewportFit: 'cover',
-  themeColor: '#0a0a0a',
+  themeColor: '#f7f4ef',
 };
 
 const localeBootScript = `(function(){try{var k='samatat-locale';var l=localStorage.getItem(k);if(l!=='en'&&l!=='bn'){var m=document.cookie.match(/(?:^|; )samatat-locale=([^;]*)/);l=m?decodeURIComponent(m[1]):'bn'}if(l!=='en'&&l!=='bn')l='bn';document.documentElement.lang=l;document.documentElement.dataset.locale=l}catch(e){}})();`;
@@ -52,8 +52,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           afterSignOutUrl="/"
           appearance={{
             variables: {
-              colorPrimary: '#c9a227',
-              colorBackground: '#1a1a1a',
+              colorPrimary: '#722f37',
+              colorBackground: '#ffffff',
               borderRadius: '0.5rem',
             },
           }}

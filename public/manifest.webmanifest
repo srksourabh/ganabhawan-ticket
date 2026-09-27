@@ -3,8 +3,10 @@
   "short_name": "নাট্যমেলা",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0a0a0a",
-  "theme_color": "#0a0a0a",
+  "background_color": "#f7f4ef",
+  "theme_color": "#f7f4ef",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
   "description": "Samatat Natyomela tickets at Ganabhawan, Uttarpara. Presented by Samatat Sanskriti.",
   "icons": [
     { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },

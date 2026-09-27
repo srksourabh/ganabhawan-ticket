@@ -17,5 +17,5 @@ export default async function TicketDetailPage({ params }: { params: Promise<{ i
   }
   if (!booking) notFound();
 
-  return <TicketDetailView booking={booking} />;
+  return <TicketDetailView booking={booking} contact={user.contact} />;
 }

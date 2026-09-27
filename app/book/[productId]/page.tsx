@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useLocale } from '@/components/LocaleProvider';
 import { FESTIVAL, FESTIVAL_BN } from '@/lib/brand';
 import { dateLocale } from '@/lib/i18n';
-import { confirmRazorpayPayment, openRazorpayCheckout } from '@/lib/razorpay-checkout';
+import { createClientPaymentOrder, payExistingOrder, prefillFromContact, type RazorpayOrder } from '@/lib/razorpay-checkout';
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
 
@@ -22,7 +22,7 @@ function useCountdown(expiresAt: string | null) {
 }
 
 type HoldResult = { id: string; reference: string; total: number; currency: string; expires_at: string | null; unit_price: number; quantity: number };
-type OrderResult = { orderId: string; provider: 'development' | 'razorpay'; amount: number; currency: string; keyId: string; bookingId: string };
+type OrderResult = RazorpayOrder & { provider: 'development' | 'razorpay' };
 
 function fmtSeconds(value: number) {
   const m = Math.floor(value / 60);
@@ -52,13 +52,30 @@ function BookPageInner() {
   const festivalName = locale === 'bn' ? FESTIVAL_BN : FESTIVAL;
 
   const [quantity, setQuantity] = useState(1);
+  const [name, setName] = useState('');
+  const [contact, setContact] = useState('');
   const [stage, setStage] = useState<'select' | 'held' | 'ordered' | 'confirmed'>('select');
   const [hold, setHold] = useState<HoldResult | null>(null);
   const [order, setOrder] = useState<OrderResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [me, setMe] = useState<{ contact?: string; name?: string }>({});
   const idempotencyKey = useRef(crypto.randomUUID());
+  const attemptId = useRef('');
+  const resumed = useRef(false);
   const countdown = useCountdown(hold?.expires_at ?? null);
+
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then(async (res) => {
+        if (!res.ok) return;
+        const body = (await res.json()) as { contact?: string; name?: string };
+        setMe({ contact: body.contact, name: body.name });
+        if (body.name) setName((current) => current || body.name || '');
+        if (body.contact) setContact((current) => current || body.contact || '');
+      })
+      .catch(() => undefined);
+  }, []);
 
   const handleQuantityChange = (q: number) => {
     setQuantity(q);
@@ -66,36 +83,75 @@ function BookPageInner() {
     setError('');
   };
 
+  const checkoutOpts = useCallback(() => ({
+    name: festivalName,
+    description: t('book.title'),
+    ...prefillFromContact(me.contact, me.name),
+    prefillEmail: me.contact?.includes('@') ? me.contact : undefined,
+    prefillContact: me.contact && !me.contact.includes('@') ? me.contact : undefined,
+    prefillName: me.name,
+  }), [festivalName, me.contact, me.name, t]);
+
+  const payOrder = useCallback(async (nextOrder: OrderResult) => {
+    setOrder(nextOrder);
+    setStage('ordered');
+    setLoading(true);
+    try {
+      await payExistingOrder(nextOrder, checkoutOpts());
+      setStage('confirmed');
+    } catch (err) {
+      setError(err instanceof Error && /cancelled/i.test(err.message) ? t('pay.cancelled') : err instanceof Error ? err.message : t('pay.failed'));
+    } finally {
+      setLoading(false);
+    }
+  }, [checkoutOpts, t]);
+
   const placeOrder = useCallback(async (bookingId: string) => {
     try {
-      const res = await fetch('/api/payments/order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bookingId }),
-      });
-      const body = await res.json();
-      if (!res.ok) { setError(body.error || 'Unable to create payment order.'); return; }
-      setOrder(body);
-      setStage('ordered');
-    } catch {
-      setError('Unable to create payment order. Your hold is active — please refresh.');
+      const nextOrder = await createClientPaymentOrder(bookingId);
+      await payOrder(nextOrder);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('pay.orderFail'));
     }
-  }, []);
+  }, [payOrder, t]);
 
-  const placeHold = useCallback(async () => {
+  const placeHold = useCallback(async (who?: { name: string; contact: string; quantity: number; attemptId?: string }) => {
+    const buyerName = (who?.name ?? name).trim();
+    const buyerContact = (who?.contact ?? contact).trim();
+    const qty = who?.quantity ?? quantity;
     setError('');
     setLoading(true);
     try {
+      let nextAttempt = who?.attemptId || attemptId.current;
+      if (!nextAttempt) {
+        const recorded = await fetch('/api/booking-attempts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: buyerName, contact: buyerContact, productId, quantity: qty }),
+        });
+        const recordedBody = await recorded.json().catch(() => ({}));
+        if (!recorded.ok) {
+          setError(recordedBody.error || 'Enter your name and mobile or email.');
+          return;
+        }
+        nextAttempt = recordedBody.id as string;
+        attemptId.current = nextAttempt;
+      }
       const res = await fetch('/api/holds', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey.current },
-        body: JSON.stringify({ productId, quantity, version }),
+        body: JSON.stringify({ productId, quantity: qty, version, attemptId: nextAttempt }),
       });
       const body = await res.json();
       if (res.status === 401) {
-        router.push(`/login?next=${encodeURIComponent(`/book/${productId}?version=${version}`)}`);
+        sessionStorage.setItem('gb-pending-book', JSON.stringify({
+          productId, quantity: qty, version, attemptId: nextAttempt, name: buyerName, contact: buyerContact,
+        }));
+        const next = encodeURIComponent(`/book/${productId}?version=${version}`);
+        router.push(`/login?next=${next}&contact=${encodeURIComponent(buyerContact)}`);
         return;
       }
+      sessionStorage.removeItem('gb-pending-book');
       if (!res.ok) { setError(body.error || 'Unable to reserve tickets. Please try again.'); return; }
       setHold(body);
       setStage('held');
@@ -105,44 +161,36 @@ function BookPageInner() {
     } finally {
       setLoading(false);
     }
-  }, [productId, quantity, version, router, placeOrder]);
+  }, [contact, name, placeOrder, productId, quantity, router, version]);
 
-  async function confirmDevelopment() {
+  useEffect(() => {
+    if (!me.contact || resumed.current) return;
+    const raw = sessionStorage.getItem('gb-pending-book');
+    if (!raw) return;
+    resumed.current = true;
+    try {
+      const pending = JSON.parse(raw) as { productId?: string; quantity?: number; version?: number; attemptId?: string; name?: string; contact?: string };
+      if (pending.productId !== productId || pending.version !== version || !pending.attemptId) return;
+      sessionStorage.removeItem('gb-pending-book');
+      if (pending.name) setName(pending.name);
+      if (pending.contact) setContact(pending.contact);
+      if (pending.quantity) setQuantity(pending.quantity);
+      attemptId.current = pending.attemptId;
+      void placeHold({
+        name: pending.name || me.name || '',
+        contact: pending.contact || me.contact,
+        quantity: pending.quantity || quantity,
+        attemptId: pending.attemptId,
+      });
+    } catch {
+      sessionStorage.removeItem('gb-pending-book');
+    }
+  }, [me.contact, me.name, placeHold, productId, quantity, version]);
+
+  async function retryPayment() {
     if (!order) return;
     setError('');
-    setLoading(true);
-    try {
-      const res = await fetch('/api/payments/confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId: order.orderId, bookingId: order.bookingId }),
-      });
-      const body = await res.json();
-      if (!res.ok) { setError(body.error || 'Payment confirmation failed.'); return; }
-      setStage('confirmed');
-    } catch {
-      setError('Network error during confirmation.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function payWithRazorpay() {
-    if (!order || order.provider !== 'razorpay') return;
-    setError('');
-    setLoading(true);
-    try {
-      const paid = await openRazorpayCheckout(order, {
-        name: festivalName,
-        description: t('book.title'),
-      });
-      await confirmRazorpayPayment(paid);
-      setStage('confirmed');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Payment failed.');
-    } finally {
-      setLoading(false);
-    }
+    await payOrder(order);
   }
 
   if (stage === 'confirmed') {
@@ -172,6 +220,14 @@ function BookPageInner() {
 
           {stage === 'select' && (
             <>
+              <label className="field" htmlFor="buyer-name">
+                <span>{t('book.name')}</span>
+                <input id="buyer-name" value={name} autoComplete="name" onChange={(e) => setName(e.target.value)} disabled={loading} />
+              </label>
+              <label className="field" htmlFor="buyer-contact">
+                <span>{t('book.contact')}</span>
+                <input id="buyer-contact" value={contact} autoComplete="tel" inputMode="tel" onChange={(e) => setContact(e.target.value)} disabled={loading} />
+              </label>
               <label className="field" htmlFor="qty">
                 <span>{t('book.qty')} <span className="muted">{t('book.max')}</span></span>
                 <select id="qty" value={quantity} onChange={(e) => handleQuantityChange(Number(e.target.value))} disabled={loading}>
@@ -179,8 +235,8 @@ function BookPageInner() {
                 </select>
               </label>
               {error && <p role="alert" className="banner banner--err">{error}</p>}
-              <p className="muted">{t('book.hint')}</p>
-              <button type="button" className="btn btn--primary btn--block" disabled={loading} onClick={placeHold}>
+              <p className="muted">{t('book.who')}</p>
+              <button type="button" className="btn btn--primary btn--block" disabled={loading} onClick={() => { void placeHold(); }}>
                 {loading ? t('book.reserving') : t('book.reserve')}
               </button>
             </>
@@ -208,20 +264,24 @@ function BookPageInner() {
 
               {error && <p role="alert" className="banner banner--err">{error}</p>}
 
-              {stage === 'ordered' && order?.provider === 'development' && (
-                <button type="button" className="btn btn--primary btn--block" disabled={loading} onClick={confirmDevelopment}>
-                  {loading ? t('book.processing') : t('book.payDev')}
+              {stage === 'ordered' && order && (
+                <button type="button" className="btn btn--primary btn--block" disabled={loading || countdown === 0} onClick={retryPayment}>
+                  {loading
+                    ? t('book.processing')
+                    : order.provider === 'razorpay'
+                      ? t('book.payRazorpay', { amount: money(order.amount, dl) })
+                      : t('book.payDev')}
                 </button>
               )}
 
-              {stage === 'ordered' && order?.provider === 'razorpay' && (
-                <button type="button" className="btn btn--primary btn--block" disabled={loading} onClick={payWithRazorpay}>
-                  {loading ? t('book.processing') : t('book.payRazorpay', { amount: money(order.amount, dl) })}
-                </button>
-              )}
-
-              {stage === 'held' && !error && (
+              {stage === 'held' && loading && (
                 <p className="muted">{t('book.creatingOrder')}</p>
+              )}
+
+              {stage === 'held' && !loading && (
+                <button type="button" className="btn btn--primary btn--block" disabled={countdown === 0} onClick={() => { setError(''); void placeOrder(hold.id); }}>
+                  {t('book.payRazorpay', { amount: money(hold.total, dl) })}
+                </button>
               )}
             </>
           )}

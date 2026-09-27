@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useLocale } from '@/components/LocaleProvider';
 import { dateLocale, kindLabel, zoneLabel } from '@/lib/i18n';
+import PayBookingButton from '@/components/PayBookingButton';
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
 
@@ -20,7 +21,7 @@ export type BookingDetail = {
   tickets: Ticket[];
 };
 
-export default function TicketDetailView({ booking }: { booking: BookingDetail }) {
+export default function TicketDetailView({ booking, contact }: { booking: BookingDetail; contact?: string }) {
   const { locale, t } = useLocale();
   const dl = dateLocale(locale);
   const isConfirmed = booking.status === 'CONFIRMED';
@@ -86,6 +87,17 @@ export default function TicketDetailView({ booking }: { booking: BookingDetail }
         {booking.status === 'REFUND_REQUIRED' && (
           <div style={{ padding: '1rem', background: '#fff0f0', border: '1px solid #e8c0c0', borderRadius: 8, marginTop: '1rem' }}>
             {t('tickets.refundNotice')}
+          </div>
+        )}
+
+        {(booking.status === 'HELD' || booking.status === 'PAYMENT_PENDING') && (
+          <div style={{ marginTop: '1rem' }}>
+            <PayBookingButton
+              bookingId={booking.id}
+              amount={booking.total}
+              description={booking.snapshot?.name ?? booking.reference}
+              contact={contact}
+            />
           </div>
         )}
       </section>

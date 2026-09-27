@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { DEFAULT_VENUE, DEFAULT_VENUE_BN, FESTIVAL, FESTIVAL_BN, STAGE_PHOTOS } from '@/lib/brand';
 import AuditoriumMap, { AUDITORIUM_PHOTO, type AuditoriumCategory, type AuditoriumZone } from '@/components/AuditoriumMap';
@@ -26,6 +27,7 @@ const ZONE_ORDER: AuditoriumCategory[] = ['Premier', 'Superior', 'Balcony'];
 
 export default function CataloguePage() {
   const cart = useCart();
+  const router = useRouter();
   const { locale, t } = useLocale();
   const dl = dateLocale(locale);
   const [data, setData] = useState<{ shows: Show[]; products: Product[]; festival?: { name: string; name_bn?: string; venue: string; theater_photo?: string } }>();
@@ -139,25 +141,10 @@ export default function CataloguePage() {
   }
 
   function handleSelectZone(zone: AuditoriumZone) {
-    if (!zone.productId || !selectedShow) return;
+    if (!zone.productId || zone.available <= 0) return;
     const product = products.find((p) => p.id === zone.productId);
     if (!product) return;
-    const showTitle = localized(selectedShow.title, selectedShow.title_bn, locale);
-    const outcome = cart.add({
-      productId: product.id,
-      name: localized(product.name, product.name_bn, locale),
-      category: product.category,
-      kind: product.kind,
-      showTitle,
-      startsAt: selectedShow.starts_at,
-      unitPrice: product.price,
-      version: product.version,
-    });
-    setNotice(
-      outcome.ok
-        ? t('catalogue.added', { category: zoneLabel(locale, product.category), title: showTitle })
-        : outcome.message || t('catalogue.addFail'),
-    );
+    router.push(`/book/${product.id}?version=${product.version}`);
   }
 
   return (
@@ -299,12 +286,12 @@ export default function CataloguePage() {
                 {product.available > 0
                   ? (
                     <div className="stack stack--sm">
-                      <button type="button" className="btn btn--brass btn--block" onClick={() => handleAddSeason(product)}>
-                        {t('catalogue.addToCart')}
-                      </button>
-                      <Link href={`/book/${product.id}?version=${product.version}`} className="btn btn--ghost btn--block">
+                      <Link href={`/book/${product.id}?version=${product.version}`} className="btn btn--primary btn--block">
                         {t('catalogue.bookNow')}
                       </Link>
+                      <button type="button" className="btn btn--ghost btn--block" onClick={() => handleAddSeason(product)}>
+                        {t('catalogue.addToCart')}
+                      </button>
                     </div>
                   )
                   : <button type="button" disabled className="btn btn--brass btn--block">{t('catalogue.soldOut')}</button>}

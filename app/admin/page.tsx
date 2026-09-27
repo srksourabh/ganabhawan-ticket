@@ -274,6 +274,7 @@ export default function AdminPage() {
           <p className="muted">{profile?.name || profile?.contact}</p>
         </div>
         <div className="admin__tabs" role="tablist">
+          <Link className="btn btn--primary" href="/admin/accounts">Accounts</Link>
           {([
             ['festival', 'Festival & theatre'],
             ['shows', 'Dramas'],

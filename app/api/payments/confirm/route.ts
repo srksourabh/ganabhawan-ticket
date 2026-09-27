@@ -1,7 +1,7 @@
 import { authenticated } from '@/lib/auth';
-import { confirmDevelopmentPayment, verifyRazorpayCallback } from '@/lib/payments';
+import { confirmDevelopmentPayment, syncRazorpayPayment, verifyRazorpayCallback } from '@/lib/payments';
 import { jsonOk, jsonError, readJson } from '@/lib/http';
-import { devMode } from '@/lib/env';
+import { usingDevelopmentPayments } from '@/lib/env';
 
 export async function POST(request: Request): Promise<Response> {
   try {
@@ -14,20 +14,24 @@ export async function POST(request: Request): Promise<Response> {
       razorpay_signature?: string;
     }>(request);
 
-    if (devMode() || process.env.PAYMENT_PROVIDER === 'development') {
-      const result = await confirmDevelopmentPayment(
+    if (usingDevelopmentPayments()) {
+      const result = await confirmDevelopmentPayment(user, body.bookingId ?? '', body.orderId ?? '');
+      return jsonOk(result);
+    }
+
+    if (body.razorpay_order_id && body.razorpay_payment_id && body.razorpay_signature) {
+      const result = await verifyRazorpayCallback(
+        {
+          razorpay_order_id: body.razorpay_order_id,
+          razorpay_payment_id: body.razorpay_payment_id,
+          razorpay_signature: body.razorpay_signature,
+        },
         user,
-        body.bookingId ?? '',
-        body.orderId ?? '',
       );
       return jsonOk(result);
     }
 
-    const result = await verifyRazorpayCallback({
-      razorpay_order_id: body.razorpay_order_id ?? '',
-      razorpay_payment_id: body.razorpay_payment_id ?? '',
-      razorpay_signature: body.razorpay_signature ?? '',
-    });
+    const result = await syncRazorpayPayment(user, body.bookingId ?? '');
     return jsonOk(result);
   } catch (error) {
     return jsonError(error);

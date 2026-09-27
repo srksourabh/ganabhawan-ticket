@@ -1,4 +1,10 @@
 export const devMode = () => process.env.APP_MODE === 'development';
+
+/** Development payment adapter only when Razorpay is not selected. */
+export function usingDevelopmentPayments() {
+  return process.env.PAYMENT_PROVIDER !== 'razorpay';
+}
+
 export function secret(name: string) {
   const value = process.env[name];
   if (!value || value.length < 32) throw new Error(`${name} must contain at least 32 characters. Run npm run setup locally.`);
