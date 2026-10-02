@@ -197,6 +197,7 @@ function BookPageInner() {
       const pending = JSON.parse(raw) as { productId?: string; quantity?: number; version?: number; attemptId?: string; name?: string; contact?: string };
       if (pending.productId !== productId || pending.version !== version || !pending.attemptId) return;
       sessionStorage.removeItem('gb-pending-book');
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (pending.name) setName(pending.name);
       if (pending.contact) setContact(pending.contact);
       if (pending.quantity) setQuantity(pending.quantity);

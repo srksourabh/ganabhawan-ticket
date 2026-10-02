@@ -124,13 +124,22 @@ export default function GatePage() {
 
       {result ? (
         <section className={`gate-result gate-result--${result.outcome}`} role="status">
+          <span style={{ fontSize: '3.5rem', lineHeight: 1 }} aria-hidden="true">
+            {result.outcome === 'ADMITTED' ? '✅' : result.outcome === 'DENIED' ? '🚫' : '⚠️'}
+          </span>
           <strong>{outcomeLabel}</strong>
-          <p>{result.message}</p>
-          {result.ticketRef && <p>{result.ticketRef}</p>}
-          <button type="button" className="btn btn--primary" onClick={nextGuest}>{t('gate.next')}</button>
+          <p style={{ fontSize: '1.2rem', fontWeight: 600 }}>{result.message}</p>
+          {result.ticketRef && (
+            <p style={{ fontFamily: 'ui-monospace, monospace', opacity: 0.8, fontSize: '0.9rem' }}>
+              {result.ticketRef}
+            </p>
+          )}
+          <button type="button" className="btn btn--primary" style={{ minWidth: 180, marginTop: '1rem' }} onClick={nextGuest}>
+            {t('gate.next')}
+          </button>
         </section>
       ) : (
-        <>
+        <div className="card stack">
           <label className="field">
             <span>{t('gate.showId')}</span>
             {shows.length > 0 ? (
@@ -150,7 +159,8 @@ export default function GatePage() {
 
           {!cameraOn && (
             <button type="button" className="btn btn--primary btn--block" onClick={() => { void startCamera(); }}>
-              {t('gate.camera')}
+              <span aria-hidden="true">📷</span>
+              <span>{t('gate.camera')}</span>
             </button>
           )}
           {cameraNote && <p className="banner banner--err" role="alert">{cameraNote}</p>}
@@ -164,14 +174,16 @@ export default function GatePage() {
           >
             <label className="field">
               <span>{t('gate.token')}</span>
-              <input value={token} onChange={(e) => setToken(e.target.value)} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+              <input value={token} onChange={(e) => setToken(e.target.value)} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="Paste or type token" />
             </label>
             <button type="submit" className="btn btn--ghost btn--block" disabled={loading || !token.trim() || !showId}>
               {loading ? t('gate.scanning') : t('gate.scan')}
             </button>
           </form>
-          <Link href="/admin/login" className="muted">{t('gate.staff')}</Link>
-        </>
+          <div style={{ textAlign: 'center', paddingTop: '0.5rem' }}>
+            <Link href="/admin/login" className="muted" style={{ fontSize: '0.88rem' }}>{t('gate.staff')}</Link>
+          </div>
+        </div>
       )}
     </main>
   );

@@ -131,6 +131,33 @@ export default function SiteHeader() {
           </Show>
         </nav>
       </div>
+
+      {/* Mobile Bottom Dock for Instant Navigation */}
+      <nav className="mobile-bottom-dock" aria-label="Mobile Navigation">
+        <Link href="/" className={`mobile-dock__link${pathname === '/' ? ' mobile-dock__link--active' : ''}`}>
+          <span className="mobile-dock__icon" aria-hidden="true">🏛️</span>
+          <span>{locale === 'bn' ? 'উৎসব' : 'Home'}</span>
+        </Link>
+        <Link href="/catalogue" className={`mobile-dock__link${pathname.startsWith('/catalogue') ? ' mobile-dock__link--active' : ''}`}>
+          <span className="mobile-dock__icon" aria-hidden="true">🎭</span>
+          <span>{t('nav.programme')}</span>
+        </Link>
+        <Link href="/cart" className={`mobile-dock__link${pathname.startsWith('/cart') ? ' mobile-dock__link--active' : ''}`}>
+          <span className="mobile-dock__icon" aria-hidden="true">🛒</span>
+          <span>{t('nav.cart')}</span>
+          {count > 0 && <span className="mobile-dock__badge">{count}</span>}
+        </Link>
+        <Link href="/tickets" className={`mobile-dock__link${pathname.startsWith('/tickets') ? ' mobile-dock__link--active' : ''}`}>
+          <span className="mobile-dock__icon" aria-hidden="true">🎫</span>
+          <span>{t('nav.tickets')}</span>
+        </Link>
+        {user && user.role !== 'customer' && (
+          <Link href="/gate" className={`mobile-dock__link${pathname.startsWith('/gate') ? ' mobile-dock__link--active' : ''}`}>
+            <span className="mobile-dock__icon" aria-hidden="true">🚪</span>
+            <span>{t('nav.gate')}</span>
+          </Link>
+        )}
+      </nav>
     </header>
   );
 }

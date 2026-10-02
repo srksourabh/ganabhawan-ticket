@@ -178,13 +178,16 @@ export default function CataloguePage() {
           {t('catalogue.intro', { festival: festivalName, venue })}
         </p>
 
-        <input
-          className="catalogue-page__search"
-          aria-label={t('catalogue.search')}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={t('catalogue.searchPlaceholder')}
-        />
+        <div className="catalogue-page__search-wrap">
+          <span className="catalogue-search-icon" aria-hidden="true">🔍</span>
+          <input
+            className="catalogue-page__search"
+            aria-label={t('catalogue.search')}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={t('catalogue.searchPlaceholder')}
+          />
+        </div>
 
         {visibleResults.length > 0 && (
           <div className="stack stack--sm catalogue-page__results">
@@ -305,11 +308,11 @@ export default function CataloguePage() {
                       )}
                     </div>
                     <div className="pick__actions">
-                      <button type="button" className="btn btn--primary" disabled={zone.available <= 0 || !zone.productId} onClick={() => handleAddDaily(zone)}>
+                      <button type="button" className="btn btn--primary btn--sm" disabled={zone.available <= 0 || !zone.productId} onClick={() => handleAddDaily(zone)}>
                         {zone.available > 0 ? t('catalogue.addDaily') : t('catalogue.soldOut')}
                       </button>
                       {zone.seasonPrice != null && (
-                        <button type="button" className="btn btn--ghost" disabled={(zone.seasonAvailable ?? 0) <= 0} onClick={() => handleAddSeasonFor(zone.category)}>
+                        <button type="button" className="btn btn--ghost btn--sm" disabled={(zone.seasonAvailable ?? 0) <= 0} onClick={() => handleAddSeasonFor(zone.category)}>
                           {(zone.seasonAvailable ?? 0) > 0 ? t('catalogue.addSeason') : t('catalogue.soldOut')}
                         </button>
                       )}

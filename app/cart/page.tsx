@@ -30,9 +30,16 @@ export default function CartPage() {
         {notice && <p role="alert" className="alert alert--error">{notice}</p>}
 
         {cart.items.length === 0 ? (
-          <div className="card" style={{ textAlign: 'center' }}>
-            <p style={{ margin: '0 0 1rem' }}>{t('cart.empty')}</p>
-            <Link href="/catalogue" className="btn btn--primary">{t('cart.browse')}</Link>
+          <div className="card" style={{ textAlign: 'center', padding: '3.5rem 1.5rem' }}>
+            <span style={{ fontSize: '3.5rem', display: 'block', marginBottom: '1rem' }} aria-hidden="true">🎭</span>
+            <h2 style={{ fontSize: '1.4rem', margin: '0 0 0.5rem', color: 'var(--burgundy-text)' }}>{t('cart.empty')}</h2>
+            <p style={{ color: 'var(--muted)', margin: '0 0 1.75rem', maxWidth: 360, marginInline: 'auto' }}>
+              {locale === 'bn' ? 'উৎসবের ১২টি অসাধারণ নাটকের টিকিট এখনই বেছে নিন।' : 'Explore 12 captivating plays and secure your festival seats.'}
+            </p>
+            <Link href="/catalogue" className="btn btn--primary" style={{ minWidth: 200, display: 'inline-flex' }}>
+              <span>{t('cart.browse')}</span>
+              <span className="btn__icon" aria-hidden="true">→</span>
+            </Link>
           </div>
         ) : (
           <div className="stack">

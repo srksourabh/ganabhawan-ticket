@@ -98,43 +98,36 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const add = useCallback((item: Omit<CartItem, 'quantity'>, quantity = 1): MutationResult => {
-    let result: MutationResult = { ok: true };
+    const existing = items.find((i) => i.productId === item.productId);
+    const nextQuantity = (existing?.quantity ?? 0) + quantity;
+    const othersTotal = items.reduce((sum, i) => sum + (i.productId === item.productId ? 0 : i.quantity), 0);
+    if (othersTotal + nextQuantity > MAX_TICKETS) {
+      return { ok: false, message: limitMessage() };
+    }
     setItems((previous) => {
-      const currentTotal = previous.reduce((sum, i) => sum + i.quantity, 0);
-      const existing = previous.find((i) => i.productId === item.productId);
-      const nextQuantity = (existing?.quantity ?? 0) + quantity;
-      const othersTotal = currentTotal - (existing?.quantity ?? 0);
-      if (othersTotal + nextQuantity > MAX_TICKETS) {
-        result = { ok: false, message: limitMessage() };
-        return previous;
-      }
-      if (existing) {
+      const match = previous.find((i) => i.productId === item.productId);
+      if (match) {
         return previous.map((i) => (i.productId === item.productId ? { ...i, ...item, quantity: nextQuantity } : i));
       }
       return [...previous, { ...item, quantity: nextQuantity }];
     });
-    return result;
-  }, []);
+    return { ok: true };
+  }, [items]);
 
   const updateQty = useCallback((productId: string, quantity: number): MutationResult => {
     if (quantity <= 0) {
       remove(productId);
       return { ok: true };
     }
-    let result: MutationResult = { ok: true };
-    setItems((previous) => {
-      const existing = previous.find((i) => i.productId === productId);
-      if (!existing) return previous;
-      const currentTotal = previous.reduce((sum, i) => sum + i.quantity, 0);
-      const othersTotal = currentTotal - existing.quantity;
-      if (othersTotal + quantity > MAX_TICKETS) {
-        result = { ok: false, message: limitMessage() };
-        return previous;
-      }
-      return previous.map((i) => (i.productId === productId ? { ...i, quantity } : i));
-    });
-    return result;
-  }, [remove]);
+    const existing = items.find((i) => i.productId === productId);
+    if (!existing) return { ok: true };
+    const othersTotal = items.reduce((sum, i) => sum + (i.productId === productId ? 0 : i.quantity), 0);
+    if (othersTotal + quantity > MAX_TICKETS) {
+      return { ok: false, message: limitMessage() };
+    }
+    setItems((previous) => previous.map((i) => (i.productId === productId ? { ...i, quantity } : i)));
+    return { ok: true };
+  }, [items, remove]);
 
   const clear = useCallback(() => setItems([]), []);
 

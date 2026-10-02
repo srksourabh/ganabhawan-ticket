@@ -30,8 +30,8 @@ export default function TicketDetailView({ booking, contact }: { booking: Bookin
   return (
     <main style={{ minHeight: '100vh', padding: '2rem 1.25rem' }}>
       <section style={{ maxWidth: 640, margin: '0 auto' }}>
-        <p style={{ marginBottom: '1rem' }}>
-          <Link href="/tickets" style={{ color: '#c9a227', textDecoration: 'none', fontSize: '.9rem' }}>{t('tickets.back')}</Link>
+        <p style={{ marginBottom: '1.25rem' }}>
+          <Link href="/tickets" className="btn btn--ghost btn--sm" style={{ display: 'inline-flex' }}>{t('tickets.back')}</Link>
         </p>
 
         <p className="eyebrow">
@@ -75,8 +75,9 @@ export default function TicketDetailView({ booking, contact }: { booking: Bookin
                     scan: ticket.admitted > 0 ? t('tickets.admitted') : t('tickets.notScanned'),
                   })}
                 </p>
-                <a href={`/api/tickets/${ticket.id}/pdf`} target="_blank" rel="noopener noreferrer">
-                  {t('tickets.downloadPdf')}
+                <a href={`/api/tickets/${ticket.id}/pdf`} target="_blank" rel="noopener noreferrer" className="btn btn--primary btn--sm" style={{ marginTop: '0.75rem', display: 'inline-flex' }}>
+                  <span aria-hidden="true">📥</span>
+                  <span>{t('tickets.downloadPdf')}</span>
                 </a>
               </div>
             ))}
