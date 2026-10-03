@@ -2,7 +2,7 @@ import { randomInt } from 'node:crypto';
 import { cookies, headers } from 'next/headers';
 import { auth, currentUser as clerkCurrentUser } from '@clerk/nextjs/server';
 import { query, transaction, one } from './db';
-import { devMode } from './env';
+import { assertLiveConfiguration, devMode, isLocalAppUrl } from './env';
 import { keyedHash, normalizeContact, token, hash, safeEqual, decrypt, totpValid, hashPassword, verifyPassword } from './security';
 import { AppError, requireValue } from './errors';
 import type { User, Role } from './types';
@@ -57,7 +57,21 @@ export async function sendMessage(contact: string, subject: string, message: str
   requireValue(response.ok, 'SMS delivery is temporarily unavailable.', 503);
 }
 
+function staffMfaRequired() {
+  return !(devMode() && isLocalAppUrl());
+}
+
+export function verifiedClerkEmail(clerkUser: {
+  primaryEmailAddress?: { emailAddress?: string | null; verification?: { status?: string | null } | null } | null;
+  emailAddresses: { emailAddress?: string | null; verification?: { status?: string | null } | null }[];
+}) {
+  const primary = clerkUser.primaryEmailAddress;
+  if (primary?.emailAddress && primary.verification?.status === 'verified') return primary.emailAddress;
+  return clerkUser.emailAddresses.find((entry) => entry.verification?.status === 'verified')?.emailAddress ?? null;
+}
+
 export async function requestOtp(raw: string, ip: string) {
+  assertLiveConfiguration();
   let contact: string;
   try {
     contact = normalizeContact(raw);
@@ -82,7 +96,7 @@ export async function requestOtp(raw: string, ip: string) {
   return {
     challengeId: challenge.id,
     message: sms ? 'If the number can receive SMS, your code is on its way.' : 'If delivery is available, your code is on its way.',
-    ...(devMode() && otpProvider() === 'development' ? { developmentCode: code } : {}),
+    ...(devMode() && isLocalAppUrl() && otpProvider() === 'development' ? { developmentCode: code } : {}),
   };
 }
 
@@ -95,7 +109,7 @@ export async function verifyOtp(challengeId: string, code: string, mfaCode = '')
     await c.query('UPDATE otp_challenges SET attempts=attempts+1 WHERE id=$1', [challengeId]);
     if (!safeEqual(challenge.digest, keyedHash(challenge.contact + ':' + code))) return { error: 'The code is incorrect. Please try again.' };
     let user = await one<User>(c, 'SELECT * FROM users WHERE contact=$1', [challenge.contact]);
-    if (user && user.role !== 'customer' && !devMode()) {
+    if (user && user.role !== 'customer' && staffMfaRequired()) {
       if (!user.mfa_secret || !totpValid(decrypt(user.mfa_secret), mfaCode)) return { error: 'A valid staff authenticator code is required.' };
     }
     await c.query('UPDATE otp_challenges SET used=true WHERE id=$1', [challengeId]);
@@ -110,10 +124,12 @@ export async function verifyOtp(challengeId: string, code: string, mfaCode = '')
 }
 
 /** Email/username + password for staff/admin dashboard access. */
-export async function loginWithPassword(identifier: string, password: string) {
+export async function loginWithPassword(identifier: string, password: string, mfaCode = '', ip = '') {
+  assertLiveConfiguration();
   const raw = identifier.trim();
   requireValue(raw.length > 0 && password.length >= 8, 'Enter your email (or username) and password (min 8 characters).', 400);
-  await rateLimit('password-ip:' + hash(raw.toLowerCase()), 20, 3600);
+  await rateLimit('password-ip:' + hash(ip || 'unknown'), 20, 3600);
+  await rateLimit('password-account:' + hash(raw.toLowerCase()), 100, 3600);
 
   const result = await transaction(async (c) => {
     const user = await one<User & { password_hash: string | null; username: string | null }>(
@@ -124,6 +140,9 @@ export async function loginWithPassword(identifier: string, password: string) {
     if (!user || !user.password_hash) return { error: 'Incorrect email or password.' };
     if (!verifyPassword(password, user.password_hash)) return { error: 'Incorrect email or password.' };
     if (user.role === 'customer') return { error: 'This account cannot access the admin dashboard.' };
+    if (staffMfaRequired()) {
+      if (!user.mfa_secret || !totpValid(decrypt(user.mfa_secret), mfaCode)) return { error: 'A valid staff authenticator code is required.' };
+    }
     const sessionToken = token();
     await c.query("INSERT INTO sessions(digest,user_id,expires_at) VALUES($1,$2,now()+interval '12 hours')", [hash(sessionToken), user.id]);
     await audit(c, user.id, 'auth.password', user.id);
@@ -163,11 +182,13 @@ export async function ensureUserFromClerk(clerkId: string, email: string, name =
   return transaction(async (c) => {
     let user = await one<User>(c, 'SELECT id, contact, name, role FROM users WHERE clerk_id=$1', [clerkId]);
     if (user) {
+      if (user.role !== 'customer') throw new AppError(403, 'Staff accounts must sign in with a password and authenticator.');
       if (name && !user.name) await c.query('UPDATE users SET name=$1 WHERE id=$2', [name, user.id]);
       return (await one<User>(c, 'SELECT id, contact, name, role FROM users WHERE id=$1', [user.id]))!;
     }
     user = await one<User>(c, 'SELECT id, contact, name, role FROM users WHERE contact=$1 FOR UPDATE', [contact]);
     if (user) {
+      if (user.role !== 'customer') throw new AppError(403, 'Staff accounts must sign in with a password and authenticator.');
       await c.query("UPDATE users SET clerk_id=$1, name=CASE WHEN name='' AND $2<>'' THEN $2 ELSE name END WHERE id=$3", [clerkId, name, user.id]);
       await audit(c, user.id, 'auth.clerk.link', user.id, { clerkId });
       return (await one<User>(c, 'SELECT id, contact, name, role FROM users WHERE id=$1', [user.id]))!;
@@ -185,10 +206,7 @@ async function userFromClerkSession(): Promise<User | null> {
     if (!session.userId) return null;
     const clerkUser = await clerkCurrentUser();
     if (!clerkUser) return null;
-    const email =
-      clerkUser.primaryEmailAddress?.emailAddress ||
-      clerkUser.emailAddresses.find((e) => e.verification?.status === 'verified')?.emailAddress ||
-      clerkUser.emailAddresses[0]?.emailAddress;
+    const email = verifiedClerkEmail(clerkUser);
     if (!email) return null;
     const name = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(' ').trim();
     return ensureUserFromClerk(clerkUser.id, email, name);

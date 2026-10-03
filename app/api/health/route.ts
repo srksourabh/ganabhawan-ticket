@@ -10,7 +10,8 @@ export async function GET(): Promise<Response> {
     } catch {
       db = false;
     }
-    return jsonOk({ ok: true, db });
+    if (!db) return jsonOk({ ok: false, db: false }, 503);
+    return jsonOk({ ok: true, db: true });
   } catch (error) {
     return jsonError(error);
   }

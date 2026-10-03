@@ -101,5 +101,12 @@ export async function accountsLedger() {
      ORDER BY r.created_at DESC
      LIMIT 80`,
   );
-  return { ...money, attempts, payments, refunds };
+  const cases = await query(
+    `SELECT id, key, kind, state, detail, created_at
+     FROM reconciliation_cases
+     WHERE state='OPEN'
+     ORDER BY created_at DESC
+     LIMIT 50`,
+  );
+  return { ...money, attempts, payments, refunds, cases };
 }

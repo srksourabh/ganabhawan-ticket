@@ -140,6 +140,40 @@ export async function transaction<T>(fn: (client: Client) => Promise<T>, commerc
   }
 }
 
+/** Holds a session advisory lock across the callback, including external HTTP. */
+export async function withSessionLock<T>(key: string, fn: (client: Client) => Promise<T>): Promise<T> {
+  if (prefersNeonHttp()) {
+    const pool = new NeonPool({ connectionString: connectionString(), max: 1 });
+    const client = await pool.connect();
+    try {
+      await client.query('SELECT pg_advisory_lock(hashtext($1))', [key]);
+      return await fn(wrapClient(client, () => client.release()));
+    } finally {
+      try {
+        await client.query('SELECT pg_advisory_unlock(hashtext($1))', [key]);
+      } catch {
+        // The connection may already be dead.
+      }
+      client.release();
+      await pool.end();
+    }
+  }
+
+  const pool = await getPgPool();
+  const client = await pool.connect();
+  try {
+    await client.query('SELECT pg_advisory_lock(hashtext($1))', [key]);
+    return await fn(wrapClient(client, () => client.release()));
+  } finally {
+    try {
+      await client.query('SELECT pg_advisory_unlock(hashtext($1))', [key]);
+    } catch {
+      // The connection may already be dead.
+    }
+    client.release();
+  }
+}
+
 export async function one<T = QueryRow>(client: Client, sql: string, values: unknown[] = []): Promise<T | undefined> {
   return (await client.query<T>(sql, values)).rows[0];
 }

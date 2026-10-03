@@ -27,6 +27,15 @@ type PaymentRow = {
   reason?: string;
 };
 
+type CaseRow = {
+  id: string;
+  key: string;
+  kind: string;
+  state: string;
+  created_at: string;
+  detail: unknown;
+};
+
 type Ledger = {
   income: number;
   refunded: number;
@@ -35,6 +44,7 @@ type Ledger = {
   attempts: Attempt[];
   payments: PaymentRow[];
   refunds: PaymentRow[];
+  cases?: CaseRow[];
 };
 
 const money = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN')}`;
@@ -92,6 +102,30 @@ export default function AccountsPage() {
         <article className="card"><p className="eyebrow">Balance</p><strong>{money(ledger.balance)}</strong><p className="muted">Income minus refunds</p></article>
         <article className="card"><p className="eyebrow">On hold</p><strong>{money(ledger.pending)}</strong><p className="muted">Reserved, not yet paid</p></article>
       </div>
+
+      <section className="stack">
+        <h2 className="h3">Open reconciliation cases</h2>
+        <div className="ledger-table">
+          <table>
+            <thead>
+              <tr><th>When</th><th>Kind</th><th>Key</th><th>Detail</th></tr>
+            </thead>
+            <tbody>
+              {(ledger.cases ?? []).length === 0 && (
+                <tr><td colSpan={4}>No open cases.</td></tr>
+              )}
+              {(ledger.cases ?? []).map((row) => (
+                <tr key={row.id}>
+                  <td>{when(row.created_at)}</td>
+                  <td>{row.kind}</td>
+                  <td>{row.key}</td>
+                  <td>{typeof row.detail === 'string' ? row.detail : JSON.stringify(row.detail)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <section className="stack">
         <h2 className="h3">People who tried to book</h2>

@@ -1,4 +1,4 @@
-const API = (process.env.EXPO_PUBLIC_API_URL || 'https://ganabhawan-festival.srksourabh.workers.dev').replace(/\/$/, '');
+const API = (process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000').replace(/\/$/, '');
 
 export function mediaUrl(path: string) {
   if (!path) return '';
@@ -8,6 +8,7 @@ export function mediaUrl(path: string) {
 
 export async function api<T>(path: string, token: string | null, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
+  headers.set('x-client', 'mobile');
   if (token) headers.set('Authorization', `Bearer ${token}`);
   if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   const response = await fetch(`${API}${path}`, { ...init, headers });

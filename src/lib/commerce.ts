@@ -20,6 +20,9 @@ export async function expireIn(c:Client,id?:string) {
  return expired.length;
 }
 export async function expireHolds() { return transaction(c=>expireIn(c),true); }
+export function holdIdempotencyKey(productId: string, quantity: number, version: number) {
+  return `hold:${productId}:${quantity}:${version}`.slice(0, 128);
+}
 export async function reserve(user:User,input:{productId:string;quantity:number;version:number},key:string) {
  requireValue(key.length>=8 && key.length<=128,'A valid idempotency key is required.',400);
  assertLiveConfiguration();
@@ -37,6 +40,12 @@ export async function reserve(user:User,input:{productId:string;quantity:number;
   requireValue(coverage.length>0 && coverage.every(s=>s.status==='PUBLISHED'&&new Date(s.starts_at).getTime()>Date.now()),'Sales for this performance have closed.');
   requireValue(coverage.every(p=>p.allocation-p.held-p.committed>=input.quantity),'Not enough tickets remain. Please choose fewer tickets.');
   if(product.cap!==null) { const used=await one(c,"SELECT COALESCE(sum(quantity),0)::int n FROM bookings WHERE product_id=$1 AND status IN ('HELD','PAYMENT_PENDING','CONFIRMED')",[product.id]); requireValue(used!.n+input.quantity<=product.cap,'The product limit has been reached.'); }
+  const open=await one(c,"SELECT * FROM bookings WHERE user_id=$1 AND product_id=$2 AND status IN ('HELD','PAYMENT_PENDING') AND expires_at>now() ORDER BY created_at DESC LIMIT 1",[user.id,product.id]);
+  if(open) {
+   requireValue(Number(open.quantity)===input.quantity,'You already have a checkout in progress for this ticket. Finish it or wait for the hold to expire.',409);
+   await c.query('INSERT INTO idempotency(scope,key,input_digest,result) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING',[scope,key,digest,JSON.stringify(open)]);
+   return open;
+  }
   const snapshot={name:product.name,category:product.category,kind:product.kind,terms:product.terms,physicalRequired:product.physical_required,coverage:coverage.map(s=>({showId:s.show_id,poolId:s.pool_id,title:s.title,startsAt:s.starts_at,weight:s.weight}))};
   const booking=(await one(c,`INSERT INTO bookings(reference,user_id,product_id,quantity,unit_price,total,product_version,snapshot,status,expires_at)
    VALUES($1,$2,$3,$4,$5,$6,$7,$8,'HELD',now()+$9*interval '1 minute') RETURNING *`,
@@ -65,7 +74,13 @@ export async function fulfill(bookingId:string,payment:CapturedPayment) {
   const live=allocations.length>0&&allocations.every(a=>a.state==='HELD');
   const covered=b.snapshot.coverage as {showId:string;poolId:string;weight:number}[];
   const shows=(await c.query('SELECT status FROM shows WHERE id=ANY($1::uuid[])',[covered.map(s=>s.showId)])).rows;
-  const canFulfill=shows.every(s=>s.status==='PUBLISHED') && allocations.length===covered.length && (live||allocations.every(a=>a.allocation-a.held-a.committed>=a.quantity));
+  const productCap=await one<{cap:number|null}>(c,'SELECT cap FROM products WHERE id=$1',[b.product_id]);
+  let withinCap=true;
+  if(productCap && productCap.cap!==null) {
+   const used=await one<{n:number}>(c,"SELECT COALESCE(sum(quantity),0)::int n FROM bookings WHERE product_id=$1 AND status='CONFIRMED' AND id<>$2",[b.product_id,b.id]);
+   withinCap=(used?.n??0)+Number(b.quantity)<=Number(productCap.cap);
+  }
+  const canFulfill=shows.every(s=>s.status==='PUBLISHED') && allocations.length===covered.length && withinCap && (live||allocations.every(a=>a.allocation-a.held-a.committed>=a.quantity));
   if(!canFulfill) {
    // A live hold must also be released if an organiser cancelled its show.
    if(live) { for(const a of allocations) { await c.query('UPDATE pools SET held=held-$1,version=version+1 WHERE id=$2',[a.quantity,a.pool_id]); await movement(c,a.pool_id,'capture-release:'+b.id,-a.quantity,0,'Captured booking no longer eligible'); } await c.query("UPDATE hold_allocations SET state='RELEASED' WHERE booking_id=$1",[b.id]); }
@@ -89,6 +104,99 @@ export async function fulfill(bookingId:string,payment:CapturedPayment) {
   await audit(c,b.user_id,'booking.confirmed',b.id,{paymentId:record.id});
   return {...b,status:'CONFIRMED'};
  },true);
+}
+/** Voids sales for a cancelled show. Full bookings are refunded; season leftovers stay for finance. */
+export async function cancelShowSales(c: Client, showId: string, actorId: string) {
+  const pools = (await c.query(
+    'SELECT p.id FROM pools p JOIN capacities cap ON cap.id=p.capacity_id WHERE cap.show_id=$1 ORDER BY p.id FOR UPDATE OF p',
+    [showId],
+  )).rows as { id: string }[];
+  if (pools.length === 0) return;
+  const poolIds = new Set(pools.map((p) => p.id));
+  const bookings = (await c.query(
+    `SELECT b.id, b.status, b.user_id FROM bookings b
+     WHERE b.id IN (
+       SELECT h.booking_id FROM hold_allocations h
+       WHERE h.pool_id = ANY($1::uuid[]) AND h.state IN ('HELD','COMMITTED')
+     ) AND b.status IN ('HELD','PAYMENT_PENDING','CONFIRMED')
+     ORDER BY b.id FOR UPDATE`,
+    [pools.map((p) => p.id)],
+  )).rows as { id: string; status: string; user_id: string }[];
+
+  for (const b of bookings) {
+    const allocations = (await c.query(
+      "SELECT pool_id, quantity, state FROM hold_allocations WHERE booking_id=$1 AND state IN ('HELD','COMMITTED') ORDER BY pool_id FOR UPDATE",
+      [b.id],
+    )).rows as { pool_id: string; quantity: number; state: string }[];
+
+    if (b.status === 'HELD' || b.status === 'PAYMENT_PENDING') {
+      for (const a of allocations) {
+        if (a.state !== 'HELD') continue;
+        await c.query('UPDATE pools SET held=held-$1, version=version+1 WHERE id=$2', [a.quantity, a.pool_id]);
+        await movement(c, a.pool_id, 'show-cancel:' + b.id, -a.quantity, 0, 'Show cancelled');
+      }
+      await c.query("UPDATE hold_allocations SET state='RELEASED' WHERE booking_id=$1 AND state='HELD'", [b.id]);
+      await c.query("UPDATE bookings SET status='CANCELLED' WHERE id=$1", [b.id]);
+      await job(c, 'NOTICE', 'cancel-hold:' + showId + ':' + b.id, {
+        bookingId: b.id,
+        message: 'A performance in your hold was cancelled. The hold has been released. You have not been charged.',
+      });
+      await audit(c, actorId, 'show.cancel.booking', b.id, { showId, status: 'CANCELLED' });
+      continue;
+    }
+
+    for (const a of allocations) {
+      if (a.state !== 'COMMITTED' || !poolIds.has(a.pool_id)) continue;
+      await c.query('UPDATE pools SET committed=committed-$1, version=version+1 WHERE id=$2', [a.quantity, a.pool_id]);
+      await movement(c, a.pool_id, 'show-cancel:' + b.id, 0, -a.quantity, 'Show cancelled');
+      await c.query("UPDATE hold_allocations SET state='RELEASED' WHERE booking_id=$1 AND pool_id=$2", [b.id, a.pool_id]);
+    }
+    await c.query(
+      "UPDATE entitlements SET status='CANCELLED' WHERE show_id=$1 AND status='ACTIVE' AND ticket_id IN (SELECT id FROM tickets WHERE booking_id=$2)",
+      [showId, b.id],
+    );
+    await c.query(
+      `UPDATE credentials SET status='REVOKED' WHERE status='ACTIVE' AND ticket_id IN (
+         SELECT t.id FROM tickets t WHERE t.booking_id=$1 AND NOT EXISTS (
+           SELECT 1 FROM entitlements e WHERE e.ticket_id=t.id AND e.status='ACTIVE'
+         )
+       )`,
+      [b.id],
+    );
+    await c.query(
+      `UPDATE tickets SET status='CANCELLED' WHERE booking_id=$1 AND status='ACTIVE' AND NOT EXISTS (
+         SELECT 1 FROM entitlements e WHERE e.ticket_id=tickets.id AND e.status='ACTIVE'
+       )`,
+      [b.id],
+    );
+    const remaining = await one<{ n: number }>(c, "SELECT count(*)::int n FROM tickets WHERE booking_id=$1 AND status='ACTIVE'", [b.id]);
+    if ((remaining?.n ?? 0) === 0) {
+      await c.query("UPDATE bookings SET status='CANCELLED' WHERE id=$1", [b.id]);
+      const payment = await one<{ id: string; amount: number }>(
+        c,
+        "SELECT id, amount FROM payments WHERE booking_id=$1 AND state='CAPTURED' ORDER BY created_at DESC LIMIT 1",
+        [b.id],
+      );
+      if (payment) {
+        const already = await one(c, 'SELECT 1 FROM refunds WHERE payment_id=$1', [payment.id]);
+        if (!already) await refundCase(c, { id: b.id }, payment.id, Number(payment.amount), 'Show cancelled');
+      }
+      await job(c, 'NOTICE', 'cancel-booking:' + showId + ':' + b.id, {
+        bookingId: b.id,
+        message: 'A performance you booked was cancelled. Your tickets for it are void, and a refund has been started if you paid.',
+      });
+    } else {
+      await c.query(
+        'INSERT INTO reconciliation_cases(key,kind,detail) VALUES($1,$2,$3) ON CONFLICT(key) DO NOTHING',
+        ['show-cancel:' + showId + ':' + b.id, 'SHOW_CANCEL', JSON.stringify({ bookingId: b.id, showId, reason: 'Season booking still covers other performances. Refund is not automatic.' })],
+      );
+      await job(c, 'NOTICE', 'cancel-show-partial:' + showId + ':' + b.id, {
+        bookingId: b.id,
+        message: 'One performance in your season booking was cancelled. Tickets for that performance are void. Other performances remain valid. The organiser will confirm any refund.',
+      });
+    }
+    await audit(c, actorId, 'show.cancel.booking', b.id, { showId });
+  }
 }
 async function refundCase(c:Client,b:Record<string,unknown>,paymentId:string,amount:number,reason:string) {
  const refund=(await one(c,'INSERT INTO refunds(booking_id,payment_id,amount,reason) VALUES($1,$2,$3,$4) RETURNING id',[b.id,paymentId,amount,reason]))!;

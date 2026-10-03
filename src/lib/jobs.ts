@@ -3,7 +3,16 @@ import { expireHolds } from './commerce';
 import { deliverBooking } from './tickets';
 import { usingDevelopmentPayments } from './env';
 import { reconcileOpenRazorpayPayments } from './payments';
-import { razorpayRefundPayment } from './razorpay';
+import { razorpayListPaymentRefunds, razorpayRefundPayment, type RazorpayRefundEntity } from './razorpay';
+import { sendMessage } from './auth';
+
+export const STALE_JOB_MINUTES = 15;
+
+export const PRUNE_SQL = [
+  "DELETE FROM rate_limits WHERE reset_at < now() - interval '1 day'",
+  "DELETE FROM idempotency WHERE created_at < now() - interval '2 days'",
+  "DELETE FROM scan_requests WHERE created_at < now() - interval '7 days'",
+];
 
 const MAX_ATTEMPTS = 5;
 
@@ -12,7 +21,33 @@ function backoffMinutes(attempts: number): number {
   return Math.pow(2, attempts);
 }
 
+async function rememberRefund(refundId: string, provider: RazorpayRefundEntity) {
+  const failed = provider.status === 'failed';
+  const done = provider.status === 'processed';
+  await query(
+    `UPDATE refunds SET provider_refund_id=$1, state=CASE WHEN $2 THEN 'FAILED' WHEN $3 THEN 'SUCCEEDED' ELSE 'PROCESSING' END WHERE id=$4`,
+    [provider.id, failed, done, refundId],
+  );
+  if (!done) throw new Error(failed ? 'Refund failed at the payment provider.' : 'Refund is still processing.');
+}
+
 export async function processJobs(limit = 20): Promise<number> {
+  try {
+    await query(
+      `UPDATE jobs SET state='PENDING', locked_at=NULL
+       WHERE state='RUNNING' AND locked_at IS NOT NULL AND locked_at < now() - ($1 * interval '1 minute')`,
+      [STALE_JOB_MINUTES],
+    );
+  } catch (err) {
+    console.error('[jobs] reclaim error', err);
+  }
+
+  try {
+    for (const sql of PRUNE_SQL) await query(sql);
+  } catch (err) {
+    console.error('[jobs] prune error', err);
+  }
+
   try {
     await expireHolds();
   } catch (err) {
@@ -89,6 +124,21 @@ async function handleJob(kind: string, payload: Record<string, unknown>): Promis
       break;
     }
 
+    case 'NOTICE': {
+      const bookingId = payload['bookingId'] as string | undefined;
+      const message = payload['message'] as string | undefined;
+      if (!bookingId || !message) throw new Error('NOTICE job missing bookingId or message');
+      const row = (
+        await query<{ contact: string; reference: string }>(
+          'SELECT u.contact, b.reference FROM bookings b JOIN users u ON u.id=b.user_id WHERE b.id=$1',
+          [bookingId],
+        )
+      )[0];
+      if (!row) return;
+      await sendMessage(row.contact, `Booking update ${row.reference}`, message);
+      break;
+    }
+
     case 'REFUND': {
       const refundId = payload['refundId'] as string | undefined;
       if (!refundId) throw new Error('REFUND job missing refundId');
@@ -114,12 +164,18 @@ async function handleJob(kind: string, payload: Record<string, unknown>): Promis
         break;
       }
 
-      await query("UPDATE refunds SET state='PROCESSING' WHERE id=$1", [refundId]);
-      const providerRefund = await razorpayRefundPayment(refund.provider_payment_id, Number(refund.amount));
-      await query("UPDATE refunds SET state='SUCCEEDED', provider_refund_id=$1 WHERE id=$2", [
-        providerRefund.id,
-        refundId,
-      ]);
+      await query("UPDATE refunds SET state='PROCESSING' WHERE id=$1 AND state='REQUESTED'", [refundId]);
+      const existing = await razorpayListPaymentRefunds(refund.provider_payment_id);
+      const match =
+        existing.find((item) => item.id === refund.provider_refund_id) ||
+        existing.find((item) => item.notes?.refundId === refund.id);
+      if (match) {
+        await rememberRefund(refund.id, match);
+        break;
+      }
+
+      const providerRefund = await razorpayRefundPayment(refund.provider_payment_id, Number(refund.amount), refund.id);
+      await rememberRefund(refund.id, providerRefund);
       break;
     }
 

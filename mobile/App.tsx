@@ -295,8 +295,8 @@ function Door({ token }: { token: string }) {
         body: JSON.stringify({
           ticketToken: value,
           showId,
-          requestId: `${Date.now()}`,
-          gateId: 'main',
+          requestId: crypto.randomUUID(),
+          gateId: 'gate-one',
           deviceId: 'gate-one',
         }),
       });

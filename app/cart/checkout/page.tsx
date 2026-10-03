@@ -86,7 +86,7 @@ export default function CheckoutPage() {
 
     if (!bookingId) {
       setLines((prev) => updateLine(prev, item.productId, { status: 'processing' }));
-      const idempotencyKey = crypto.randomUUID();
+      const idempotencyKey = `hold:${item.productId}:${item.quantity}:${item.version}`.slice(0, 128);
       const recorded = await fetch('/api/booking-attempts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -140,9 +140,10 @@ export default function CheckoutPage() {
         await checkoutLine(line);
       } catch (error) {
         anyFailure = true;
+        const refund = error instanceof Error && error.message === 'REFUND_REQUIRED';
         setLines((prev) => updateLine(prev, line.item.productId, {
           status: 'error',
-          message: error instanceof Error && /cancelled/i.test(error.message) ? t('pay.cancelled') : error instanceof Error ? error.message : t('pay.failed'),
+          message: refund ? t('pay.refunded') : error instanceof Error && /cancelled/i.test(error.message) ? t('pay.cancelled') : error instanceof Error ? error.message : t('pay.failed'),
         }));
       }
     }

@@ -123,6 +123,14 @@ export async function confirmRazorpayPayment(response: RazorpaySuccess) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((body as { error?: string }).error || 'Payment confirmation failed.');
+  return assertBookingIssued(body);
+}
+
+export function assertBookingIssued(body: unknown) {
+  const status = body && typeof body === 'object' && 'status' in body ? String((body as { status?: unknown }).status ?? '') : '';
+  if (status === 'REFUND_REQUIRED') {
+    throw new Error('REFUND_REQUIRED');
+  }
   return body;
 }
 
@@ -134,7 +142,7 @@ export async function confirmDevelopmentPayment(order: RazorpayOrder) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((body as { error?: string }).error || 'Payment confirmation failed.');
-  return body;
+  return assertBookingIssued(body);
 }
 
 async function syncBookingPayment(bookingId: string) {
@@ -145,7 +153,7 @@ async function syncBookingPayment(bookingId: string) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((body as { error?: string }).error || 'Payment confirmation failed.');
-  return body;
+  return assertBookingIssued(body);
 }
 
 export async function payExistingOrder(

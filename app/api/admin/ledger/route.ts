@@ -6,7 +6,7 @@ import { jsonError, jsonOk } from '@/lib/http';
 export async function GET(): Promise<Response> {
   try {
     const user = await authenticated();
-    if (user.role === 'customer') throw new AppError(403, 'Staff sign-in required.');
+    if (user.role !== 'owner' && user.role !== 'finance') throw new AppError(403, 'Only the owner and finance can view the ledger.');
     return jsonOk(await accountsLedger());
   } catch (error) {
     return jsonError(error);
