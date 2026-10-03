@@ -1,6 +1,6 @@
 'use client';
 
-import type { KeyboardEvent } from 'react';
+import { useState, type KeyboardEvent } from 'react';
 import { useLocale } from './LocaleProvider';
 import { dateLocale, zoneLabel, zoneWhere } from '@/lib/i18n';
 import { AUDITORIUM_PHOTO } from '@/lib/brand';
@@ -26,66 +26,153 @@ type Props = {
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
 
-/** Schematic geometry: stage band at the bottom, Premier nearest the stage. */
-const SHAPES: Record<AuditoriumCategory, { x: number; y: number; w: number; h: number }> = {
-  Balcony: { x: 14, y: 4, w: 72, h: 26 },
-  Superior: { x: 8, y: 34, w: 84, h: 22 },
-  Premier: { x: 2, y: 60, w: 96, h: 22 },
+/**
+ * Division overlay geometry for the hall photo (viewBox 0 0 100 56.25).
+ * Photo is shot FROM the stage: stage floor at the bottom, Premier seats
+ * nearest the camera, Superior under the balcony overhang, Balcony upstairs.
+ */
+const DIVISIONS: Record<AuditoriumCategory, { points: string; labelY: number; subY: number }> = {
+  Balcony: { points: '17,23.6 21,16.5 50,15 79,16.5 83,23.6', labelY: 19, subY: 21.6 },
+  Superior: { points: '11,37.1 14,29.2 86,29.2 89,37.1', labelY: 32.4, subY: 35 },
+  Premier: { points: '5,48.4 9,38.2 91,38.2 95,48.4', labelY: 42.4, subY: 45.2 },
 };
 
 export default function AuditoriumMap({
   zones,
+  photoUrl = AUDITORIUM_PHOTO,
   selectedProductId,
   onSelectZone,
 }: Props) {
   const { locale, t } = useLocale();
   const dl = dateLocale(locale);
+  const [activeCategory, setActiveCategory] = useState<AuditoriumCategory | null>(null);
 
   function isSoldOut(zone: AuditoriumZone) {
     return !zone.productId || zone.available <= 0;
   }
 
-  function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, zone: AuditoriumZone) {
+  function activate(zone: AuditoriumZone) {
+    if (isSoldOut(zone)) return;
+    onSelectZone(zone);
+  }
+
+  function handleKeyDown(event: KeyboardEvent<SVGGElement>, zone: AuditoriumZone) {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      if (!isSoldOut(zone)) onSelectZone(zone);
+      setActiveCategory(zone.category);
+      activate(zone);
     }
   }
 
+  function clearActive(category: AuditoriumCategory) {
+    setActiveCategory((current) => (current === category ? null : current));
+  }
+
+  const activeZone = zones.find((zone) => zone.category === activeCategory) ?? null;
+
   return (
-    <div className="auditorium auditorium--schematic">
+    <div className="auditorium auditorium--photo">
       <div className="auditorium__floors" aria-hidden="true">
         <span>{t('map.firstFloor')} · {zoneLabel(locale, 'Balcony')}</span>
         <span>{t('map.ground')} · {zoneLabel(locale, 'Premier')} / {zoneLabel(locale, 'Superior')}</span>
       </div>
 
-      <svg viewBox="0 0 100 100" className="auditorium__schem" role="img" aria-label={t('map.aria')} preserveAspectRatio="xMidYMid meet">
-        {zones.map((zone) => {
-          const soldOut = isSoldOut(zone);
-          const isSelected = zone.productId !== null && zone.productId === selectedProductId;
-          const shape = SHAPES[zone.category];
-          return (
-            <g key={zone.category} aria-hidden="true">
-              <rect
-                x={shape.x}
-                y={shape.y}
-                width={shape.w}
-                height={shape.h}
-                rx={2.5}
-                className={`auditorium__schem-zone auditorium__schem-zone--${zone.category.toLowerCase()}${soldOut ? ' auditorium__schem-zone--soldout' : ''}${isSelected ? ' auditorium__schem-zone--selected' : ''}`}
-              />
-              <text x={shape.x + shape.w / 2} y={shape.y + shape.h / 2 - 1} textAnchor="middle" className="auditorium__schem-label">
-                {zoneLabel(locale, zone.category)}
-              </text>
-              <text x={shape.x + shape.w / 2} y={shape.y + shape.h / 2 + 5} textAnchor="middle" className="auditorium__schem-sub">
-                {soldOut ? t('map.soldOut') : `${money(zone.price, dl)} · ${zone.available}`}
-              </text>
-            </g>
-          );
-        })}
-        <rect x={0} y={86} width={100} height={14} rx={2} className="auditorium__schem-stage" />
-        <text x={50} y={94.5} textAnchor="middle" className="auditorium__schem-stage-label">{t('map.stage')}</text>
-      </svg>
+      <div className="auditorium__frame">
+        <img className="auditorium__photo" src={photoUrl} alt="" />
+        <svg
+          viewBox="0 0 100 56.25"
+          className="auditorium__overlay"
+          role="group"
+          aria-label={t('map.aria')}
+          preserveAspectRatio="none"
+        >
+          <defs>
+            <linearGradient id="dz-premier" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#7a1e28" stopOpacity="0.55" />
+              <stop offset="1" stopColor="#7a1e28" stopOpacity="0.75" />
+            </linearGradient>
+            <linearGradient id="dz-superior" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#8f6d14" stopOpacity="0.5" />
+              <stop offset="1" stopColor="#8f6d14" stopOpacity="0.7" />
+            </linearGradient>
+            <linearGradient id="dz-balcony" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#1f3a5f" stopOpacity="0.5" />
+              <stop offset="1" stopColor="#1f3a5f" stopOpacity="0.7" />
+            </linearGradient>
+          </defs>
+
+          <rect className="auditorium__stage-band" x="0" y="49.5" width="100" height="6.75" />
+          <text x="50" y="53.6" textAnchor="middle" className="auditorium__stage-chip">{t('map.stage')}</text>
+
+          {zones.map((zone) => {
+            const soldOut = isSoldOut(zone);
+            const isSelected = zone.productId !== null && zone.productId === selectedProductId;
+            const isActive = activeCategory === zone.category;
+            const label = zoneLabel(locale, zone.category);
+            const availability = soldOut ? t('map.soldOut') : t('map.available', { count: zone.available });
+            const className = [
+              'auditorium__division',
+              `auditorium__division--${zone.category.toLowerCase()}`,
+              soldOut ? 'auditorium__division--soldout' : '',
+              isActive ? 'auditorium__division--active' : '',
+              isSelected ? 'auditorium__division--selected' : '',
+            ].filter(Boolean).join(' ');
+            const shape = DIVISIONS[zone.category];
+
+            return (
+              <g
+                key={zone.category}
+                tabIndex={0}
+                role="button"
+                aria-pressed={isSelected}
+                aria-disabled={soldOut}
+                aria-label={`${label}. ${zoneWhere(locale, zone.category)}. ${money(zone.price, dl)}, ${availability}`}
+                className={className}
+                onMouseEnter={() => setActiveCategory(zone.category)}
+                onMouseLeave={() => clearActive(zone.category)}
+                onFocus={() => setActiveCategory(zone.category)}
+                onBlur={() => clearActive(zone.category)}
+                onTouchStart={() => setActiveCategory(zone.category)}
+                onClick={() => { setActiveCategory(zone.category); activate(zone); }}
+                onKeyDown={(event) => handleKeyDown(event, zone)}
+              >
+                <polygon points={shape.points} />
+                <text x="50" y={shape.labelY} textAnchor="middle" className="auditorium__division-label">
+                  {label}
+                </text>
+                <text x="50" y={shape.subY} textAnchor="middle" className="auditorium__division-sub">
+                  {soldOut ? t('map.soldOut') : `${money(zone.price, dl)} · ${zone.available}`}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+
+      <ul className="auditorium__legend" aria-hidden="true">
+        {zones.map((zone) => (
+          <li key={zone.category}>
+            <span className={`auditorium__dot auditorium__dot--${zone.category.toLowerCase()}`} />
+            {zoneLabel(locale, zone.category)}
+          </li>
+        ))}
+      </ul>
+
+      <div className="auditorium__tooltip auditorium__tooltip--rich" role="status" aria-live="polite">
+        {activeZone ? (
+          <>
+            <strong>{zoneLabel(locale, activeZone.category)}</strong>
+            <span className="auditorium__tip-line">{zoneWhere(locale, activeZone.category)}</span>
+            <span className="auditorium__tip-line">
+              {isSoldOut(activeZone)
+                ? t('map.soldOut')
+                : `${t('catalogue.daily')} · ${money(activeZone.price, dl)} · ${t('map.available', { count: activeZone.available })}`}
+            </span>
+          </>
+        ) : (
+          <span className="muted">{t('catalogue.mapHint')}</span>
+        )}
+      </div>
 
       <ul className="auditorium__zone-list">
         {zones.map((zone) => {
@@ -98,13 +185,7 @@ export default function AuditoriumMap({
                 className={`auditorium__zone-btn${isSelected ? ' auditorium__zone-btn--selected' : ''}`}
                 disabled={soldOut}
                 aria-pressed={isSelected}
-                aria-label={t('map.zoneAria', {
-                  category: zoneLabel(locale, zone.category),
-                  price: money(zone.price, dl),
-                  availability: soldOut ? t('map.soldOut') : t('map.available', { count: zone.available }),
-                })}
-                onClick={() => onSelectZone(zone)}
-                onKeyDown={(event) => handleKeyDown(event, zone)}
+                onClick={() => activate(zone)}
               >
                 <strong>{zoneLabel(locale, zone.category)}</strong>
                 <span>{zoneWhere(locale, zone.category)}</span>

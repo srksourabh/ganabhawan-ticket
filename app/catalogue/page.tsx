@@ -112,8 +112,9 @@ export default function CataloguePage() {
     });
   }, [products, selectedShow]);
 
-  const dailyClosed = selectedShow ? new Date(selectedShow.starts_at).getTime() <= Date.now() : false;
-  const seasonClosed = shows.length > 0 && new Date(shows[0].starts_at).getTime() <= Date.now();
+  const [now] = useState(() => Date.now());
+  const dailyClosed = selectedShow ? new Date(selectedShow.starts_at).getTime() <= now : false;
+  const seasonClosed = shows.length > 0 && new Date(shows[0].starts_at).getTime() <= now;
   const seasonLines = ZONE_ORDER.map((category) => {
     const product = products.find((p) => p.kind === 'SEASON' && p.category === category);
     return { category, product: product ?? null };
