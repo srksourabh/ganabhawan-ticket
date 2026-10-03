@@ -16,8 +16,8 @@ export default function HomePage() {
             <span aria-hidden="true">✨</span>
             <span>{t('home.eyebrow')}</span>
           </div>
-          <h1 lang="bn">{FESTIVAL_BN}</h1>
-          <p className="home-hero__en" lang="en">{FESTIVAL}</p>
+          <h1 lang={locale === 'bn' ? 'bn' : 'en'}>{locale === 'bn' ? FESTIVAL_BN : FESTIVAL}</h1>
+          <p className="home-hero__en" lang={locale === 'bn' ? 'en' : 'bn'}>{locale === 'bn' ? FESTIVAL : FESTIVAL_BN}</p>
           <p className="home-door__lead">{t('home.lead')}</p>
 
           <div className="home-door__actions">

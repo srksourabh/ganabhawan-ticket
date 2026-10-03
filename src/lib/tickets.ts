@@ -226,13 +226,13 @@ export async function deliverBooking(bookingId: string): Promise<void> {
   const { contact, booking_reference } = tickets[0];
 
   const ticketLinks = tickets
-    .map((t) => `Ticket ${t.reference}: ${appUrl}/tickets/${t.id}`)
+    .map((t) => `Ticket ${t.reference}: ${appUrl}/tickets`)
     .join('\n');
 
   const message =
     `Your booking ${booking_reference} is confirmed!\n\n` +
-    `Download your tickets:\n${ticketLinks}\n\n` +
-    `Present each ticket QR code at the venue entrance.`;
+    `Open your tickets:\n${ticketLinks}\n\n` +
+    `Each play has its own QR code on the page. Open it on your phone and show it at the venue entrance. You can keep the page on your Home Screen for offline viewing.`;
 
   try {
     await sendMessage(contact, `Your ${ORGANISATION} tickets – ${booking_reference}`, message);

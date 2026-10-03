@@ -1203,3 +1203,114 @@ input:focus, select:focus, textarea:focus {
 .safe-top { padding-top: var(--safe-top); }
 .safe-bottom { padding-bottom: var(--safe-bottom); }
 .safe-x { padding-left: var(--safe-left); padding-right: var(--safe-right); }
+
+/* Brand mark only: wide logo file, show the left mask square, crop the wordmark */
+.site-header__logo {
+  object-position: left center;
+  aspect-ratio: 1 / 1;
+  background: #fff;
+}
+
+/* Play troupe / artist line on the programme detail */
+.pick__troupe {
+  color: var(--muted);
+  font-weight: 600;
+  margin: 0 0 0.4rem;
+}
+
+/* Season panel: outside the single-play zone list */
+.season-panel {
+  margin-top: 1.5rem;
+}
+.season-panel h3 {
+  font-size: clamp(1.3rem, 3vw, 1.7rem);
+  margin: 0.2rem 0 0.4rem;
+  color: var(--burgundy-text);
+}
+
+/* Auditorium schematic (replaces the photo overlay) */
+.auditorium--schematic .auditorium__schem {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--border);
+  background: #241a15;
+  box-shadow: var(--shadow-card);
+}
+.auditorium__schem-zone {
+  fill: rgba(201, 151, 24, 0.22);
+  stroke: var(--gold);
+  stroke-width: 0.6;
+}
+.auditorium__schem-zone--premier {
+  fill: rgba(122, 30, 40, 0.55);
+  stroke: #e0b43c;
+}
+.auditorium__schem-zone--soldout {
+  fill: rgba(120, 120, 120, 0.25);
+  stroke: #8a8a8a;
+  stroke-dasharray: 2 1.5;
+}
+.auditorium__schem-zone--selected {
+  stroke: #ffffff;
+  stroke-width: 1.4;
+}
+.auditorium__schem-label {
+  fill: #fdf8eb;
+  font-size: 5px;
+  font-weight: 700;
+}
+.auditorium__schem-sub {
+  fill: #e8d9b8;
+  font-size: 3.4px;
+}
+.auditorium__schem-stage {
+  fill: rgba(18, 12, 9, 0.9);
+  stroke: rgba(201, 151, 24, 0.5);
+  stroke-width: 0.4;
+}
+.auditorium__schem-stage-label {
+  fill: #f7e7c6;
+  font-size: 3px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.auditorium__zone-list {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.auditorium__zone-btn {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.8rem 0.95rem;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border);
+  background: #ffffff;
+  cursor: pointer;
+  font-size: 0.88rem;
+  color: var(--ink);
+}
+.auditorium__zone-btn:hover:not(:disabled) {
+  border-color: var(--gold);
+}
+.auditorium__zone-btn--selected {
+  border-color: var(--burgundy);
+  box-shadow: 0 0 0 2px rgba(122, 30, 40, 0.25);
+}
+.auditorium__zone-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.auditorium__zone-btn span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}

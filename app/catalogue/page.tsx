@@ -3,12 +3,12 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { DEFAULT_VENUE, DEFAULT_VENUE_BN, FESTIVAL, FESTIVAL_BN, STAGE_PHOTOS } from '@/lib/brand';
-import AuditoriumMap, { AUDITORIUM_PHOTO, type AuditoriumCategory, type AuditoriumZone } from '@/components/AuditoriumMap';
+import AuditoriumMap, { type AuditoriumCategory, type AuditoriumZone } from '@/components/AuditoriumMap';
 import { useCart } from '@/components/CartProvider';
 import { useLocale } from '@/components/LocaleProvider';
 import { dateLocale, localized, zoneLabel, zoneWhere } from '@/lib/i18n';
 
-type Show = { id: string; title: string; title_bn: string; synopsis: string; synopsis_bn: string; starts_at: string; genre: string; artwork?: string };
+type Show = { id: string; title: string; title_bn: string; troupe: string; synopsis: string; synopsis_bn: string; starts_at: string; genre: string; artwork?: string };
 type Product = {
   id: string;
   name: string;
@@ -82,7 +82,7 @@ export default function CataloguePage() {
     return () => clearTimeout(timer);
   }, [notice]);
 
-  const shows = useMemo(() => data?.shows || [], [data]);
+  const shows = useMemo(() => [...(data?.shows || [])].sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at)), [data]);
   const products = useMemo(() => data?.products || [], [data]);
   const visibleResults = query.trim().length >= 2 ? results : [];
   const venueRaw = data?.festival?.venue || DEFAULT_VENUE;
@@ -93,7 +93,6 @@ export default function CataloguePage() {
     locale,
   );
 
-  const theaterPhoto = data?.festival?.theater_photo || AUDITORIUM_PHOTO;
   const effectiveShowId = selectedShowId ?? shows[0]?.id ?? null;
   const selectedShow = shows.find((show) => show.id === effectiveShowId) ?? null;
 
@@ -112,6 +111,13 @@ export default function CataloguePage() {
       };
     });
   }, [products, selectedShow]);
+
+  const dailyClosed = selectedShow ? new Date(selectedShow.starts_at).getTime() <= Date.now() : false;
+  const seasonClosed = shows.length > 0 && new Date(shows[0].starts_at).getTime() <= Date.now();
+  const seasonLines = ZONE_ORDER.map((category) => {
+    const product = products.find((p) => p.kind === 'SEASON' && p.category === category);
+    return { category, product: product ?? null };
+  });
 
   function showStill(show: Show, index: number) {
     const art = show.artwork;
@@ -280,12 +286,12 @@ export default function CataloguePage() {
             <div className="pick__side">
               <p className="eyebrow">{selectedShow.genre}</p>
               <h3>{localized(selectedShow.title, selectedShow.title_bn, locale)}</h3>
+              {selectedShow.troupe && <p className="pick__troupe">{selectedShow.troupe}</p>}
               <time>
                 {new Date(selectedShow.starts_at).toLocaleString(dl, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}
               </time>
               <AuditoriumMap
                 zones={zones}
-                photoUrl={theaterPhoto}
                 selectedProductId={zones.find((zone) => zone.category === pickedZone)?.productId ?? null}
                 onSelectZone={(zone) => setPickedZone(zone.category)}
               />
@@ -298,24 +304,13 @@ export default function CataloguePage() {
                       <p>
                         {t('catalogue.daily')} {money(zone.price, dl)}
                         {' · '}
-                        {zone.available > 0 ? t('map.available', { count: zone.available }) : t('map.soldOut')}
+                        {dailyClosed ? t('catalogue.closed') : zone.available > 0 ? t('map.available', { count: zone.available }) : t('map.soldOut')}
                       </p>
-                      {zone.seasonPrice != null && (
-                        <p>
-                          {t('catalogue.season')} {money(zone.seasonPrice, dl)}
-                          {zone.seasonAvailable != null ? ` · ${zone.seasonAvailable > 0 ? t('map.available', { count: zone.seasonAvailable }) : t('map.soldOut')}` : ''}
-                        </p>
-                      )}
                     </div>
                     <div className="pick__actions">
-                      <button type="button" className="btn btn--primary btn--sm" disabled={zone.available <= 0 || !zone.productId} onClick={() => handleAddDaily(zone)}>
-                        {zone.available > 0 ? t('catalogue.addDaily') : t('catalogue.soldOut')}
+                      <button type="button" className="btn btn--primary btn--sm" disabled={dailyClosed || zone.available <= 0 || !zone.productId} onClick={() => handleAddDaily(zone)}>
+                        {dailyClosed ? t('catalogue.closed') : zone.available > 0 ? t('catalogue.addDaily') : t('catalogue.soldOut')}
                       </button>
-                      {zone.seasonPrice != null && (
-                        <button type="button" className="btn btn--ghost btn--sm" disabled={(zone.seasonAvailable ?? 0) <= 0} onClick={() => handleAddSeasonFor(zone.category)}>
-                          {(zone.seasonAvailable ?? 0) > 0 ? t('catalogue.addSeason') : t('catalogue.soldOut')}
-                        </button>
-                      )}
                     </div>
                   </li>
                 ))}
@@ -326,6 +321,36 @@ export default function CataloguePage() {
                 <Link href="/cart" className="btn btn--primary">{t('book.reserve')}</Link>
               )}
             </div>
+          </div>
+
+          <div className="season-panel card">
+            <p className="eyebrow">{t('catalogue.season')}</p>
+            <h3>{t('catalogue.seasonTitle')}</h3>
+            <p className="muted">{t('catalogue.seasonHint')}</p>
+            <ul className="pick__zones">
+              {seasonLines.map((line) => {
+                const available = line.product?.available ?? 0;
+                const closed = seasonClosed || available <= 0 || !line.product;
+                return (
+                  <li key={line.category}>
+                    <div>
+                      <strong>{zoneLabel(locale, line.category)}</strong>
+                      <p>{zoneWhere(locale, line.category)}</p>
+                      <p>
+                        {line.product ? money(line.product.price, dl) : ''}
+                        {' · '}
+                        {seasonClosed ? t('catalogue.closed') : available > 0 ? t('map.available', { count: available }) : t('map.soldOut')}
+                      </p>
+                    </div>
+                    <div className="pick__actions">
+                      <button type="button" className="btn btn--ghost btn--sm" disabled={closed} onClick={() => handleAddSeasonFor(line.category)}>
+                        {seasonClosed ? t('catalogue.closed') : available > 0 ? t('catalogue.addSeason') : t('catalogue.soldOut')}
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         </section>
       )}

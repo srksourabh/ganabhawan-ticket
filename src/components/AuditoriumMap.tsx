@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type KeyboardEvent } from 'react';
+import type { KeyboardEvent } from 'react';
 import { useLocale } from './LocaleProvider';
 import { dateLocale, zoneLabel, zoneWhere } from '@/lib/i18n';
 import { AUDITORIUM_PHOTO } from '@/lib/brand';
@@ -26,135 +26,94 @@ type Props = {
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
 
-/**
- * Photo is taken FROM the stage looking at the audience.
- * Ground floor front = Premier, ground floor back under the balcony = Superior,
- * first floor = Balcony.
- */
-const HOTSPOTS: Record<AuditoriumCategory, { points: string; labelY: number }> = {
-  Premier: { points: '1,56 99,56 100,82 0,82', labelY: 70 },
-  Superior: { points: '8,34 92,34 97,56 3,56', labelY: 46 },
-  Balcony: { points: '12,5 88,5 91,34 9,34', labelY: 20 },
+/** Schematic geometry: stage band at the bottom, Premier nearest the stage. */
+const SHAPES: Record<AuditoriumCategory, { x: number; y: number; w: number; h: number }> = {
+  Balcony: { x: 14, y: 4, w: 72, h: 26 },
+  Superior: { x: 8, y: 34, w: 84, h: 22 },
+  Premier: { x: 2, y: 60, w: 96, h: 22 },
 };
 
 export default function AuditoriumMap({
   zones,
-  photoUrl = AUDITORIUM_PHOTO,
   selectedProductId,
   onSelectZone,
 }: Props) {
   const { locale, t } = useLocale();
   const dl = dateLocale(locale);
-  const [activeCategory, setActiveCategory] = useState<AuditoriumCategory | null>(null);
 
   function isSoldOut(zone: AuditoriumZone) {
     return !zone.productId || zone.available <= 0;
   }
 
-  function activate(zone: AuditoriumZone) {
-    if (isSoldOut(zone)) return;
-    onSelectZone(zone);
-  }
-
-  function handleKeyDown(event: KeyboardEvent<SVGGElement>, zone: AuditoriumZone) {
+  function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, zone: AuditoriumZone) {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      setActiveCategory(zone.category);
-      activate(zone);
+      if (!isSoldOut(zone)) onSelectZone(zone);
     }
   }
 
-  function clearActive(category: AuditoriumCategory) {
-    setActiveCategory((current) => (current === category ? null : current));
-  }
-
-  const activeZone = zones.find((zone) => zone.category === activeCategory) ?? null;
-
   return (
-    <div className="auditorium auditorium--photo">
+    <div className="auditorium auditorium--schematic">
       <div className="auditorium__floors" aria-hidden="true">
         <span>{t('map.firstFloor')} · {zoneLabel(locale, 'Balcony')}</span>
         <span>{t('map.ground')} · {zoneLabel(locale, 'Premier')} / {zoneLabel(locale, 'Superior')}</span>
       </div>
-      <div className="auditorium__frame">
-        <img className="auditorium__photo" src={photoUrl} alt="" />
-        <svg
-          viewBox="0 0 100 100"
-          className="auditorium__overlay"
-          role="group"
-          aria-label={t('map.aria')}
-          preserveAspectRatio="none"
-        >
-          <rect className="auditorium__stage-band" x="0" y="82" width="100" height="18" />
-          <text x="50" y="93" textAnchor="middle" className="auditorium__stage-chip">{t('map.stage')}</text>
 
-          {zones.map((zone) => {
-            const soldOut = isSoldOut(zone);
-            const isSelected = zone.productId !== null && zone.productId === selectedProductId;
-            const isActive = activeCategory === zone.category;
-            const label = zoneLabel(locale, zone.category);
-            const availability = soldOut ? t('map.soldOut') : t('map.available', { count: zone.available });
-            const className = [
-              'auditorium__hotspot',
-              `auditorium__hotspot--${zone.category.toLowerCase()}`,
-              soldOut ? 'auditorium__hotspot--soldout' : '',
-              isActive ? 'auditorium__hotspot--active' : '',
-              isSelected ? 'auditorium__hotspot--selected' : '',
-            ].filter(Boolean).join(' ');
+      <svg viewBox="0 0 100 100" className="auditorium__schem" role="img" aria-label={t('map.aria')} preserveAspectRatio="xMidYMid meet">
+        {zones.map((zone) => {
+          const soldOut = isSoldOut(zone);
+          const isSelected = zone.productId !== null && zone.productId === selectedProductId;
+          const shape = SHAPES[zone.category];
+          return (
+            <g key={zone.category} aria-hidden="true">
+              <rect
+                x={shape.x}
+                y={shape.y}
+                width={shape.w}
+                height={shape.h}
+                rx={2.5}
+                className={`auditorium__schem-zone auditorium__schem-zone--${zone.category.toLowerCase()}${soldOut ? ' auditorium__schem-zone--soldout' : ''}${isSelected ? ' auditorium__schem-zone--selected' : ''}`}
+              />
+              <text x={shape.x + shape.w / 2} y={shape.y + shape.h / 2 - 1} textAnchor="middle" className="auditorium__schem-label">
+                {zoneLabel(locale, zone.category)}
+              </text>
+              <text x={shape.x + shape.w / 2} y={shape.y + shape.h / 2 + 5} textAnchor="middle" className="auditorium__schem-sub">
+                {soldOut ? t('map.soldOut') : `${money(zone.price, dl)} · ${zone.available}`}
+              </text>
+            </g>
+          );
+        })}
+        <rect x={0} y={86} width={100} height={14} rx={2} className="auditorium__schem-stage" />
+        <text x={50} y={94.5} textAnchor="middle" className="auditorium__schem-stage-label">{t('map.stage')}</text>
+      </svg>
 
-            return (
-              <g
-                key={zone.category}
-                tabIndex={0}
-                role="button"
+      <ul className="auditorium__zone-list">
+        {zones.map((zone) => {
+          const soldOut = isSoldOut(zone);
+          const isSelected = zone.productId !== null && zone.productId === selectedProductId;
+          return (
+            <li key={zone.category}>
+              <button
+                type="button"
+                className={`auditorium__zone-btn${isSelected ? ' auditorium__zone-btn--selected' : ''}`}
+                disabled={soldOut}
                 aria-pressed={isSelected}
-                aria-disabled={soldOut}
-                aria-label={`${label}. ${zoneWhere(locale, zone.category)}. ${money(zone.price, dl)}, ${availability}`}
-                className={className}
-                onMouseEnter={() => setActiveCategory(zone.category)}
-                onMouseLeave={() => clearActive(zone.category)}
-                onFocus={() => setActiveCategory(zone.category)}
-                onBlur={() => clearActive(zone.category)}
-                onTouchStart={() => setActiveCategory(zone.category)}
-                onClick={() => { setActiveCategory(zone.category); activate(zone); }}
+                aria-label={t('map.zoneAria', {
+                  category: zoneLabel(locale, zone.category),
+                  price: money(zone.price, dl),
+                  availability: soldOut ? t('map.soldOut') : t('map.available', { count: zone.available }),
+                })}
+                onClick={() => onSelectZone(zone)}
                 onKeyDown={(event) => handleKeyDown(event, zone)}
               >
-                <polygon points={HOTSPOTS[zone.category].points} />
-                <text
-                  x="50"
-                  y={HOTSPOTS[zone.category].labelY}
-                  textAnchor="middle"
-                  className="auditorium__hotspot-label"
-                >
-                  {label}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-      </div>
-
-      <div className="auditorium__tooltip auditorium__tooltip--rich" role="status" aria-live="polite">
-        {activeZone ? (
-          <>
-            <strong>{zoneLabel(locale, activeZone.category)}</strong>
-            <span className="auditorium__tip-line">{zoneWhere(locale, activeZone.category)}</span>
-            <span className="auditorium__tip-line">
-              {isSoldOut(activeZone)
-                ? t('map.soldOut')
-                : `${t('catalogue.daily')} · ${money(activeZone.price, dl)} · ${t('map.available', { count: activeZone.available })}`}
-            </span>
-            {activeZone.seasonPrice != null && (
-              <span className="auditorium__tip-line">
-                {t('catalogue.season')} · {money(activeZone.seasonPrice, dl)}
-                {activeZone.seasonAvailable != null ? ` · ${t('map.available', { count: activeZone.seasonAvailable })}` : ''}
-              </span>
-            )}
-          </>
-        ) : (
-          <span className="muted">{t('catalogue.mapHint')}</span>
-        )}
-      </div>
+                <strong>{zoneLabel(locale, zone.category)}</strong>
+                <span>{zoneWhere(locale, zone.category)}</span>
+                <span>{soldOut ? t('map.soldOut') : `${money(zone.price, dl)} · ${t('map.available', { count: zone.available })}`}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

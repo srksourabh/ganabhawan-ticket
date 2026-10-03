@@ -33,7 +33,7 @@ export async function reserve(user:User,input:{productId:string;quantity:number;
   requireValue(product.festival_status==='PUBLISHED' && (devMode() || process.env.ALLOW_PUBLIC_SALES==='true'),'Ticket sales are paused.');
   requireValue(product.version===input.version,'This price has changed. Please refresh your selection.');
   requireValue(Number.isInteger(input.quantity)&&input.quantity>=1&&input.quantity<=product.max_quantity,'Choose a valid ticket quantity.',400);
-  const coverage=(await c.query('SELECT pc.*,p.allocation,p.held,p.committed,s.title,s.starts_at,s.status FROM product_coverage pc JOIN pools p ON p.id=pc.pool_id JOIN shows s ON s.id=pc.show_id WHERE pc.product_id=$1 ORDER BY p.id FOR UPDATE OF p',[product.id])).rows;
+  const coverage=(await c.query('SELECT pc.*,p.allocation,p.held,p.committed,s.title,s.starts_at,s.status FROM product_coverage pc JOIN pools p ON p.id=pc.pool_id JOIN shows s ON s.id=pc.show_id WHERE pc.product_id=$1 ORDER BY s.starts_at, p.id FOR UPDATE OF p',[product.id])).rows;
   requireValue(coverage.length>0 && coverage.every(s=>s.status==='PUBLISHED'&&new Date(s.starts_at).getTime()>Date.now()),'Sales for this performance have closed.');
   requireValue(coverage.every(p=>p.allocation-p.held-p.committed>=input.quantity),'Not enough tickets remain. Please choose fewer tickets.');
   if(product.cap!==null) { const used=await one(c,"SELECT COALESCE(sum(quantity),0)::int n FROM bookings WHERE product_id=$1 AND status IN ('HELD','PAYMENT_PENDING','CONFIRMED')",[product.id]); requireValue(used!.n+input.quantity<=product.cap,'The product limit has been reached.'); }

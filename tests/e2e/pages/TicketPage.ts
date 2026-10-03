@@ -5,14 +5,12 @@ export class TicketPage {
   readonly referenceText: Locator;
   readonly statusRow: Locator;
   readonly qrImage: Locator;
-  readonly pdfDownloadLink: Locator;
 
   constructor(page: Page) {
     this.page = page;
     this.referenceText = page.locator('p[style*="monospace"]');
     this.statusRow = page.locator('div', { hasText: 'Status' });
     this.qrImage = page.locator('.ticket-pass img');
-    this.pdfDownloadLink = page.locator('a[href*="/pdf"]');
   }
 
   async goto(bookingId: string) {

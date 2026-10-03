@@ -53,7 +53,7 @@ export default function TicketDetailView({ booking, contact }: { booking: Bookin
         {booking.snapshot?.coverage?.length > 0 && (
           <div className="card" style={{ marginBottom: '1.25rem' }}>
             <h2 style={{ fontFamily: 'Georgia, serif', fontSize: '1.1rem', margin: '0 0 .75rem' }}>{t('tickets.coverage')}</h2>
-            {booking.snapshot.coverage.map((c, i) => (
+            {[...booking.snapshot.coverage].sort((a, b) => +new Date(a.startsAt) - +new Date(b.startsAt)).map((c, i) => (
               <p key={i} style={{ margin: '.25rem 0', fontSize: '.9rem', color: '#3d2a1e' }}>
                 <strong>{c.title}</strong> — {new Date(c.startsAt).toLocaleString(dl, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}
               </p>
@@ -64,22 +64,15 @@ export default function TicketDetailView({ booking, contact }: { booking: Bookin
         {isConfirmed && booking.tickets?.length > 0 && (
           <div className="card">
             <h2 style={{ fontFamily: 'Georgia, serif', fontSize: '1.1rem', margin: '0 0 .75rem' }}>{t('tickets.yours')}</h2>
+            <p className="muted" style={{ marginTop: 0 }}>{t('tickets.saveHint')}</p>
             {booking.tickets.map((ticket) => (
-              <div key={ticket.id} className="ticket-pass">
-                <DoorCode ticketId={ticket.id} />
-                <p className="ticket-pass__ref">{ticket.reference}</p>
-                <p className="muted">
-                  {t('tickets.ticketMeta', {
-                    ordinal: ticket.ordinal,
-                    kind: ticket.credentialKind,
-                    scan: ticket.admitted > 0 ? t('tickets.admitted') : t('tickets.notScanned'),
-                  })}
-                </p>
-                <a href={`/api/tickets/${ticket.id}/pdf`} target="_blank" rel="noopener noreferrer" className="btn btn--primary btn--sm" style={{ marginTop: '0.75rem', display: 'inline-flex' }}>
-                  <span aria-hidden="true">📥</span>
-                  <span>{t('tickets.downloadPdf')}</span>
-                </a>
-              </div>
+              <TicketShowCodes
+                key={ticket.id}
+                ticketId={ticket.id}
+                ticketRef={ticket.reference}
+                admitted={ticket.admitted}
+                coverage={booking.snapshot?.coverage ?? []}
+              />
             ))}
           </div>
         )}
@@ -105,8 +98,25 @@ export default function TicketDetailView({ booking, contact }: { booking: Bookin
   );
 }
 
-function DoorCode({ ticketId }: { ticketId: string }) {
-  const { t } = useLocale();
+/**
+ * One QR card per covered performance, in chronological order.
+ * Interim: every card for a ticket shares that ticket's single credential
+ * (the gate already enforces one admission per show). Distinct per-show
+ * codes need a credentials migration — tracked as follow-up.
+ */
+function TicketShowCodes({
+  ticketId,
+  ticketRef,
+  admitted,
+  coverage,
+}: {
+  ticketId: string;
+  ticketRef: string;
+  admitted: number;
+  coverage: { title: string; startsAt: string }[];
+}) {
+  const { locale, t } = useLocale();
+  const dl = dateLocale(locale);
   const [qr, setQr] = useState('');
 
   useEffect(() => {
@@ -124,11 +134,26 @@ function DoorCode({ ticketId }: { ticketId: string }) {
     };
   }, [ticketId]);
 
+  const ordered = [...coverage].sort((a, b) => +new Date(a.startsAt) - +new Date(b.startsAt));
   if (!qr) return null;
   return (
     <div>
-      <img src={qr} alt="" width={240} height={240} />
-      <p>{t('tickets.showAtDoor')}</p>
+      {ordered.map((c, i) => (
+        <div key={`${ticketId}-${i}`} className="ticket-pass">
+          <p className="eyebrow" style={{ marginBottom: '.25rem' }}>
+            {ordered.length > 1 ? t('tickets.showCode', { ordinal: i + 1, total: ordered.length }) : t('tickets.yours')}
+          </p>
+          <p style={{ margin: '.2rem 0 .6rem', fontSize: '.9rem' }}>
+            <strong>{c.title}</strong>
+            {' — '}
+            {new Date(c.startsAt).toLocaleString(dl, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}
+          </p>
+          <img src={qr} alt="" width={240} height={240} />
+          <p className="ticket-pass__ref">{ticketRef}</p>
+          <p className="muted">{admitted > 0 ? t('tickets.admitted') : t('tickets.notScanned')}</p>
+          <p className="muted">{t('tickets.showAtDoor')}</p>
+        </div>
+      ))}
     </div>
   );
 }

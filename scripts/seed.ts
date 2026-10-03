@@ -5,12 +5,13 @@ import { audit } from '../src/lib/audit';
 if (!devMode()) throw new Error('Synthetic seed is development-only.');
 
 /** Evening curtain in IST (Asia/Kolkata), stored as timestamptz. */
-function istEvening(day: number): string {
-  return `2026-12-${String(day).padStart(2, '0')}T18:30:00+05:30`;
+function istEvening(day: number, month = 12): string {
+  return `2026-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T18:30:00+05:30`;
 }
 
 /** Tentative Samatat Natyomela 2026 programme — Ganabhawan, Uttarpara. */
 const PROGRAMME: {
+  month?: number;
   day: number;
   title: string;
   titleBn: string;
@@ -21,6 +22,18 @@ const PROGRAMME: {
   genre: string;
   artwork: string;
 }[] = [
+  {
+    month: 10,
+    day: 12,
+    title: 'Samatat prologue (title TBA)',
+    titleBn: 'সমতট প্রস্তাবনা (নাম চূড়ান্ত নয়)',
+    troupe: 'সমতট',
+    synopsis: 'October prologue to Samatat Natyomela 2026. Final title to be announced.',
+    synopsisBn: 'সমতট নাট্যমেলা ২০২৬-এর অক্টোবর প্রস্তাবনা। নাম চূড়ান্ত হয়নি।',
+    runtime: 110,
+    genre: 'Prologue',
+    artwork: 'red',
+  },
   {
     day: 19,
     title: 'Macbeth Two',
@@ -159,7 +172,7 @@ const FESTIVAL_NAME = 'Samatat Natyomela 2026';
 const FESTIVAL_NAME_BN = 'সমতট নাট্যমেলা ২০২৬';
 const CONTACT_EMAIL = process.env.FESTIVAL_CONTACT_EMAIL || 'tickets@samatat.org';
 const TERMS =
-  'One person per ticket. Unnumbered seating within your section. No standard re-entry. Daily tickets cover one performance. Season passes cover only the listed performances. Presented by Samatat Sanskriti at Ganabhawan, Uttarpara. Tentative programme 19–30 December 2026; titles may change before publication.';
+  'One person per ticket. Unnumbered seating within your section. No standard re-entry. Daily tickets cover one performance. Season passes cover only the listed performances, including the October prologue. Presented by Samatat Sanskriti at Ganabhawan, Uttarpara. Tentative programme October prologue + 19–30 December 2026; titles may change before publication.';
 
 await transaction(async (c) => {
   let festival = await one<{ id: string }>(c, 'SELECT id FROM festivals LIMIT 1');
@@ -199,7 +212,7 @@ await transaction(async (c) => {
 
   const ids: string[] = [];
   for (const play of PROGRAMME) {
-    const start = istEvening(play.day);
+    const start = istEvening(play.day, play.month ?? 12);
     const end = new Date(new Date(start).getTime() + play.runtime * 60000).toISOString();
     const show = (await one(
       c,
@@ -308,8 +321,8 @@ await transaction(async (c) => {
     synthetic: true,
     festival: FESTIVAL_NAME,
     shows: PROGRAMME.length,
-    window: '2026-12-19..2026-12-30',
+    window: '2026-10-12 + 2026-12-19..2026-12-30',
   });
-  console.log(`Seeded ${FESTIVAL_NAME}: ${PROGRAMME.length} plays, 19–30 Dec 2026, inventory and staff scopes.`);
+  console.log(`Seeded ${FESTIVAL_NAME}: ${PROGRAMME.length} plays, Oct prologue + 19–30 Dec 2026, inventory and staff scopes.`);
 });
 await pool.end();

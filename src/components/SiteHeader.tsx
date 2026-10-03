@@ -110,7 +110,9 @@ export default function SiteHeader() {
           {user && user.role !== 'customer' && (
             <Link href="/gate" className="site-header__link" onClick={() => setOpen(false)}>{t('nav.gate')}</Link>
           )}
-          <Link href="/admin" className="site-header__link" onClick={() => setOpen(false)}>{t('nav.admin')}</Link>
+          {user && user.role !== 'customer' && (
+            <Link href="/admin" className="site-header__link" onClick={() => setOpen(false)}>{t('nav.admin')}</Link>
+          )}
 
           <Show when="signed-in">
             <span className="site-header__clerk">
@@ -155,6 +157,12 @@ export default function SiteHeader() {
           <Link href="/gate" className={`mobile-dock__link${pathname.startsWith('/gate') ? ' mobile-dock__link--active' : ''}`}>
             <span className="mobile-dock__icon" aria-hidden="true">🚪</span>
             <span>{t('nav.gate')}</span>
+          </Link>
+        )}
+        {user && user.role !== 'customer' && (
+          <Link href="/admin" className={`mobile-dock__link${pathname.startsWith('/admin') ? ' mobile-dock__link--active' : ''}`}>
+            <span className="mobile-dock__icon" aria-hidden="true">⚙️</span>
+            <span>{t('nav.admin')}</span>
           </Link>
         )}
       </nav>

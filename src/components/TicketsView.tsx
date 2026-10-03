@@ -101,12 +101,6 @@ export default function TicketsView({
                     contact={contact}
                   />
                 )}
-                {b.status === 'CONFIRMED' && b.tickets?.map((ticket) => (
-                  <a key={ticket.id} href={`/api/tickets/${ticket.id}/pdf`} target="_blank" rel="noopener noreferrer"
-                    style={{ color: '#c9a227', textDecoration: 'none', fontWeight: 600, fontSize: '.9rem' }}>
-                    {t('tickets.download', { ordinal: ticket.ordinal })}
-                  </a>
-                ))}
               </div>
             </article>
           ))}
