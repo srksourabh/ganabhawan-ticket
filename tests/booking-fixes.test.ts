@@ -11,6 +11,7 @@ import { holdIdempotencyKey } from '../src/lib/commerce';
 import { RECONCILE_OPEN_ORDERS_SQL } from '../src/lib/payments';
 import { assertBookingIssued } from '../src/lib/razorpay-checkout';
 import { PRUNE_SQL, STALE_JOB_MINUTES } from '../src/lib/jobs';
+import { SECURITY_HEADER_LIST } from '../src/lib/security-headers';
 
 test('public hosts are not treated as local', () => {
   assert.equal(isLocalAppUrl(''), true);
@@ -103,4 +104,10 @@ test('housekeeping reclaims stale jobs and prunes operational tables', () => {
   assert.ok(PRUNE_SQL.some((sql) => sql.includes('rate_limits')));
   assert.ok(PRUNE_SQL.some((sql) => sql.includes('idempotency')));
   assert.ok(PRUNE_SQL.some((sql) => sql.includes('scan_requests')));
+});
+
+test('security headers include a content security policy', () => {
+  const csp = SECURITY_HEADER_LIST.find((header) => header.key === 'Content-Security-Policy');
+  assert.ok(csp?.value.includes("default-src 'self'"));
+  assert.ok(csp?.value.includes('checkout.razorpay.com'));
 });

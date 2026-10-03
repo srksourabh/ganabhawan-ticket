@@ -1,6 +1,13 @@
 import { clerkMiddleware } from '@clerk/nextjs/server';
+import { NextResponse } from 'next/server';
+import { applySecurityHeaders } from '@/lib/security-headers';
 
-export default clerkMiddleware();
+/** Vinext drops next.config headers on Workers — apply them here so production gets CSP. */
+export default clerkMiddleware(() => {
+  const response = NextResponse.next();
+  applySecurityHeaders(response.headers);
+  return response;
+});
 
 /** Vinext's matcher validator rejects complex Clerk defaults — keep paths simple. */
 export const config = {
