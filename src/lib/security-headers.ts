@@ -18,14 +18,15 @@ export const SECURITY_HEADER_LIST: { key: string; value: string }[] = [
     value: [
       "default-src 'self'",
       "base-uri 'self'",
-      "form-action 'self'",
+      "form-action 'self' https://*.clerk.accounts.dev https://*.clerk.com https://accounts.google.com",
       "frame-ancestors 'none'",
       `script-src ${scriptSrc}`,
+      "worker-src 'self' blob:",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
-      "connect-src 'self' https://api.razorpay.com https://lumberjack.razorpay.com https://*.clerk.accounts.dev https://*.clerk.com https://clerk-telemetry.com",
-      "frame-src https://api.razorpay.com https://checkout.razorpay.com https://*.clerk.accounts.dev https://*.clerk.com",
+      "connect-src 'self' https://api.razorpay.com https://lumberjack.razorpay.com https://*.clerk.accounts.dev https://*.clerk.com https://clerk-telemetry.com https://accounts.google.com https://*.googleapis.com",
+      "frame-src https://api.razorpay.com https://checkout.razorpay.com https://*.clerk.accounts.dev https://*.clerk.com https://accounts.google.com https://*.google.com",
     ].join('; '),
   },
 ];

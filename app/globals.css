@@ -921,7 +921,7 @@ input:focus, select:focus, textarea:focus {
 }
 
 .show-rail {
-  flex: 0 0 128px;
+  flex: 0 0 168px;
   scroll-snap-align: start;
   border: 1.5px solid var(--border);
   background: #ffffff;
@@ -943,9 +943,11 @@ input:focus, select:focus, textarea:focus {
 }
 .show-rail img {
   width: 100%;
-  aspect-ratio: 3 / 4;
-  object-fit: cover;
+  aspect-ratio: 3 / 2;
+  object-fit: contain;
+  object-position: center;
   display: block;
+  background: var(--paper-subtle);
 }
 .show-rail span {
   display: block;
@@ -983,8 +985,9 @@ input:focus, select:focus, textarea:focus {
 
 .pick__poster {
   width: 100%;
-  aspect-ratio: 3 / 4;
-  object-fit: cover;
+  aspect-ratio: 3 / 2;
+  object-fit: contain;
+  object-position: center;
   border-radius: var(--radius);
   background: var(--paper-subtle);
   box-shadow: var(--shadow-card);
@@ -1054,53 +1057,6 @@ input:focus, select:focus, textarea:focus {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-}
-
-/* Auditorium Map */
-.auditorium {
-  width: 100%;
-  margin: 1.2rem 0;
-}
-.auditorium__frame {
-  position: relative;
-  border-radius: var(--radius);
-  overflow: hidden;
-  box-shadow: var(--shadow-card);
-  border: 1.5px solid var(--border);
-  background: #1a120e;
-  aspect-ratio: 16 / 9;
-}
-.auditorium__photo {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.auditorium__overlay {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-.auditorium__stage-band {
-  fill: rgba(18, 12, 9, 0.65);
-}
-.auditorium__stage-chip {
-  fill: #f7e7c6;
-  font-size: 2.8px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.auditorium__floors {
-  display: flex;
-  justify-content: space-between;
-  padding: 0.4rem 0;
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--brass);
 }
 
 /* Cart & Checkout Styling */
@@ -1245,7 +1201,7 @@ input:focus, select:focus, textarea:focus {
 .auditorium__photo {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   display: block;
 }
 .auditorium__overlay {
@@ -1255,7 +1211,8 @@ input:focus, select:focus, textarea:focus {
   height: 100%;
 }
 .auditorium__stage-band {
-  fill: rgba(18, 12, 9, 0.72);
+  fill: rgba(18, 12, 9, 0.55);
+  pointer-events: none;
 }
 .auditorium__stage-chip {
   fill: #f7e7c6;
@@ -1263,39 +1220,36 @@ input:focus, select:focus, textarea:focus {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  pointer-events: none;
 }
 .auditorium__division {
   cursor: pointer;
   outline: none;
 }
-.auditorium__division polygon {
-  stroke-width: 0.5;
-  transition: opacity 0.15s ease;
+.auditorium__hit {
+  fill: transparent;
+  stroke: none;
 }
-.auditorium__division--premier polygon {
-  fill: url(#dz-premier);
-  stroke: #e0b43c;
+.auditorium__chair {
+  stroke: rgba(255, 255, 255, 0.9);
+  stroke-width: 0.12;
+  pointer-events: none;
 }
-.auditorium__division--superior polygon {
-  fill: url(#dz-superior);
-  stroke: #e0b43c;
+.auditorium__division--premier .auditorium__chair { fill: #d1263a; }
+.auditorium__division--superior .auditorium__chair { fill: #e2ac22; }
+.auditorium__division--balcony .auditorium__chair { fill: #2f7de0; }
+.auditorium__division--soldout .auditorium__chair {
+  fill: #8a8a8a;
+  stroke: #d0d0d0;
 }
-.auditorium__division--balcony polygon {
-  fill: url(#dz-balcony);
-  stroke: #9fc0e8;
-}
-.auditorium__division--soldout polygon {
-  fill: rgba(90, 90, 90, 0.45);
-  stroke: #8a8a8a;
-  stroke-dasharray: 1.5 1;
-}
-.auditorium__division--active polygon,
-.auditorium__division:focus polygon {
-  opacity: 0.85;
-}
-.auditorium__division--selected polygon {
+.auditorium__division--active .auditorium__chair,
+.auditorium__division:focus .auditorium__chair {
   stroke: #ffffff;
-  stroke-width: 1;
+  stroke-width: 0.22;
+}
+.auditorium__division--selected .auditorium__chair {
+  stroke: #ffffff;
+  stroke-width: 0.28;
 }
 .auditorium__division-label {
   fill: #ffffff;
@@ -1324,6 +1278,12 @@ input:focus, select:focus, textarea:focus {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--brass);
+}
+.auditorium__zone-only {
+  margin: 0.55rem 0 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
 }
 .auditorium__legend {
   list-style: none;
@@ -1385,6 +1345,9 @@ input:focus, select:focus, textarea:focus {
 .auditorium__zone-btn:hover:not(:disabled) {
   border-color: var(--gold);
 }
+.auditorium__zone-btn--premier { border-left: 5px solid #7a1e28; }
+.auditorium__zone-btn--superior { border-left: 5px solid #8f6d14; }
+.auditorium__zone-btn--balcony { border-left: 5px solid #1f3a5f; }
 .auditorium__zone-btn--selected {
   border-color: var(--burgundy);
   box-shadow: 0 0 0 2px rgba(122, 30, 40, 0.25);

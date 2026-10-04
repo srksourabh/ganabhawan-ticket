@@ -110,4 +110,5 @@ test('security headers include a content security policy', () => {
   const csp = SECURITY_HEADER_LIST.find((header) => header.key === 'Content-Security-Policy');
   assert.ok(csp?.value.includes("default-src 'self'"));
   assert.ok(csp?.value.includes('checkout.razorpay.com'));
+  assert.ok(csp?.value.includes("worker-src 'self' blob:"));
 });

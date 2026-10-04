@@ -32,7 +32,7 @@ const PROGRAMME: {
     synopsisBn: 'সমতট নাট্যমেলা ২০২৬-এর অক্টোবর প্রস্তাবনা। নাম চূড়ান্ত হয়নি।',
     runtime: 110,
     genre: 'Prologue',
-    artwork: 'red',
+    artwork: '/images/samatat/shows/samatat-double-bill.jpg',
   },
   {
     day: 19,
@@ -43,7 +43,7 @@ const PROGRAMME: {
     synopsisBn: 'ম্যাকবেথের নতুন মঞ্চভাষা। পরিচালনা: কৌশিক সেন — স্বপ্নসন্ধানী।',
     runtime: 120,
     genre: 'Drama',
-    artwork: 'red',
+    artwork: '/images/samatat/shows/macbeth-two.jpg',
   },
   {
     day: 20,
@@ -54,7 +54,7 @@ const PROGRAMME: {
     synopsisBn: 'থিয়েটার ওয়ার্কশপের গড়াইবাবু। পরিচালনা: গৌতম হালদার।',
     runtime: 120,
     genre: 'Drama',
-    artwork: 'ochre',
+    artwork: '/images/samatat/shows/goraibabu.jpg',
   },
   {
     day: 21,
@@ -65,7 +65,7 @@ const PROGRAMME: {
     synopsisBn: 'পূর্ব-পশ্চিমের আসক্তি। পরিচালনা: দেবশংকর হালদার।',
     runtime: 110,
     genre: 'Drama',
-    artwork: 'forest',
+    artwork: '/images/samatat/shows/asakti.jpg',
   },
   {
     day: 22,
@@ -76,7 +76,7 @@ const PROGRAMME: {
     synopsisBn: 'গড়িয়া আন্তরিকের বাবু জনা দুই। দেবশংকর হালদার ও অঞ্জনা বসু।',
     runtime: 110,
     genre: 'Drama',
-    artwork: 'blue',
+    artwork: '/images/samatat/shows/actor-anjana-basu.jpg',
   },
   {
     day: 23,
@@ -87,7 +87,7 @@ const PROGRAMME: {
     synopsisBn: 'সংস্কৃতির প্রথম পার্থ। পরিচালনা: রজতাভ দত্ত।',
     runtime: 120,
     genre: 'Drama',
-    artwork: 'red',
+    artwork: '/images/samatat/shows/pratham-partha.png',
   },
   {
     day: 24,
@@ -98,7 +98,7 @@ const PROGRAMME: {
     synopsisBn: 'সায়কের কুণ্ডুবাবু। পরিচালনা: মেঘনাদ ভট্টাচার্য।',
     runtime: 110,
     genre: 'Drama',
-    artwork: 'ochre',
+    artwork: '/images/samatat/shows/samatat-double-bill.jpg',
   },
   {
     day: 25,
@@ -109,7 +109,7 @@ const PROGRAMME: {
     synopsisBn: 'ইচ্ছেমতোর কীর্তনখোলা। পরিচালনা: সৌরভ পালোধী।',
     runtime: 120,
     genre: 'Drama',
-    artwork: 'forest',
+    artwork: '/images/samatat/shows/kirtankhola.jpg',
   },
   {
     day: 26,
@@ -120,7 +120,7 @@ const PROGRAMME: {
     synopsisBn: 'অনীকের আঙিনা জুড়ে ভোর।',
     runtime: 100,
     genre: 'Drama',
-    artwork: 'blue',
+    artwork: '/images/samatat/shows/angina-jure-bhor.jpg',
   },
   {
     day: 27,
@@ -131,7 +131,7 @@ const PROGRAMME: {
     synopsisBn: 'সমতটের নতুন নাটক। নাম চূড়ান্ত হয়নি।',
     runtime: 120,
     genre: 'Drama',
-    artwork: 'red',
+    artwork: '/images/samatat/shows/samatat-double-bill.jpg',
   },
   {
     day: 28,
@@ -142,7 +142,7 @@ const PROGRAMME: {
     synopsisBn: 'বাঘাযতীন আলাপের পদ্মা নদীর মাঝি। পরিচালনা: পার্থপ্রতিম।',
     runtime: 120,
     genre: 'Drama',
-    artwork: 'ochre',
+    artwork: '/images/samatat/shows/macbeth-two-still.jpg',
   },
   {
     day: 29,
@@ -153,7 +153,7 @@ const PROGRAMME: {
     synopsisBn: 'চারদল নাট্যজনের যাত্রা গোপাল। পরিচালনা: সঞ্জীব সরকার।',
     runtime: 110,
     genre: 'Drama',
-    artwork: 'forest',
+    artwork: '/images/samatat/shows/jatra-gopal.jpg',
   },
   {
     day: 30,
@@ -164,7 +164,7 @@ const PROGRAMME: {
     synopsisBn: 'অগ্রগামী অপেরার জীবনের চাওয়া-পাওয়া। অনল–কাকলি।',
     runtime: 120,
     genre: 'Opera',
-    artwork: 'blue',
+    artwork: '/images/samatat/shows/jatra-gopal-still.jpg',
   },
 ];
 
