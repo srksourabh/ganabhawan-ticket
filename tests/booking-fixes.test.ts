@@ -44,6 +44,27 @@ test('development adapters are refused on a public host', () => {
   }
 });
 
+test('razorpay checkout is allowed on a public host while the app mode is development', () => {
+  const previous = {
+    APP_MODE: process.env.APP_MODE,
+    APP_URL: process.env.APP_URL,
+    PAYMENT_PROVIDER: process.env.PAYMENT_PROVIDER,
+    OTP_PROVIDER: process.env.OTP_PROVIDER,
+  };
+  process.env.APP_MODE = 'development';
+  process.env.APP_URL = 'https://ganabhawan-festival.example.workers.dev';
+  process.env.PAYMENT_PROVIDER = 'razorpay';
+  process.env.OTP_PROVIDER = 'development';
+  try {
+    assert.doesNotThrow(() => assertLiveConfiguration());
+  } finally {
+    process.env.APP_MODE = previous.APP_MODE;
+    process.env.APP_URL = previous.APP_URL;
+    process.env.PAYMENT_PROVIDER = previous.PAYMENT_PROVIDER;
+    process.env.OTP_PROVIDER = previous.OTP_PROVIDER;
+  }
+});
+
 test('login next path stays on this site', () => {
   assert.equal(safeNextPath('/tickets'), '/tickets');
   assert.equal(safeNextPath('https://evil.example/phish'), '/catalogue');
@@ -110,5 +131,7 @@ test('security headers include a content security policy', () => {
   const csp = SECURITY_HEADER_LIST.find((header) => header.key === 'Content-Security-Policy');
   assert.ok(csp?.value.includes("default-src 'self'"));
   assert.ok(csp?.value.includes('checkout.razorpay.com'));
+  assert.ok(csp?.value.includes('https://challenges.cloudflare.com'));
+  assert.ok(csp?.value.includes('https://*.protect.clerk.com:*'));
   assert.ok(csp?.value.includes("worker-src 'self' blob:"));
 });

@@ -2,7 +2,7 @@ import { randomInt } from 'node:crypto';
 import { cookies, headers } from 'next/headers';
 import { auth, currentUser as clerkCurrentUser } from '@clerk/nextjs/server';
 import { query, transaction, one } from './db';
-import { assertLiveConfiguration, devMode, isLocalAppUrl } from './env';
+import { assertLiveConfiguration, devMode, isLocalAppUrl, usingDevelopmentDelivery } from './env';
 import { keyedHash, normalizeContact, token, hash, safeEqual, decrypt, totpValid, hashPassword, verifyPassword } from './security';
 import { AppError, requireValue } from './errors';
 import type { User, Role } from './types';
@@ -72,6 +72,9 @@ export function verifiedClerkEmail(clerkUser: {
 
 export async function requestOtp(raw: string, ip: string) {
   assertLiveConfiguration();
+  if (!isLocalAppUrl() && usingDevelopmentDelivery()) {
+    throw new AppError(503, 'Development adapters cannot run on a public host. Set APP_MODE=live and real payment and OTP providers.');
+  }
   let contact: string;
   try {
     contact = normalizeContact(raw);
