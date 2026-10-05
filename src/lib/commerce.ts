@@ -37,16 +37,25 @@ export async function reserve(user:User,input:{productId:string;quantity:number;
   requireValue(product.festival_status==='PUBLISHED' && (developmentAdaptersAllowed() || process.env.ALLOW_PUBLIC_SALES==='true'),'Ticket sales are paused.');
   requireValue(product.version===input.version,'This price has changed. Please refresh your selection.');
   requireValue(Number.isInteger(input.quantity)&&input.quantity>=1&&input.quantity<=product.max_quantity,'Choose a valid ticket quantity.',400);
-  const coverage=(await c.query('SELECT pc.*,p.allocation,p.held,p.committed,s.title,s.starts_at,s.status FROM product_coverage pc JOIN pools p ON p.id=pc.pool_id JOIN shows s ON s.id=pc.show_id WHERE pc.product_id=$1 ORDER BY s.starts_at, p.id FOR UPDATE OF p',[product.id])).rows;
-  requireValue(coverage.length>0 && coverage.every(s=>s.status==='PUBLISHED'&&new Date(s.starts_at).getTime()>Date.now()),'Sales for this performance have closed.');
-  requireValue(coverage.every(p=>p.allocation-p.held-p.committed>=input.quantity),'Not enough tickets remain. Please choose fewer tickets.');
-  if(product.cap!==null) { const used=await one(c,"SELECT COALESCE(sum(quantity),0)::int n FROM bookings WHERE product_id=$1 AND status IN ('HELD','PAYMENT_PENDING','CONFIRMED')",[product.id]); requireValue(used!.n+input.quantity<=product.cap,'The product limit has been reached.'); }
-  const open=await one(c,"SELECT * FROM bookings WHERE user_id=$1 AND product_id=$2 AND status IN ('HELD','PAYMENT_PENDING') AND expires_at>now() ORDER BY created_at DESC LIMIT 1",[user.id,product.id]);
+  let open=await one(c,"SELECT * FROM bookings WHERE user_id=$1 AND product_id=$2 AND status IN ('HELD','PAYMENT_PENDING') AND expires_at>now() ORDER BY created_at DESC LIMIT 1",[user.id,product.id]);
+  if(open && Number(open.quantity)!==input.quantity && open.status==='HELD') {
+   // Changed quantity before any payment order existed: release the old hold and start over.
+   const ordered=await one(c,'SELECT 1 FROM payment_attempts WHERE booking_id=$1',[open.id]);
+   if(!ordered) {
+    await c.query("UPDATE bookings SET expires_at=now() WHERE id=$1",[open.id]);
+    await expireIn(c,open.id);
+    open=undefined;
+   }
+  }
   if(open) {
    requireValue(Number(open.quantity)===input.quantity,'You already have a checkout in progress for this ticket. Finish it or wait for the hold to expire.',409);
    await c.query('INSERT INTO idempotency(scope,key,input_digest,result) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING',[scope,key,digest,JSON.stringify(open)]);
    return open;
   }
+  const coverage=(await c.query('SELECT pc.*,p.allocation,p.held,p.committed,s.title,s.starts_at,s.status FROM product_coverage pc JOIN pools p ON p.id=pc.pool_id JOIN shows s ON s.id=pc.show_id WHERE pc.product_id=$1 ORDER BY s.starts_at, p.id FOR UPDATE OF p',[product.id])).rows;
+  requireValue(coverage.length>0 && coverage.every(s=>s.status==='PUBLISHED'&&new Date(s.starts_at).getTime()>Date.now()),'Sales for this performance have closed.');
+  requireValue(coverage.every(p=>p.allocation-p.held-p.committed>=input.quantity),'Not enough tickets remain. Please choose fewer tickets.');
+  if(product.cap!==null) { const used=await one(c,"SELECT COALESCE(sum(quantity),0)::int n FROM bookings WHERE product_id=$1 AND status IN ('HELD','PAYMENT_PENDING','CONFIRMED')",[product.id]); requireValue(used!.n+input.quantity<=product.cap,'The product limit has been reached.'); }
   const snapshot={name:product.name,category:product.category,kind:product.kind,terms:product.terms,physicalRequired:product.physical_required,coverage:coverage.map(s=>({showId:s.show_id,poolId:s.pool_id,title:s.title,startsAt:s.starts_at,weight:s.weight}))};
   const booking=(await one(c,`INSERT INTO bookings(reference,user_id,product_id,quantity,unit_price,total,product_version,snapshot,status,expires_at)
    VALUES($1,$2,$3,$4,$5,$6,$7,$8,'HELD',now()+$9*interval '1 minute') RETURNING *`,
@@ -100,6 +109,7 @@ export async function fulfill(bookingId:string,payment:CapturedPayment) {
    const qr=token(); await c.query("INSERT INTO credentials(ticket_id,digest,encrypted_token,kind,status) VALUES($1,$2,$3,'DIGITAL','ACTIVE')",[ticket.id,hash(qr),encrypt(qr)]);
   }
   await c.query("UPDATE bookings SET status='CONFIRMED' WHERE id=$1",[b.id]);
+  await c.query('UPDATE payment_attempts SET next_reconcile_at=NULL WHERE booking_id=$1',[b.id]);
   await markAttemptsConfirmed(c, b.id);
   await job(c,'DELIVERY','confirmation:'+b.id,{bookingId:b.id});
   await audit(c,b.user_id,'booking.confirmed',b.id,{paymentId:record.id});

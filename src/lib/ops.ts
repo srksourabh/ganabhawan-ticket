@@ -15,6 +15,8 @@ export interface OpsStatus {
   gate: { denied24h: number; unknown24h: number };
   auth: { staffMfaFailures24h: number; staffPasswordFailures24h: number };
   critical: string[];
+  /** Needs attention but no customer money is at risk (e.g. an email could not be sent; tickets remain in the app). */
+  warnings: string[];
 }
 
 export async function opsStatus(): Promise<OpsStatus> {
@@ -27,9 +29,9 @@ export async function opsStatus(): Promise<OpsStatus> {
       (SELECT count(*) FROM reconciliation_cases WHERE state='OPEN')::int AS open_cases,
       (SELECT count(*) FROM reconciliation_cases WHERE state='OPEN' AND (key LIKE 'unknown-order:%' OR key LIKE 'webhook:%'))::int AS unmatched,
       (SELECT count(*) FROM bookings WHERE status='PAYMENT_PENDING' AND expires_at > now())::int AS live_pending,
-      (SELECT count(*) FROM refunds WHERE state='FAILED')::int AS refunds_failed,
+      (SELECT count(*) FROM refunds r WHERE r.state='FAILED' AND EXISTS (SELECT 1 FROM reconciliation_cases rc WHERE rc.key='refund-failed:'||r.id AND rc.state='OPEN'))::int AS refunds_failed,
       (SELECT count(*) FROM refunds WHERE state='PROCESSING' AND created_at < now() - interval '7 days')::int AS refunds_slow,
-      (SELECT count(*) FROM refunds WHERE state='REQUESTED' AND created_at < now() - interval '1 hour')::int AS refunds_stalled,
+      (SELECT count(*) FROM refunds WHERE state IN ('REQUESTED','PROCESSING') AND provider_refund_id IS NULL AND created_at < now() - interval '1 hour')::int AS refunds_stalled,
       (SELECT count(*) FROM scan_requests WHERE created_at > now() - interval '24 hours' AND result->>'result'='DENIED')::int AS denied,
       (SELECT count(*) FROM scan_requests WHERE created_at > now() - interval '24 hours' AND result->>'result'='UNKNOWN')::int AS unknown,
       (SELECT count(*) FROM audit_events WHERE action='auth.mfa.failed' AND created_at > now() - interval '24 hours')::int AS mfa_fail,
@@ -45,11 +47,12 @@ export async function opsStatus(): Promise<OpsStatus> {
     gate: { denied24h: n('denied'), unknown24h: n('unknown') },
     auth: { staffMfaFailures24h: n('mfa_fail'), staffPasswordFailures24h: n('pw_fail') },
     critical: [],
+    warnings: [],
   };
   if (status.payments.unmatchedCaptures) status.critical.push(`${status.payments.unmatchedCaptures} captured payment(s) not matched to a booking`);
   if (status.refunds.failed) status.critical.push(`${status.refunds.failed} refund(s) failed at the provider`);
   if (status.refunds.requestedOver1h) status.critical.push(`${status.refunds.requestedOver1h} refund(s) not sent to the provider within 1 hour`);
   if (status.jobs.stuckRunning || status.jobs.overduePending) status.critical.push('background worker is behind or stuck');
-  if (status.jobs.failed7d) status.critical.push(`${status.jobs.failed7d} job(s) permanently failed in the last 7 days`);
+  if (status.jobs.failed7d) status.warnings.push(`${status.jobs.failed7d} background job(s) permanently failed in the last 7 days (see worker logs)`);
   return status;
 }

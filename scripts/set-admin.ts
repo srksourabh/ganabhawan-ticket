@@ -4,11 +4,14 @@
  * Env: ADMIN_EMAIL, ADMIN_PASSWORD, optional ADMIN_USERNAME / ADMIN_NAME
  */
 import { config } from 'dotenv';
-config({ path: '.env.local' });
+config({ path: process.env.ENV_FILE || '.env.local', quiet: true });
 config({ path: '.env' });
 
 import { upsertStaffPassword } from '../src/lib/auth';
 import { pool } from '../src/lib/db';
+import { assertScriptTarget } from './script-env';
+
+assertScriptTarget('db:admin');
 
 const email = process.env.ADMIN_EMAIL || 'srksourabh@gmail.com';
 const password = process.env.ADMIN_PASSWORD || '';

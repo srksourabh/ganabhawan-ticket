@@ -27,6 +27,16 @@ export function isLocalAppUrl(raw = process.env.APP_URL ?? ''): boolean {
   }
 }
 
+/** True only when DATABASE_URL points at this machine (embedded/local Postgres). */
+export function isLoopbackDatabase(raw = process.env.DATABASE_URL ?? ''): boolean {
+  try {
+    const host = new URL(raw).hostname;
+    return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1';
+  } catch {
+    return false;
+  }
+}
+
 /** Cloudflare Workers identify themselves; dev adapters are never allowed there. */
 export function onWorkersRuntime(): boolean {
   return typeof navigator !== 'undefined' && navigator.userAgent === 'Cloudflare-Workers';
@@ -35,10 +45,12 @@ export function onWorkersRuntime(): boolean {
 /**
  * The single switch for every development shortcut (OTP code in responses,
  * staff MFA skip, free dev payments, sales-switch bypass, silent delivery).
- * All three conditions must hold; each one alone fails closed.
+ * All four conditions must hold; each one alone fails closed. The database
+ * condition stops a laptop with a development .env.local from acting on a
+ * shared (staging/production) database, e.g. a CLI "refunding" for free.
  */
 export function developmentAdaptersAllowed(): boolean {
-  return devMode() && isLocalAppUrl() && !onWorkersRuntime();
+  return devMode() && isLocalAppUrl() && isLoopbackDatabase() && !onWorkersRuntime();
 }
 
 /** Development payment adapter only when Razorpay is not selected. */
@@ -63,7 +75,7 @@ export function configurationProblems(): string[] {
   const problems: string[] = [];
   if (devMode()) {
     if (!developmentAdaptersAllowed()) {
-      problems.push('APP_MODE=development requires a localhost APP_URL and is refused on Cloudflare Workers');
+      problems.push('APP_MODE=development requires a localhost APP_URL and a local DATABASE_URL, and is refused on Cloudflare Workers');
     }
     return problems;
   }
@@ -95,7 +107,9 @@ export function configurationProblems(): string[] {
   const composio = present('COMPOSIO_API_KEY') && (present('COMPOSIO_CONNECTED_ACCOUNT_ID') || present('COMPOSIO_USER_ID'));
   if (!resend && !composio) problems.push('email delivery (RESEND_API_KEY+EMAIL_FROM or Composio)');
 
-  if (present('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY') && !present('CLERK_SECRET_KEY')) problems.push('CLERK_SECRET_KEY');
+  // clerkMiddleware (proxy.ts) and ClerkProvider cannot render any page without both keys.
+  if (!present('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY')) problems.push('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY');
+  if (!present('CLERK_SECRET_KEY')) problems.push('CLERK_SECRET_KEY');
   return problems;
 }
 

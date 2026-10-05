@@ -11,7 +11,7 @@
  * (test keys for staging). Prints ids and counts only, never contacts or secrets.
  */
 import { config } from 'dotenv';
-config({ path: process.env.DRILL_ENV_FILE || '.env.local', quiet: true });
+config({ path: process.env.ENV_FILE || '.env.local', quiet: true });
 
 import { pool, query } from '../src/lib/db';
 import { razorpayListOrderPayments } from '../src/lib/razorpay';

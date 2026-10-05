@@ -99,7 +99,8 @@ export async function processJobs(limit = 20): Promise<TickSummary> {
   for (const job of jobs) {
     try {
       await handleJob(job.kind, job.payload);
-      await query("UPDATE jobs SET state='DONE', last_error=NULL, locked_at=NULL WHERE id=$1", [job.id]);
+      // locked_at is kept as the completion time (ops "last done"); reclaim only looks at RUNNING.
+      await query("UPDATE jobs SET state='DONE', last_error=NULL WHERE id=$1", [job.id]);
       summary.processed++;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

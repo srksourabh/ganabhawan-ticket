@@ -1,4 +1,4 @@
-import { query, transaction, one, withSessionLock } from './db';
+import { query, transaction, one, withSerialLock } from './db';
 import { AppError, requireValue } from './errors';
 import { assertLiveConfiguration, developmentAdaptersAllowed, usingDevelopmentPayments } from './env';
 import { applyRefundWebhook } from './refunds';
@@ -71,9 +71,14 @@ export const RECONCILE_LIVE_RECHECK_MINUTES = 1;
 export const RECONCILE_MAX_BACKOFF_MINUTES = 360;
 export const RECONCILE_RETIRE_DAYS = 7;
 
-export function nextReconcileDelayMinutes(checks: number, live: boolean) {
+/**
+ * Live checkouts: every minute. After expiry the gap grows with the time since
+ * the hold expired (≈ a quarter of it, 2 min … 6 h), so a capture shortly after
+ * expiry is found within minutes while week-old abandoned orders cost little.
+ */
+export function nextReconcileDelayMinutes(minutesSinceExpiry: number, live: boolean) {
   if (live) return RECONCILE_LIVE_RECHECK_MINUTES;
-  return Math.min(2 ** Math.max(1, Math.min(checks, 12)), RECONCILE_MAX_BACKOFF_MINUTES);
+  return Math.min(Math.max(2, Math.ceil(Math.max(0, minutesSinceExpiry) / 4)), RECONCILE_MAX_BACKOFF_MINUTES);
 }
 
 const CLAIM_RECONCILE_SQL = `UPDATE payment_attempts a
@@ -81,6 +86,7 @@ const CLAIM_RECONCILE_SQL = `UPDATE payment_attempts a
    WHERE a.id IN (
      SELECT a2.id FROM payment_attempts a2 JOIN bookings b ON b.id = a2.booking_id
      WHERE a2.state = 'READY' AND a2.provider_order_id IS NOT NULL
+       AND a2.provider_order_id NOT LIKE 'dev-%' -- development-adapter orders never existed at Razorpay
        AND a2.next_reconcile_at IS NOT NULL AND a2.next_reconcile_at <= now()
        AND b.status IN ('HELD','PAYMENT_PENDING','EXPIRED','CANCELLED')
      ORDER BY a2.next_reconcile_at, a2.id
@@ -170,7 +176,7 @@ export async function createPaymentOrder(user: User, bookingId: string) {
 
   const attempt = prepared.attempt as AttemptRow;
   try {
-    return await withSessionLock('pay-order:' + prepared.booking.id, async (client) => {
+    return await withSerialLock('pay-order:' + prepared.booking.id, async (client) => {
       const current = await one<AttemptRow>(client, 'SELECT * FROM payment_attempts WHERE id=$1', [attempt.id]);
       if (current?.state === 'READY' && current.provider_order_id) {
         return orderResponse(prepared.booking, current.provider_order_id, 'razorpay');
@@ -365,8 +371,9 @@ export async function reconcileOpenRazorpayPayments(limit = 20): Promise<{ check
     if (!live && ageMs > RECONCILE_RETIRE_DAYS * 86_400_000) {
       await query('UPDATE payment_attempts SET next_reconcile_at=NULL WHERE id=$1', [row.id]);
     } else {
+      const minutesSinceExpiry = (Date.now() - new Date(row.booking_expires_at).getTime()) / 60_000;
       await query("UPDATE payment_attempts SET next_reconcile_at=now() + $1 * interval '1 minute' WHERE id=$2", [
-        nextReconcileDelayMinutes(Number(row.reconcile_checks), live),
+        nextReconcileDelayMinutes(minutesSinceExpiry, live),
         row.id,
       ]);
     }

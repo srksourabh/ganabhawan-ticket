@@ -23,6 +23,13 @@ type LineState = {
   order?: RazorpayOrder & { provider: 'development' | 'razorpay' };
 };
 
+/** crypto.randomUUID is missing on older Safari and on plain-http origins. */
+function newCheckoutKey() {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return 'chk-' + Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 function updateLine(lines: LineState[], productId: string, patch: Partial<LineState>): LineState[] {
   return lines.map((line) => (line.item.productId === productId ? { ...line, ...patch } : line));
 }
@@ -65,7 +72,7 @@ export default function CheckoutPage() {
   }, [router]);
 
   useEffect(() => {
-    if (!running && !done) setLines(cart.items.map((item) => ({ item, status: 'pending', holdKey: crypto.randomUUID() })));
+    if (!running && !done) setLines(cart.items.map((item) => ({ item, status: 'pending', holdKey: newCheckoutKey() })));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart.items, running]);
 
@@ -150,7 +157,7 @@ export default function CheckoutPage() {
         // The server returns the same live hold if one is still open.
         setLines((prev) => updateLine(prev, line.item.productId, {
           status: 'error',
-          holdKey: crypto.randomUUID(),
+          holdKey: newCheckoutKey(),
           bookingId: undefined,
           reference: undefined,
           order: undefined,

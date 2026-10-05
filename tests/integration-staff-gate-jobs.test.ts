@@ -202,7 +202,9 @@ test('email: correct ticket link; provider failure retries (never DONE), then FA
   job = (await query("SELECT state, attempts FROM jobs WHERE key=$1", ['confirmation:' + t.bookingId]))[0];
   assert.deepEqual(job, { state: 'FAILED', attempts: 5 }, 'bounded retries, then FAILED');
   const { opsStatus } = await import('../src/lib/ops');
-  assert.ok((await opsStatus()).critical.some((c) => /permanently failed/.test(c)));
+  const ops = await opsStatus();
+  assert.ok(ops.warnings.some((c) => /permanently failed/.test(c)), 'surfaced to operations');
+  assert.equal(ops.critical.length, 0, 'an undelivered email is not a money emergency');
   // The ticket is still available in the app without email.
   assert.equal((await commerce.ownedBookings(t.user.id, t.bookingId))[0].status, 'CONFIRMED');
   fake.failEmail = false;

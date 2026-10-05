@@ -25,7 +25,8 @@ function loadLocalEnv() {
     // Fill missing vars from .env.local; do not override Worker/runtime secrets.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { config } = require('dotenv') as typeof import('dotenv');
-    config({ path: '.env.local', quiet: true });
+    // ENV_FILE selects the environment for operator scripts (e.g. .env.production).
+    config({ path: process.env.ENV_FILE || '.env.local', quiet: true });
   } catch {
     // dotenv unavailable in some edge builds
   }
@@ -140,20 +141,34 @@ export async function transaction<T>(fn: (client: Client) => Promise<T>, commerc
   }
 }
 
-/** Holds a session advisory lock across the callback, including external HTTP. */
-export async function withSessionLock<T>(key: string, fn: (client: Client) => Promise<T>): Promise<T> {
+/**
+ * Serialises a critical section per key across processes, including external
+ * HTTP calls made inside it. Uses a TRANSACTION-scoped advisory lock inside an
+ * explicit transaction: a pooler in transaction mode (Neon's pooled URL,
+ * PgBouncer) keeps a transaction on one backend, and the lock is released by
+ * COMMIT/ROLLBACK or by the server if the connection dies, so it can neither
+ * leak nor be silently shared. Writes made through `client` commit together at
+ * the end; callers must stay idempotent if that commit fails after an external
+ * side effect (both callers re-discover provider objects by receipt/notes).
+ */
+export async function withSerialLock<T>(key: string, fn: (client: Client) => Promise<T>): Promise<T> {
+  const run = async (client: Queryable) => {
+    await client.query('BEGIN');
+    await client.query("SET LOCAL lock_timeout = '20s'");
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [key]);
+  };
   if (prefersNeonHttp()) {
     const pool = new NeonPool({ connectionString: connectionString(), max: 1 });
     const client = await pool.connect();
     try {
-      await client.query('SELECT pg_advisory_lock(hashtext($1))', [key]);
-      return await fn(wrapClient(client, () => client.release()));
+      await run(client);
+      const result = await fn(wrapClient(client, () => client.release()));
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      try { await client.query('ROLLBACK'); } catch { /* connection may be dead; the server releases the lock */ }
+      throw error;
     } finally {
-      try {
-        await client.query('SELECT pg_advisory_unlock(hashtext($1))', [key]);
-      } catch {
-        // The connection may already be dead.
-      }
       client.release();
       await pool.end();
     }
@@ -162,14 +177,14 @@ export async function withSessionLock<T>(key: string, fn: (client: Client) => Pr
   const pool = await getPgPool();
   const client = await pool.connect();
   try {
-    await client.query('SELECT pg_advisory_lock(hashtext($1))', [key]);
-    return await fn(wrapClient(client, () => client.release()));
+    await run(client);
+    const result = await fn(wrapClient(client, () => client.release()));
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch { /* connection may be dead */ }
+    throw error;
   } finally {
-    try {
-      await client.query('SELECT pg_advisory_unlock(hashtext($1))', [key]);
-    } catch {
-      // The connection may already be dead.
-    }
     client.release();
   }
 }

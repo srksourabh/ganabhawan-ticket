@@ -24,6 +24,25 @@ type StaffRow = {
   mfa_enabled_at: string | null;
 };
 
+/**
+ * Refuses to write secrets with a CREDENTIAL_KEY that differs from the one the
+ * target database was built with (e.g. a laptop's .env.local pointed at
+ * production): such secrets could never be decrypted by the deployed app.
+ */
+export async function assertCredentialKeyMatches(c: Client) {
+  const sample = await one<{ value: string }>(
+    c,
+    `(SELECT encrypted_token AS value FROM credentials LIMIT 1)
+     UNION ALL (SELECT mfa_secret FROM users WHERE mfa_secret IS NOT NULL LIMIT 1) LIMIT 1`,
+  );
+  if (!sample) return;
+  try {
+    decrypt(sample.value);
+  } catch {
+    throw new AppError(409, 'CREDENTIAL_KEY does not match this database. Load the right environment (ENV_FILE=.env.production) and retry.');
+  }
+}
+
 async function lockStaff(c: Client, contact: string) {
   const normalized = normalizeContact(contact);
   const user = await one<StaffRow>(c, 'SELECT * FROM users WHERE contact=$1 FOR UPDATE', [normalized]);
@@ -85,6 +104,7 @@ export async function upsertStaff(input: {
  */
 export async function beginMfaEnrollment(contact: string) {
   return transaction(async (c) => {
+    await assertCredentialKeyMatches(c);
     const user = await lockStaff(c, contact);
     requireValue(user.role !== 'customer', 'Only staff accounts use an authenticator.', 400);
     requireValue(!user.mfa_secret, 'MFA is already enabled for this account. Reset it first (db:staff mfa-reset).', 409);

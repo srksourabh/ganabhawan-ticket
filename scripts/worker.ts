@@ -1,8 +1,11 @@
 import { config } from 'dotenv';
-config({ path: '.env.local' });
+config({ path: process.env.ENV_FILE || '.env.local', quiet: true });
 
 import { processJobs } from '../src/lib/jobs';
 import { expireHolds } from '../src/lib/commerce';
+import { assertScriptTarget } from './script-env';
+
+assertScriptTarget('the worker');
 
 async function main() {
   console.log('[worker] starting');

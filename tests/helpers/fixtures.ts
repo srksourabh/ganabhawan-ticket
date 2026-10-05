@@ -33,7 +33,8 @@ export function useLiveStagingEnv() {
     DB_POOL_MAX: '10',
     ...TEST_SECRETS,
   });
-  delete process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = 'pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk';
+  process.env.CLERK_SECRET_KEY = 'sk_test_integration';
 }
 
 export function assertLoopbackDatabase() {

@@ -1,4 +1,4 @@
-import { one, pool, query, withSessionLock, type Client } from './db';
+import { one, pool, query, withSerialLock, type Client } from './db';
 import { audit } from './audit';
 import { usingDevelopmentPayments, developmentAdaptersAllowed } from './env';
 import {
@@ -65,7 +65,7 @@ export async function applyRefundState(db: Queryable, refundId: string, provider
  * never create a second provider refund.
  */
 export async function executeRefund(refundId: string) {
-  return withSessionLock('refund:' + refundId, async (c) => {
+  return withSerialLock('refund:' + refundId, async (c) => {
     const refund = await one<{ id: string; amount: number; state: string; provider_refund_id: string | null; provider_payment_id: string }>(
       c,
       `SELECT r.id, r.amount, r.state, r.provider_refund_id, p.provider_payment_id
@@ -95,9 +95,31 @@ export async function executeRefund(refundId: string) {
   });
 }
 
-/** Polls refunds still PROCESSING at the provider, least-recently-checked first. */
+/**
+ * Background refund upkeep, least-recently-checked first:
+ * 1. Re-drives refunds that never reached the provider (no provider id after
+ *    30 min, e.g. the REFUND job exhausted its retries while Razorpay was down).
+ *    Safe: executeRefund adopts a provider refund already carrying our note.
+ * 2. Polls refunds the provider still reports as pending.
+ */
 export async function pollProcessingRefunds(limit = 20) {
   if (usingDevelopmentPayments()) return 0;
+  const stalled = await query<{ id: string }>(
+    `UPDATE refunds SET last_checked_at=now() WHERE id IN (
+       SELECT id FROM refunds WHERE state IN ('REQUESTED','PROCESSING') AND provider_refund_id IS NULL
+         AND created_at < now() - interval '30 minutes'
+         AND (last_checked_at IS NULL OR last_checked_at < now() - interval '15 minutes')
+       ORDER BY last_checked_at NULLS FIRST, id LIMIT $1 FOR UPDATE SKIP LOCKED)
+     RETURNING id`,
+    [limit],
+  );
+  for (const row of stalled) {
+    try {
+      await executeRefund(row.id);
+    } catch (error) {
+      console.error('[alert] refund still not sent to the provider', row.id, error instanceof Error ? error.message : error);
+    }
+  }
   const rows = await query<{ id: string; provider_refund_id: string }>(
     `UPDATE refunds SET last_checked_at=now() WHERE id IN (
        SELECT id FROM refunds WHERE state='PROCESSING' AND provider_refund_id IS NOT NULL

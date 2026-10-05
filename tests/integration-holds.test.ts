@@ -67,6 +67,8 @@ test('two tabs / mobile retry (10 concurrent, different keys) reuse the one live
   const results = await Promise.all(Array.from({ length: 10 }, () => hold(user, show.productId, 1, randomUUID())));
   assert.equal(new Set(results.map((r) => r.id)).size, 1);
   assert.equal((await pool(show.poolId)).held, 1);
+  // Once paying has started, a different quantity is refused rather than silently dropping the hold.
+  await payments.createPaymentOrder(user, results[0].id);
   await assert.rejects(() => hold(user, show.productId, 3, randomUUID()), /checkout in progress/i);
 });
 

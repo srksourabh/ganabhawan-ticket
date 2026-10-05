@@ -107,7 +107,10 @@ test.describe('Ticket Purchase & Checkout Flow', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
+        // Shape of the real /api/payments/confirm response: the booking row with its status.
         body: JSON.stringify({
+          id: 'booking-999',
+          status: 'CONFIRMED',
           confirmed: true,
           bookingId: 'booking-999',
           reference: 'SAM-2026-999',

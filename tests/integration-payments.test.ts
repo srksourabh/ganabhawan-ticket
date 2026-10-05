@@ -268,3 +268,15 @@ test('provider outage during order creation leaves the hold intact and retry suc
   assert.ok(order.orderId.startsWith('order_'));
   assert.equal(fake.orders.size, 1);
 });
+
+test('orders left by the old development adapter (dev-…) are never sent to Razorpay', { skip }, async () => {
+  const show = await makeShow();
+  const user = await makeUser();
+  const hold = (await reserve(user, { productId: show.productId, quantity: 1, version: 1 }, randomUUID())) as { id: string };
+  await query("INSERT INTO payment_attempts(booking_id,provider_order_id,state) VALUES($1,$2,'READY')", [hold.id, 'dev-' + hold.id]);
+  await expireNow(hold.id);
+  await expireHolds();
+  const summary = await reconcile();
+  assert.equal(summary.checked, 0);
+  assert.equal(fake.count('GET /orders/'), 0);
+});

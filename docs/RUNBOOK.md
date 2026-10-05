@@ -11,7 +11,7 @@ URLs (replace with the production host): site `/`, programme `/catalogue`, custo
 | See bookings, payments, refunds, people who tried to book | Admin → Accounts | owner, finance |
 | Operations health (critical items) | Admin → Accounts → Operations | owner, finance |
 | Scan tickets | `/gate` (choose gate, show, then scan) | scanner, supervisor, owner |
-| Add or remove staff, authenticator setup | `npm run db:staff -- …` (GO_LIVE §4) | engineer with DB access |
+| Add or remove staff, authenticator setup | `ENV_FILE=.env.production npm run db:staff -- …` (GO_LIVE §4) | engineer with DB access |
 
 ## Cancelling a performance
 
@@ -52,6 +52,6 @@ Before every deploy that runs a migration: Neon console → create a branch `pre
 |---|---|
 | Who | owner + the engineer on call |
 | When | health 503 after deploy, checkout or gate failing in smoke tests, money invariant FAIL in `drill:razorpay` |
-| App rollback | Cloudflare dashboard → Workers → ganabhawan-festival → Deployments → previous version → "Rollback" (or `npx wrangler rollback`). Migration 0006 is additive, so the previous app version runs correctly on the new schema; no DB change is needed |
+| App rollback | 1. Run `UPDATE bookings SET status='REFUND_REQUIRED' WHERE status='REFUNDED';` (data-preserving: the old version doesn't know REFUNDED and would otherwise issue tickets for a later payment on such a booking instead of refunding it). 2. Cloudflare dashboard → Workers → ganabhawan-festival → Deployments → previous version → "Rollback" (or `npx wrangler rollback`). Migration 0006 is otherwise additive and the previous version runs on it (verified: old code books and confirms on the 0006 schema) |
 | Schema rollback | Only if the schema itself is at fault: restore the `pre-<sha>` Neon branch, **or** run `db/rollback/0006_down.sql` (maps REFUNDED back to REFUND_REQUIRED, drops the added columns; staff enrolled via `db:staff` keep their `mfa_secret`) |
 | Verify | `/api/health` 200, `/api/ops/status` 200, `npm run drill:razorpay` all PASS, one scan of a known ticket at `/gate` |

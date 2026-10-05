@@ -9,10 +9,13 @@
  *   npm run db:purge-synthetic -- --apply # demote + revoke
  */
 import { config } from 'dotenv';
-config({ path: '.env.local', quiet: true });
+config({ path: process.env.ENV_FILE || '.env.local', quiet: true });
 
 import { pool, transaction } from '../src/lib/db';
 import { audit } from '../src/lib/audit';
+import { assertScriptTarget } from './script-env';
+
+assertScriptTarget('db:purge-synthetic');
 
 const apply = process.argv.includes('--apply');
 const PATTERN = '%@example.test';

@@ -15,7 +15,7 @@
  * The enrolment secret is printed only by mfa-enroll; clear the terminal afterwards.
  */
 import { config } from 'dotenv';
-config({ path: '.env.local', quiet: true });
+config({ path: process.env.ENV_FILE || '.env.local', quiet: true });
 
 import QRCode from 'qrcode';
 import { transaction } from '../src/lib/db';
@@ -25,6 +25,9 @@ import {
   STAFF_ROLES, beginMfaEnrollment, confirmMfaEnrollment, grantUpcomingScopes, listStaff, resetMfa, revokeStaff, upsertStaff,
 } from '../src/lib/staff';
 import type { Role } from '../src/lib/types';
+import { assertScriptTarget } from './script-env';
+
+assertScriptTarget('db:staff');
 
 const [command, ...args] = process.argv.slice(2);
 

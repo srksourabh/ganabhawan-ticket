@@ -49,6 +49,7 @@ type Ledger = {
 
 type Ops = {
   critical: string[];
+  warnings?: string[];
   jobs: { failed7d: number; stuckRunning: number; overduePending: number };
   refunds: { failed: number; processingOver7d: number };
   gate: { denied24h: number; unknown24h: number };
@@ -81,7 +82,12 @@ export default function AccountsPage() {
       .catch(() => setError('Could not load accounts.'));
     // 503 still carries the status body: it means a critical item is open.
     fetch('/api/ops/status')
-      .then(async (res) => (res.status === 200 || res.status === 503 ? setOps(await res.json()) : undefined))
+      .then(async (res) => {
+        if (res.status !== 200 && res.status !== 503) return;
+        const body = await res.json().catch(() => null);
+        // A 503 from the proxy (CONFIG_INVALID) has no ops shape; only render real status.
+        if (body && Array.isArray(body.critical)) setOps(body);
+      })
       .catch(() => undefined);
   }, [reload]);
 
@@ -139,6 +145,9 @@ export default function AccountsPage() {
             </ul>
           ) : (
             <p className="banner">No critical issues.</p>
+          )}
+          {(ops.warnings ?? []).length > 0 && (
+            <ul className="banner">{(ops.warnings ?? []).map((item) => <li key={item}>{item}</li>)}</ul>
           )}
           <p className="muted">
             Jobs failed (7 days): {ops.jobs.failed7d} · stuck: {ops.jobs.stuckRunning} · overdue: {ops.jobs.overduePending} ·

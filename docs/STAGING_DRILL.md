@@ -6,7 +6,7 @@ Mandatory before production. Automated tests simulate Razorpay's HTTP API; only 
 
 Test cards and UPI are listed at https://razorpay.com/docs/payments/payments/test-card-upi-details/ (success card, failure card, `success@razorpay` / `failure@razorpay` UPI).
 
-After **every** step run `DRILL_ENV_FILE=.env.staging npm run drill:razorpay -- <booking ref>`. It is read-only and must show all PASS. Record: date, tester, booking reference, Razorpay payment/refund id, result.
+After **every** step run `ENV_FILE=.env.staging npm run drill:razorpay -- <booking ref>`. It is read-only and must show all PASS. Record: date, tester, booking reference, Razorpay payment/refund id, result.
 
 | # | Scenario | How | Expected | Evidence |
 |---|---|---|---|---|

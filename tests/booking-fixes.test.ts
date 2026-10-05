@@ -47,7 +47,8 @@ const LIVE_STAGING = {
   OTP_PROVIDER: 'email',
   RESEND_API_KEY: 're_x',
   EMAIL_FROM: 'tickets@example.org',
-  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: undefined,
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk',
+  CLERK_SECRET_KEY: 'sk_test_x',
 };
 
 test('an unset APP_URL is NOT local (fails closed)', () => {
@@ -90,9 +91,16 @@ test('development mode with APP_URL missing is refused, not treated as local', (
     assert.equal(developmentAdaptersAllowed(), false);
     assert.throws(() => assertLiveConfiguration(), (err: unknown) => err instanceof AppError && err.status === 503);
   });
-  withEnv({ APP_MODE: 'development', APP_URL: 'http://localhost:3000' }, () => {
+  withEnv({ APP_MODE: 'development', APP_URL: 'http://localhost:3000', DATABASE_URL: 'postgresql://festival:x@127.0.0.1:54329/festival' }, () => {
     assert.equal(developmentAdaptersAllowed(), true);
     assert.doesNotThrow(() => assertLiveConfiguration());
+  });
+});
+
+test('development adapters refuse a remote database (laptop .env.local pointed at production)', () => {
+  withEnv({ APP_MODE: 'development', APP_URL: 'http://localhost:3000', DATABASE_URL: 'postgresql://u:p@ep-x.neon.tech/prod' }, () => {
+    assert.equal(developmentAdaptersAllowed(), false);
+    assert.throws(() => assertLiveConfiguration(), (err: unknown) => err instanceof AppError && err.status === 503);
   });
 });
 
@@ -114,6 +122,7 @@ test('live mode lists every missing production requirement by name only', () => 
   withEnv({ ...LIVE_STAGING, DEPLOY_ENV: 'production' }, () => assert.ok(configurationProblems().some((p) => /live key/.test(p))));
   withEnv({ ...LIVE_STAGING, RAZORPAY_KEY_ID: 'rzp_live_abc' }, () => assert.ok(configurationProblems().some((p) => /test key/.test(p))));
   withEnv({ ...LIVE_STAGING, RESEND_API_KEY: undefined }, () => assert.ok(configurationProblems().some((p) => p.startsWith('email'))));
+  withEnv({ ...LIVE_STAGING, CLERK_SECRET_KEY: undefined }, () => assert.ok(configurationProblems().includes('CLERK_SECRET_KEY')));
   withEnv({ ...LIVE_STAGING, SESSION_SECRET: 'short' }, () => assert.ok(configurationProblems().some((p) => p.startsWith('SESSION_SECRET'))));
   // Problems name settings, never their values.
   withEnv({ ...LIVE_STAGING, SESSION_SECRET: 'short-secret-value' }, () => assert.ok(!configurationProblems().join(' ').includes('short-secret-value')));
@@ -123,7 +132,7 @@ test('development adapters are refused on Cloudflare Workers even with a localho
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
   Object.defineProperty(globalThis, 'navigator', { value: { userAgent: 'Cloudflare-Workers' }, configurable: true });
   try {
-    withEnv({ APP_MODE: 'development', APP_URL: 'http://localhost:3000' }, () => assert.equal(developmentAdaptersAllowed(), false));
+    withEnv({ APP_MODE: 'development', APP_URL: 'http://localhost:3000', DATABASE_URL: 'postgresql://festival:x@127.0.0.1:54329/festival' }, () => assert.equal(developmentAdaptersAllowed(), false));
   } finally {
     if (descriptor) Object.defineProperty(globalThis, 'navigator', descriptor);
     else delete (globalThis as { navigator?: unknown }).navigator;
@@ -195,10 +204,10 @@ test('festival numeric fields are rejected before the database', () => {
 });
 
 test('reconciliation backs off abandoned orders but re-checks live ones every minute', () => {
-  assert.equal(nextReconcileDelayMinutes(1, true), 1);
-  assert.equal(nextReconcileDelayMinutes(1, false), 2);
-  assert.equal(nextReconcileDelayMinutes(4, false), 16);
-  assert.equal(nextReconcileDelayMinutes(40, false), RECONCILE_MAX_BACKOFF_MINUTES);
+  assert.equal(nextReconcileDelayMinutes(0, true), 1);
+  assert.equal(nextReconcileDelayMinutes(0, false), 2, 'just expired: checked again within minutes');
+  assert.equal(nextReconcileDelayMinutes(60, false), 15);
+  assert.equal(nextReconcileDelayMinutes(7 * 24 * 60, false), RECONCILE_MAX_BACKOFF_MINUTES);
 });
 
 test('a refund-required payment is not treated as a confirmed booking', () => {

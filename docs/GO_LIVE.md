@@ -10,7 +10,7 @@ Three environments. Never mix their databases or keys.
 
 **Fail-closed rules (enforced in code, `src/lib/env.ts`):**
 * Development adapters (OTP code in the response, staff MFA skip, free "payments", sales-switch bypass) run **only** when `APP_MODE=development` **and** `APP_URL` is explicitly `localhost`/`127.0.0.1` **and** the process is not a Cloudflare Worker. An unset `APP_URL`, or any unknown `APP_MODE` value, counts as live.
-* In live mode, every API call returns `503 CONFIG_INVALID`, and `/api/health` returns 503, until all of these are set: `DATABASE_URL`, `SESSION_SECRET`, `CREDENTIAL_KEY` (32+ chars each), `CRON_SECRET`, an https `APP_URL`, `DEPLOY_ENV`, `PAYMENT_PROVIDER=razorpay`, `RAZORPAY_KEY_ID` (`rzp_test_` on staging, `rzp_live_` on production), `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, a real `OTP_PROVIDER`, and email delivery (`RESEND_API_KEY`+`EMAIL_FROM`, or Composio).
+* In live mode, every API call returns `503 CONFIG_INVALID`, and `/api/health` returns 503, until all of these are set: `DATABASE_URL`, `SESSION_SECRET`, `CREDENTIAL_KEY` (32+ chars each), `CRON_SECRET`, an https `APP_URL`, `DEPLOY_ENV`, `PAYMENT_PROVIDER=razorpay`, `RAZORPAY_KEY_ID` (`rzp_test_` on staging, `rzp_live_` on production), `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, a real `OTP_PROVIDER`, email delivery (`RESEND_API_KEY`+`EMAIL_FROM`, or Composio), and Clerk (`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` + `CLERK_SECRET_KEY`; the site cannot render pages without them).
 * `npm run deploy:secrets` refuses to push a development config, a non-https/localhost `APP_URL`, or a Razorpay key that doesn't match `DEPLOY_ENV`.
 * `npm run db:seed` refuses any non-local database, and any database that has payments or confirmed bookings.
 
@@ -36,8 +36,8 @@ OTP_PROVIDER=email                       # or httpsms (+ HTTPSMS_API_KEY/HTTPSMS
 RESEND_API_KEY=…
 EMAIL_FROM=Samatat Tickets <tickets@your-domain>
 ALLOW_PUBLIC_SALES=false                 # true only when the committee opens sales
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=…      # optional (Google sign-in for customers)
-CLERK_SECRET_KEY=…
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=…      # required (pk_live_… in production; Google sign-in for customers)
+CLERK_SECRET_KEY=…                       # required
 ```
 
 ## 2. Database: migrate (non-destructive)
@@ -55,7 +55,10 @@ Migrations are additive (`db/migrations/0006_production_remediation.sql` adds nu
 
 The Worker deployed on 6 Sep 2026 ran development adapters on seeded data. Before opening sales:
 
+Operator scripts read the environment named by `ENV_FILE` (default `.env.local`). Any script that writes refuses a development configuration against a non-local database, and development adapters never act on a non-local database at all.
+
 ```powershell
+$env:ENV_FILE=".env.production"
 npm run db:purge-synthetic                 # dry run: lists @example.test accounts, sessions, scopes, bookings
 npm run db:purge-synthetic -- --apply      # demotes them, removes sessions and gate scopes (keeps records)
 ```
@@ -65,6 +68,7 @@ Then **rotate** `SESSION_SECRET` and `CRON_SECRET`, and delete all sessions (`DE
 ## 4. Staff and authenticators
 
 ```powershell
+$env:ENV_FILE=".env.production"            # the same CREDENTIAL_KEY as the deployed Worker; enrolment refuses a mismatched key
 $env:STAFF_PASSWORD="<12+ chars, give it to the person privately>"
 npm run db:staff -- add owner@samatat.org owner "Festival owner"
 npm run db:staff -- mfa-enroll owner@samatat.org     # scan the QR on the owner's phone
