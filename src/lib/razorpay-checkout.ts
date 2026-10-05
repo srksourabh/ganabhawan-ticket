@@ -126,12 +126,19 @@ export async function confirmRazorpayPayment(response: RazorpaySuccess) {
   return assertBookingIssued(body);
 }
 
+/**
+ * The server's booking state is authoritative; HTTP 200 alone means nothing.
+ * Only CONFIRMED is success. A paid booking that could not be issued
+ * (REFUND_REQUIRED / CANCELLED / REFUNDED) throws 'REFUND_REQUIRED' so the UI
+ * shows the refund message; any other state is reported as not confirmed.
+ */
 export function assertBookingIssued(body: unknown) {
   const status = body && typeof body === 'object' && 'status' in body ? String((body as { status?: unknown }).status ?? '') : '';
-  if (status === 'REFUND_REQUIRED') {
+  if (status === 'CONFIRMED') return body;
+  if (status === 'REFUND_REQUIRED' || status === 'CANCELLED' || status === 'REFUNDED') {
     throw new Error('REFUND_REQUIRED');
   }
-  return body;
+  throw new Error('Your payment is being checked. Open My tickets in a minute to see the result.');
 }
 
 export async function confirmDevelopmentPayment(order: RazorpayOrder) {

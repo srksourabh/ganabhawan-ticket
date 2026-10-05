@@ -155,6 +155,10 @@ export async function razorpayListPaymentRefunds(paymentId: string): Promise<Raz
   return collection.items ?? [];
 }
 
+export async function razorpayFetchRefund(refundId: string): Promise<RazorpayRefundEntity> {
+  return razorpayRequest<RazorpayRefundEntity>(`/refunds/${encodeURIComponent(refundId)}`);
+}
+
 export async function razorpayRefundPayment(paymentId: string, amount: number, refundKey: string) {
   return razorpayRequest<RazorpayRefundEntity>(`/payments/${encodeURIComponent(paymentId)}/refund`, {
     method: 'POST',

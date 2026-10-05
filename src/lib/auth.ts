@@ -2,8 +2,9 @@ import { randomInt } from 'node:crypto';
 import { cookies, headers } from 'next/headers';
 import { auth, currentUser as clerkCurrentUser } from '@clerk/nextjs/server';
 import { query, transaction, one } from './db';
-import { assertLiveConfiguration, devMode, isLocalAppUrl } from './env';
-import { keyedHash, normalizeContact, token, hash, safeEqual, decrypt, totpValid, hashPassword, verifyPassword } from './security';
+import { assertLiveConfiguration, developmentAdaptersAllowed } from './env';
+import { keyedHash, normalizeContact, token, hash, safeEqual, decrypt, totpMatchStep, hashPassword, verifyPassword } from './security';
+import type { Client } from './db';
 import { AppError, requireValue } from './errors';
 import type { User, Role } from './types';
 import { audit } from './audit';
@@ -24,7 +25,8 @@ export async function sendMessage(contact: string, subject: string, message: str
   const phone = !contact.includes('@');
   const viaHttpsms = phone && httpsmsEnabled();
   const viaComposio = !phone && composioGmailConfigured();
-  if (devMode() && otpProvider() === 'development' && !viaHttpsms && !viaComposio) return;
+  // Silent no-op delivery exists only for local development; live mode must really send.
+  if (developmentAdaptersAllowed() && otpProvider() === 'development' && !viaHttpsms && !viaComposio) return;
 
   if (!phone) {
     if (viaComposio) {
@@ -58,7 +60,32 @@ export async function sendMessage(contact: string, subject: string, message: str
 }
 
 function staffMfaRequired() {
-  return !(devMode() && isLocalAppUrl());
+  return !developmentAdaptersAllowed();
+}
+
+/**
+ * Checks a staff TOTP code against the enrolled secret and records its step,
+ * so the same code (or an older one) cannot be replayed. Caller holds the
+ * user row lock (SELECT ... FOR UPDATE) inside the same transaction.
+ */
+export async function verifyStaffTotp(
+  c: Client,
+  user: { id: string; mfa_secret?: string | null; mfa_last_step?: number | string | null },
+  code: string,
+  nowMs = Date.now(),
+): Promise<boolean> {
+  if (!user.mfa_secret) return false;
+  let key: string;
+  try {
+    key = decrypt(user.mfa_secret);
+  } catch {
+    return false;
+  }
+  const step = totpMatchStep(key, code.trim(), nowMs);
+  if (step === null) return false;
+  if (user.mfa_last_step !== null && user.mfa_last_step !== undefined && step <= Number(user.mfa_last_step)) return false;
+  await c.query('UPDATE users SET mfa_last_step=$1 WHERE id=$2', [step, user.id]);
+  return true;
 }
 
 export function verifiedClerkEmail(clerkUser: {
@@ -96,7 +123,7 @@ export async function requestOtp(raw: string, ip: string) {
   return {
     challengeId: challenge.id,
     message: sms ? 'If the number can receive SMS, your code is on its way.' : 'If delivery is available, your code is on its way.',
-    ...(devMode() && isLocalAppUrl() && otpProvider() === 'development' ? { developmentCode: code } : {}),
+    ...(developmentAdaptersAllowed() && otpProvider() === 'development' ? { developmentCode: code } : {}),
   };
 }
 
@@ -108,9 +135,12 @@ export async function verifyOtp(challengeId: string, code: string, mfaCode = '')
     }
     await c.query('UPDATE otp_challenges SET attempts=attempts+1 WHERE id=$1', [challengeId]);
     if (!safeEqual(challenge.digest, keyedHash(challenge.contact + ':' + code))) return { error: 'The code is incorrect. Please try again.' };
-    let user = await one<User>(c, 'SELECT * FROM users WHERE contact=$1', [challenge.contact]);
+    let user = await one<User>(c, 'SELECT * FROM users WHERE contact=$1 FOR UPDATE', [challenge.contact]);
     if (user && user.role !== 'customer' && staffMfaRequired()) {
-      if (!user.mfa_secret || !totpValid(decrypt(user.mfa_secret), mfaCode)) return { error: 'A valid staff authenticator code is required.' };
+      if (!(await verifyStaffTotp(c, user, mfaCode))) {
+        await audit(c, user.id, 'auth.mfa.failed', user.id, { via: 'otp' });
+        return { error: 'A valid staff authenticator code is required.' };
+      }
     }
     await c.query('UPDATE otp_challenges SET used=true WHERE id=$1', [challengeId]);
     if (!user) user = (await one<User>(c, 'INSERT INTO users(contact) VALUES($1) RETURNING *', [challenge.contact]))!;
@@ -138,10 +168,16 @@ export async function loginWithPassword(identifier: string, password: string, mf
       [raw],
     );
     if (!user || !user.password_hash) return { error: 'Incorrect email or password.' };
-    if (!verifyPassword(password, user.password_hash)) return { error: 'Incorrect email or password.' };
+    if (!verifyPassword(password, user.password_hash)) {
+      await audit(c, user.id, 'auth.password.failed', user.id);
+      return { error: 'Incorrect email or password.' };
+    }
     if (user.role === 'customer') return { error: 'This account cannot access the admin dashboard.' };
     if (staffMfaRequired()) {
-      if (!user.mfa_secret || !totpValid(decrypt(user.mfa_secret), mfaCode)) return { error: 'A valid staff authenticator code is required.' };
+      if (!(await verifyStaffTotp(c, user, mfaCode))) {
+        await audit(c, user.id, 'auth.mfa.failed', user.id, { via: 'password' });
+        return { error: 'A valid staff authenticator code is required.' };
+      }
     }
     const sessionToken = token();
     await c.query("INSERT INTO sessions(digest,user_id,expires_at) VALUES($1,$2,now()+interval '12 hours')", [hash(sessionToken), user.id]);
@@ -215,19 +251,35 @@ async function userFromClerkSession(): Promise<User | null> {
   }
 }
 
-export async function currentUser(): Promise<User | null> {
+/** Session token from the Authorization bearer header, else the session cookie. */
+export async function presentedSessionToken(): Promise<string> {
   const authorization = (await headers()).get('authorization') ?? '';
   const bearer = authorization.toLowerCase().startsWith('bearer ') ? authorization.slice(7).trim() : '';
-  const value = bearer || (await cookies()).get('festival_session')?.value;
-  if (value) {
-    const row = (
-      await query<User>(
-        'SELECT u.id,u.contact,u.name,u.role FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.digest=$1 AND s.expires_at>now()',
-        [hash(value)],
-      )
-    )[0];
-    if (row) return row;
-  }
+  return bearer || (await cookies()).get('festival_session')?.value || '';
+}
+
+/** The unexpired, unrevoked session's user. Revoked sessions are deleted rows. */
+export async function sessionUser(sessionToken: string): Promise<User | null> {
+  if (!sessionToken) return null;
+  const rows = await query<User>(
+    'SELECT u.id,u.contact,u.name,u.role FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.digest=$1 AND s.expires_at>now()',
+    [hash(sessionToken)],
+  );
+  return rows[0] ?? null;
+}
+
+export async function revokeSession(sessionToken: string) {
+  if (sessionToken) await query('DELETE FROM sessions WHERE digest=$1', [hash(sessionToken)]);
+}
+
+export async function revokeUserSessions(c: Client, userId: string) {
+  await c.query('DELETE FROM sessions WHERE user_id=$1', [userId]);
+}
+
+export async function currentUser(): Promise<User | null> {
+  const value = await presentedSessionToken();
+  const row = await sessionUser(value);
+  if (row) return row;
   return userFromClerkSession();
 }
 

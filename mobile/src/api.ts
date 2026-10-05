@@ -1,5 +1,10 @@
 const API = (process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000').replace(/\/$/, '');
 
+/** Absolute website URL (booking happens on the web checkout). */
+export function webUrl(path: string) {
+  return `${API}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
 export function mediaUrl(path: string) {
   if (!path) return '';
   if (path.startsWith('http')) return path;

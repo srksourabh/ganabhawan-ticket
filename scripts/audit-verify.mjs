@@ -7,7 +7,9 @@ import { randomUUID } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 
 const BASE = (process.argv[2] || 'http://localhost:3000').replace(/\/$/, '');
-const PROD = 'https://ganabhawan-festival.srksourabh.workers.dev';
+// The deployed host is probed only when explicitly asked: --include-prod <url>
+const prodFlag = process.argv.indexOf('--include-prod');
+const PROD = prodFlag > 0 ? (process.argv[prodFlag + 1] || '').replace(/\/$/, '') : '';
 const results = [];
 
 function record(id, status, detail) {
@@ -35,8 +37,8 @@ function cookieFrom(res) {
 }
 
 async function main() {
-  // --- Deployed public host (F-01 / C-1) ---
-  try {
+  // --- Deployed public host (F-01 / C-1), only with --include-prod <url> ---
+  if (PROD) try {
     const prodHealth = await fetch(`${PROD}/api/health`);
     const prodBody = await prodHealth.json();
     record('C-4 health deployed', prodHealth.status === 200 && prodBody.ok && prodBody.db ? 'PASS' : 'FAIL', JSON.stringify(prodBody));

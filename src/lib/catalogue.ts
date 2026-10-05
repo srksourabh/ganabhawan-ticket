@@ -1,14 +1,14 @@
-import { query, transaction, one } from './db';
+import { query, transaction, one, type Client } from './db';
 import type { Festival, Product, Show, User } from './types';
 import { AppError, requireValue } from './errors';
 import { audit } from './audit';
-import { devMode } from './env';
-import { cancelShowSales } from './commerce';
+import { developmentAdaptersAllowed } from './env';
+import { assertShowCancellable, cancelShowSales } from './commerce';
 export async function catalogue() {
  const festival=(await query<Festival>('SELECT * FROM festivals ORDER BY created_at LIMIT 1'))[0];
- if(!festival) return {festival:null,shows:[],products:[],development:devMode()};
+ if(!festival) return {festival:null,shows:[],products:[],development:developmentAdaptersAllowed()};
  if(festival.status!=='PUBLISHED') {
-  return {festival,shows:[],products:[],development:devMode()};
+  return {festival,shows:[],products:[],development:developmentAdaptersAllowed()};
  }
  const shows=await query<Show>("SELECT * FROM shows WHERE festival_id=$1 AND status='PUBLISHED' AND ends_at>now() ORDER BY starts_at",[festival.id]);
  const products=await query<Product>(`SELECT p.*, GREATEST(0,LEAST(COALESCE(MIN(i.allocation-i.held-i.committed),0),
@@ -18,18 +18,18 @@ export async function catalogue() {
  WHERE p.festival_id=$1 AND p.enabled=true AND s.status='PUBLISHED' AND s.ends_at>now()
  GROUP BY p.id
  ORDER BY p.price`,[festival.id]);
- return {festival,shows,products,development:devMode()};
+ return {festival,shows,products,development:developmentAdaptersAllowed()};
 }
 export async function adminCatalogue() {
  const festival=(await query<Festival>('SELECT * FROM festivals ORDER BY created_at LIMIT 1'))[0];
- if(!festival) return {festival:null,shows:[],products:[],development:devMode()};
+ if(!festival) return {festival:null,shows:[],products:[],development:developmentAdaptersAllowed()};
  const shows=await query<Show>('SELECT * FROM shows WHERE festival_id=$1 ORDER BY starts_at',[festival.id]);
  const products=await query<Product>(`SELECT p.*, GREATEST(0,LEAST(COALESCE(MIN(i.allocation-i.held-i.committed),0),
  COALESCE(p.cap-(SELECT COALESCE(sum(quantity),0) FROM bookings b WHERE b.product_id=p.id AND b.status IN ('HELD','PAYMENT_PENDING','CONFIRMED')),2147483647)))::int available,
  COALESCE(jsonb_agg(jsonb_build_object('id',s.id,'title',s.title,'title_bn',s.title_bn,'starts_at',s.starts_at,'status',s.status) ORDER BY s.starts_at) FILTER (WHERE s.id IS NOT NULL),'[]'::jsonb) coverage
  FROM products p LEFT JOIN product_coverage pc ON pc.product_id=p.id LEFT JOIN pools i ON i.id=pc.pool_id LEFT JOIN shows s ON s.id=pc.show_id
  WHERE p.festival_id=$1 GROUP BY p.id ORDER BY p.price`,[festival.id]);
- return {festival,shows,products,development:devMode()};
+ return {festival,shows,products,development:developmentAdaptersAllowed()};
 }
 export async function inventory() { return query(`SELECT p.*, c.zone,c.ceiling,c.version capacity_version,c.row_count,s.id show_id,s.title,s.starts_at,
  (c.ceiling-(SELECT sum(allocation) FROM pools x WHERE x.capacity_id=c.id))::int reserve,
@@ -103,7 +103,7 @@ export async function updateFestival(user:User,input:Record<string,unknown>) {
    requireValue(f.capacity_approved && f.policies_approved,'Capacity and policies must be approved before publication.');
    const gaps=await one(c,"SELECT count(*)::int n FROM products p WHERE enabled=true AND NOT EXISTS(SELECT 1 FROM product_coverage pc WHERE pc.product_id=p.id)");
    requireValue(gaps?.n===0,'Every enabled product needs explicit coverage.');
-   requireValue(devMode() || process.env.ALLOW_PUBLIC_SALES==='true','Live sales have not been enabled by the operator.');
+   requireValue(developmentAdaptersAllowed() || process.env.ALLOW_PUBLIC_SALES==='true','Live sales have not been enabled by the operator.');
   }
   const name=String(input.name??f.name), nameBn=String(input.nameBn??f.name_bn);
   const venue=String(input.venue??f.venue), address=String(input.address??f.address);
@@ -173,12 +173,35 @@ export async function upsertShow(user:User, input:ShowInput) {
   return show;
  },true);
 }
+/**
+ * Status rules for a performance that may already have sold tickets:
+ * - CANCELLED is terminal (tickets are void and refunds started; never revive).
+ * - Cancelling is owner-only and needs an explicit confirmation flag.
+ * - Unpublishing (DRAFT) is refused while tickets or holds exist, because the
+ *   gate would then silently refuse paid tickets without any refund.
+ */
+export async function assertShowTransition(c:Client, user:User, show:Show, next:string, confirmed:boolean) {
+ if(show.status===next) return;
+ requireValue(show.status!=='CANCELLED','This performance was cancelled. Cancellation is final; create a new performance instead.',409);
+ if(next==='CANCELLED') {
+  requireValue(user.role==='owner','Only the owner can cancel a performance.',403);
+  requireValue(confirmed,'Confirm the cancellation: every ticket is voided and refunds start immediately.',400);
+  await assertShowCancellable(c, show.id);
+ }
+ if(next==='DRAFT') {
+  const sold=await one<{n:number}>(c,`SELECT (SELECT count(*) FROM entitlements WHERE show_id=$1 AND status='ACTIVE')
+   + (SELECT count(*) FROM hold_allocations h JOIN pools p ON p.id=h.pool_id JOIN capacities cap ON cap.id=p.capacity_id
+      WHERE cap.show_id=$1 AND h.state='HELD') AS n`,[show.id]);
+  requireValue(Number(sold?.n??0)===0,'Tickets or checkouts exist for this performance. Cancel it (with refunds) instead of unpublishing.',409);
+ }
+}
 export async function updateShow(user:User, id:string, input:Record<string,unknown>) {
  return transaction(async c=>{
   const show=await one<Show>(c,'SELECT * FROM shows WHERE id=$1 FOR UPDATE',[id]);
   requireValue(show,'Show not found.',404);
   const status=String(input.status??show!.status);
   requireValue(['PUBLISHED','DRAFT','CANCELLED'].includes(status),'Invalid show status.',400);
+  await assertShowTransition(c, user, show!, status, input.confirmCancellation === true);
   const startsAt=input.startsAt!==undefined?new Date(String(input.startsAt)):new Date(show!.starts_at);
   requireValue(!Number.isNaN(startsAt.getTime()),'A valid start time is required.',400);
   const runtime=input.runtime!==undefined?Number(input.runtime):show!.runtime;

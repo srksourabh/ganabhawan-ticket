@@ -192,6 +192,9 @@ const en: Dict = {
   'tickets.admitted': 'Admitted',
   'tickets.ticketMeta': 'Ticket {ordinal} · {kind} · {scan}',
   'tickets.refundNotice': 'A refund is being processed for this booking. Contact us if you have questions.',
+  'tickets.refundedNotice': 'Your payment for this booking has been refunded to the original payment method.',
+  'tickets.refundFailedNotice': 'Your refund could not be completed automatically. Our team has been alerted and will contact you.',
+  'tickets.holder': 'Ticket holder',
   'tickets.saveHint': 'Your QR lives on this page — show it at the gate. Use your browser menu / Add to Home Screen to keep it on your phone.',
   'tickets.showCode': 'Play {ordinal} of {total}',
 
@@ -417,6 +420,9 @@ const bn: Dict = {
   'tickets.admitted': 'প্রবেশ হয়েছে',
   'tickets.ticketMeta': 'টিকিট {ordinal} · {kind} · {scan}',
   'tickets.refundNotice': 'এই বুকিংয়ের জন্য রিফান্ড চলছে। প্রশ্ন থাকলে যোগাযোগ করুন।',
+  'tickets.refundedNotice': 'এই বুকিংয়ের টাকা মূল পেমেন্ট মাধ্যমে ফেরত দেওয়া হয়েছে।',
+  'tickets.refundFailedNotice': 'রিফান্ড স্বয়ংক্রিয়ভাবে সম্পূর্ণ হয়নি। আমাদের দল জেনেছে এবং আপনার সঙ্গে যোগাযোগ করবে।',
+  'tickets.holder': 'টিকিটধারী',
   'tickets.saveHint': 'আপনার কিউআর এই পাতায় থাকবে — গেটে এটাই দেখান। ফোনে রাখতে ব্রাউজার মেনু / হোম স্ক্রিনে যোগ করুন ব্যবহার করুন।',
   'tickets.showCode': 'নাটক {ordinal} / {total}',
 

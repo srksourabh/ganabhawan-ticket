@@ -15,6 +15,7 @@ const statusColour: Record<string, string> = {
   EXPIRED: '#999',
   CANCELLED: '#999',
   REFUND_REQUIRED: '#8b2f2f',
+  REFUNDED: '#999',
 };
 
 export type TicketRow = { id: string; reference: string; status: string; ordinal: number; credentialKind: string; admitted: number };

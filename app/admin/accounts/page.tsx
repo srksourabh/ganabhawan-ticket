@@ -47,6 +47,14 @@ type Ledger = {
   cases?: CaseRow[];
 };
 
+type Ops = {
+  critical: string[];
+  jobs: { failed7d: number; stuckRunning: number; overduePending: number };
+  refunds: { failed: number; processingOver7d: number };
+  gate: { denied24h: number; unknown24h: number };
+  auth: { staffMfaFailures24h: number; staffPasswordFailures24h: number };
+};
+
 const money = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN')}`;
 const when = (iso: string) => new Date(iso).toLocaleString('en-IN', {
   dateStyle: 'medium',
@@ -56,7 +64,9 @@ const when = (iso: string) => new Date(iso).toLocaleString('en-IN', {
 
 export default function AccountsPage() {
   const [ledger, setLedger] = useState<Ledger | null>(null);
+  const [ops, setOps] = useState<Ops | null>(null);
   const [error, setError] = useState('');
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     fetch('/api/admin/ledger')
@@ -69,7 +79,24 @@ export default function AccountsPage() {
         setLedger(body);
       })
       .catch(() => setError('Could not load accounts.'));
-  }, []);
+    // 503 still carries the status body: it means a critical item is open.
+    fetch('/api/ops/status')
+      .then(async (res) => (res.status === 200 || res.status === 503 ? setOps(await res.json()) : undefined))
+      .catch(() => undefined);
+  }, [reload]);
+
+  async function resolveCase(id: string) {
+    const note = window.prompt('How was this case resolved? (recorded in the audit log)');
+    if (!note) return;
+    const res = await fetch(`/api/admin/cases/${id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) window.alert(body.error || 'Could not resolve the case.');
+    setReload((n) => n + 1);
+  }
 
   if (error) {
     return (
@@ -103,16 +130,35 @@ export default function AccountsPage() {
         <article className="card"><p className="eyebrow">On hold</p><strong>{money(ledger.pending)}</strong><p className="muted">Reserved, not yet paid</p></article>
       </div>
 
+      {ops && (
+        <section className="stack">
+          <h2 className="h3">Operations</h2>
+          {ops.critical.length > 0 ? (
+            <ul className="banner banner--err" role="alert">
+              {ops.critical.map((item) => <li key={item}>{item}</li>)}
+            </ul>
+          ) : (
+            <p className="banner">No critical issues.</p>
+          )}
+          <p className="muted">
+            Jobs failed (7 days): {ops.jobs.failed7d} · stuck: {ops.jobs.stuckRunning} · overdue: {ops.jobs.overduePending} ·
+            Refunds failed: {ops.refunds.failed} · processing &gt; 7 days: {ops.refunds.processingOver7d} ·
+            Gate denied (24 h): {ops.gate.denied24h} · unknown codes (24 h): {ops.gate.unknown24h} ·
+            Staff MFA failures (24 h): {ops.auth.staffMfaFailures24h} · password failures (24 h): {ops.auth.staffPasswordFailures24h}
+          </p>
+        </section>
+      )}
+
       <section className="stack">
         <h2 className="h3">Open reconciliation cases</h2>
         <div className="ledger-table">
           <table>
             <thead>
-              <tr><th>When</th><th>Kind</th><th>Key</th><th>Detail</th></tr>
+              <tr><th>When</th><th>Kind</th><th>Key</th><th>Detail</th><th></th></tr>
             </thead>
             <tbody>
               {(ledger.cases ?? []).length === 0 && (
-                <tr><td colSpan={4}>No open cases.</td></tr>
+                <tr><td colSpan={5}>No open cases.</td></tr>
               )}
               {(ledger.cases ?? []).map((row) => (
                 <tr key={row.id}>
@@ -120,6 +166,7 @@ export default function AccountsPage() {
                   <td>{row.kind}</td>
                   <td>{row.key}</td>
                   <td>{typeof row.detail === 'string' ? row.detail : JSON.stringify(row.detail)}</td>
+                  <td><button type="button" className="btn btn--ghost btn--sm" onClick={() => { void resolveCase(row.id); }}>Mark resolved</button></td>
                 </tr>
               ))}
             </tbody>

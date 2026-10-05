@@ -58,6 +58,14 @@ export async function linkAttempt(
      WHERE id=$1::uuid AND (user_id IS NULL OR user_id=$2) AND contact=$5`,
     [attemptId, userId, outcome, bookingId, contact],
   );
+  if (bookingId) {
+    // The name entered at checkout becomes the booking's ticket holder (owner-only visibility).
+    await query(
+      `UPDATE bookings b SET holder_name=a.name FROM booking_attempts a
+       WHERE a.id=$1::uuid AND b.id=$2::uuid AND b.user_id=$3 AND a.user_id=$3 AND b.holder_name IS NULL`,
+      [attemptId, bookingId, userId],
+    );
+  }
 }
 
 export async function markAttemptsConfirmed(c: Client, bookingId: string) {
@@ -86,7 +94,7 @@ export async function accountsLedger() {
      LIMIT 200`,
   );
   const payments = await query(
-    `SELECT pay.amount, pay.state, pay.created_at, b.reference, u.name, u.contact
+    `SELECT pay.amount, pay.state, pay.created_at, b.reference, COALESCE(b.holder_name, u.name) AS name, u.contact
      FROM payments pay
      JOIN bookings b ON b.id = pay.booking_id
      JOIN users u ON u.id = b.user_id
@@ -94,7 +102,7 @@ export async function accountsLedger() {
      LIMIT 80`,
   );
   const refunds = await query(
-    `SELECT r.amount, r.state, r.reason, r.created_at, b.reference, u.name, u.contact
+    `SELECT r.amount, r.state, r.reason, r.created_at, b.reference, COALESCE(b.holder_name, u.name) AS name, u.contact
      FROM refunds r
      JOIN bookings b ON b.id = r.booking_id
      JOIN users u ON u.id = b.user_id

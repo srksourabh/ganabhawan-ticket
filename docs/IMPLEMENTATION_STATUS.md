@@ -68,4 +68,8 @@ Still deferred: live Razorpay/OTP (D16), Hyperdrive optional hardening, Chroma h
 - Sale cutoff: backend already rejects post-curtain holds; UI now disables Add buttons and shows "Sales closed". Season closes at the first covered curtain.
 - My tickets: coverage lists in chronological order; customer PDF buttons removed (PDF API kept for desk/staff); each ticket shows one QR card per covered play in date order with a save-to-Home-Screen hint.
 - Interim QR model: per-show cards share the ticket's single credential; the gate already limits each code to one admission per show. Distinct permanent per-show codes need a credentials migration (follow-up).
-- To apply: `npm run db:migrate && npm run db:seed && npm run check`, then redeploy + `npm run deploy:secrets`.
+- To apply locally: `npm run db:migrate && npm run db:seed && npm run check`. **Shared environments: migrate only; never seed** (the seed truncates bookings and now refuses non-local databases). See GO_LIVE.md.
+
+## Production remediation (Oct 2026)
+
+See `UDS_FINAL_PRODUCTION_READINESS_AND_HANDOVER.md` (outside the repo, next to the project folder) and `docs/GO_LIVE.md`, `docs/STAGING_DRILL.md`, `docs/RUNBOOK.md`.

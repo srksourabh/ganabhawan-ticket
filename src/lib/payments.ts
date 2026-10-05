@@ -1,6 +1,7 @@
 import { query, transaction, one, withSessionLock } from './db';
 import { AppError, requireValue } from './errors';
-import { assertLiveConfiguration, isLocalAppUrl, usingDevelopmentPayments } from './env';
+import { assertLiveConfiguration, developmentAdaptersAllowed, usingDevelopmentPayments } from './env';
+import { applyRefundWebhook } from './refunds';
 import { expireIn, fulfill, type CapturedPayment } from './commerce';
 import { audit } from './audit';
 import type { User } from './types';
@@ -59,17 +60,35 @@ function orderResponse(booking: BookingRow, orderId: string, provider: 'developm
   };
 }
 
-export const RECONCILE_OPEN_ORDERS_SQL = `SELECT a.provider_order_id
-     FROM payment_attempts a
-     JOIN bookings b ON b.id = a.booking_id
-     WHERE a.state = 'READY' AND a.provider_order_id IS NOT NULL
-       AND b.status IN ('PAYMENT_PENDING','EXPIRED','HELD')
-       AND NOT EXISTS (
-         SELECT 1 FROM payments p
-         WHERE p.booking_id = b.id AND p.provider_order_id = a.provider_order_id
-       )
-     ORDER BY a.created_at
-     LIMIT $1`;
+/**
+ * Fair reconciliation. Every READY attempt carries next_reconcile_at; a batch
+ * is claimed oldest-due-first with SKIP LOCKED and immediately pushed back, so
+ * no set of rows can monopolise the batch. Live checkouts are re-checked every
+ * minute; abandoned ones back off exponentially (2 min … 6 h) and retire after
+ * RECONCILE_RETIRE_DAYS. A retired order is still settled by the webhook.
+ */
+export const RECONCILE_LIVE_RECHECK_MINUTES = 1;
+export const RECONCILE_MAX_BACKOFF_MINUTES = 360;
+export const RECONCILE_RETIRE_DAYS = 7;
+
+export function nextReconcileDelayMinutes(checks: number, live: boolean) {
+  if (live) return RECONCILE_LIVE_RECHECK_MINUTES;
+  return Math.min(2 ** Math.max(1, Math.min(checks, 12)), RECONCILE_MAX_BACKOFF_MINUTES);
+}
+
+const CLAIM_RECONCILE_SQL = `UPDATE payment_attempts a
+   SET next_reconcile_at = now() + interval '5 minutes', reconcile_checks = a.reconcile_checks + 1, last_reconciled_at = now()
+   WHERE a.id IN (
+     SELECT a2.id FROM payment_attempts a2 JOIN bookings b ON b.id = a2.booking_id
+     WHERE a2.state = 'READY' AND a2.provider_order_id IS NOT NULL
+       AND a2.next_reconcile_at IS NOT NULL AND a2.next_reconcile_at <= now()
+       AND b.status IN ('HELD','PAYMENT_PENDING','EXPIRED','CANCELLED')
+     ORDER BY a2.next_reconcile_at, a2.id
+     LIMIT $1
+     FOR UPDATE OF a2 SKIP LOCKED)
+   RETURNING a.id, a.provider_order_id, a.reconcile_checks, a.created_at,
+     (SELECT status FROM bookings WHERE id = a.booking_id) AS booking_status,
+     (SELECT expires_at FROM bookings WHERE id = a.booking_id) AS booking_expires_at`;
 
 async function openPaymentCase(key: string, detail: unknown) {
   await query(
@@ -208,7 +227,7 @@ export async function createPaymentOrder(user: User, bookingId: string) {
 
 export async function confirmDevelopmentPayment(user: User, bookingId: string, orderId: string) {
   assertLiveConfiguration();
-  requireValue(isLocalAppUrl(), 'Development payments are not available on a public host.', 403);
+  requireValue(developmentAdaptersAllowed(), 'Development payments are not available on a public host.', 403);
   requireValue(usingDevelopmentPayments(), 'Not available when Razorpay is enabled.', 403);
 
   const booking = (
@@ -300,30 +319,59 @@ export async function syncRazorpayPayment(user: User, bookingId: string) {
   return settleRazorpayOrder(attempt.provider_order_id);
 }
 
+/** Settles every captured/authorized payment on an order (a second payment becomes a refund). */
 export async function settleRazorpayOrder(orderId: string) {
   const payments = await razorpayListOrderPayments(orderId);
-  const paid = payments.find((item) => item.status === 'captured' || item.status === 'authorized');
-  requireValue(paid, 'Payment is not yet captured. Complete checkout and try again.', 409);
-  return settleRazorpayPayment(paid);
+  const paid = payments.filter((item) => item.status === 'captured' || item.status === 'authorized');
+  requireValue(paid.length > 0, 'Payment is not yet captured. Complete checkout and try again.', 409);
+  let result: Awaited<ReturnType<typeof settleRazorpayPayment>> | undefined;
+  for (const payment of paid) {
+    const settled = await settleRazorpayPayment(payment);
+    result ??= settled;
+  }
+  return result!;
 }
 
-export async function reconcileOpenRazorpayPayments(limit = 20): Promise<number> {
-  if (usingDevelopmentPayments()) return 0;
+export async function reconcileOpenRazorpayPayments(limit = 20): Promise<{ checked: number; settled: number; failed: number }> {
+  if (usingDevelopmentPayments()) return { checked: 0, settled: 0, failed: 0 };
 
-  const rows = await query<{ provider_order_id: string }>(RECONCILE_OPEN_ORDERS_SQL, [limit]);
+  const rows = await query<{
+    id: string;
+    provider_order_id: string;
+    reconcile_checks: number;
+    created_at: string;
+    booking_status: string;
+    booking_expires_at: string;
+  }>(CLAIM_RECONCILE_SQL, [limit]);
 
   let settled = 0;
+  let failed = 0;
   for (const row of rows) {
+    const live =
+      (row.booking_status === 'PAYMENT_PENDING' || row.booking_status === 'HELD') &&
+      new Date(row.booking_expires_at).getTime() > Date.now();
     try {
       await settleRazorpayOrder(row.provider_order_id);
       settled += 1;
+      await query('UPDATE payment_attempts SET next_reconcile_at=NULL WHERE id=$1', [row.id]);
+      continue;
     } catch (error) {
       if (!(error instanceof AppError && error.status === 409)) {
-        console.error('[payments] reconcile', row.provider_order_id, error);
+        failed += 1;
+        console.error('[payments] reconcile', row.provider_order_id, error instanceof Error ? error.message : error);
       }
     }
+    const ageMs = Date.now() - new Date(row.created_at).getTime();
+    if (!live && ageMs > RECONCILE_RETIRE_DAYS * 86_400_000) {
+      await query('UPDATE payment_attempts SET next_reconcile_at=NULL WHERE id=$1', [row.id]);
+    } else {
+      await query("UPDATE payment_attempts SET next_reconcile_at=now() + $1 * interval '1 minute' WHERE id=$2", [
+        nextReconcileDelayMinutes(Number(row.reconcile_checks), live),
+        row.id,
+      ]);
+    }
   }
-  return settled;
+  return { checked: rows.length, settled, failed };
 }
 
 function refundEntityFromWebhook(payload: Record<string, unknown>): { id: string; status?: string; notes?: Record<string, string> } | null {
@@ -374,13 +422,7 @@ export async function ingestRazorpayWebhook(rawBody: string, signature: string) 
   const event = payload['event'] as string | undefined;
   const refundEntity = refundEntityFromWebhook(payload);
   if (refundEntity && (event === 'refund.processed' || event === 'refund.failed')) {
-    const state = event === 'refund.failed' || refundEntity.status === 'failed' ? 'FAILED' : 'SUCCEEDED';
-    const noteId = refundEntity.notes?.refundId ?? '';
-    await query(
-      `UPDATE refunds SET state=$1, provider_refund_id=COALESCE(provider_refund_id, $2)
-       WHERE provider_refund_id=$2 OR ($3<>'' AND id::text=$3)`,
-      [state, refundEntity.id, noteId],
-    );
+    await applyRefundWebhook(refundEntity, event);
   }
   if (paymentEntity && (event === 'payment.captured' || event === 'payment.authorized' || event === 'order.paid')) {
     try {

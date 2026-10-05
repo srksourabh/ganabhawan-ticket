@@ -16,7 +16,7 @@ export default function GatePage() {
   const busy = useRef(false);
   const [shows, setShows] = useState<ShowOption[]>([]);
   const [showId, setShowId] = useState('');
-  const [gateId, setGateId] = useState(GATE_DEVICES[0].id);
+  const [gateId, setGateId] = useState<string>(GATE_DEVICES[0].id);
   const [token, setToken] = useState('');
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraNote, setCameraNote] = useState('');

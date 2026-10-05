@@ -18,6 +18,8 @@ export type BookingDetail = {
   unit_price: number;
   currency: string;
   created_at: string;
+  holder_name?: string | null;
+  refunds?: { id: string; amount: number; state: string; reason: string }[];
   snapshot: { name: string; category: string; kind: string; coverage: { title: string; startsAt: string }[] };
   tickets: Ticket[];
 };
@@ -44,6 +46,7 @@ export default function TicketDetailView({ booking, contact }: { booking: Bookin
 
         <div className="card" style={{ marginBottom: '1.25rem' }}>
           <Row label={t('tickets.status')} value={booking.status.replace('_', ' ')} />
+          {booking.holder_name && <Row label={t('tickets.holder')} value={booking.holder_name} />}
           <Row label={t('tickets.quantity')} value={`${booking.quantity}`} />
           <Row label={t('tickets.unitPrice')} value={money(booking.unit_price, dl)} />
           <Row label={t('tickets.total')} value={money(booking.total, dl)} />
@@ -77,9 +80,13 @@ export default function TicketDetailView({ booking, contact }: { booking: Bookin
           </div>
         )}
 
-        {booking.status === 'REFUND_REQUIRED' && (
-          <div style={{ padding: '1rem', background: '#fff0f0', border: '1px solid #e8c0c0', borderRadius: 8, marginTop: '1rem' }}>
-            {t('tickets.refundNotice')}
+        {(booking.status === 'REFUND_REQUIRED' || booking.status === 'REFUNDED' || (booking.status === 'CANCELLED' && (booking.refunds?.length ?? 0) > 0)) && (
+          <div role="status" style={{ padding: '1rem', background: '#fff0f0', border: '1px solid #e8c0c0', borderRadius: 8, marginTop: '1rem' }}>
+            {booking.status === 'REFUNDED' || booking.refunds?.every((r) => r.state === 'SUCCEEDED')
+              ? t('tickets.refundedNotice')
+              : booking.refunds?.some((r) => r.state === 'FAILED')
+                ? t('tickets.refundFailedNotice')
+                : t('tickets.refundNotice')}
           </div>
         )}
 

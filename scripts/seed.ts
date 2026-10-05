@@ -3,6 +3,14 @@ import { devMode } from '../src/lib/env';
 import { audit } from '../src/lib/audit';
 
 if (!devMode()) throw new Error('Synthetic seed is development-only.');
+// The seed TRUNCATEs the programme, bookings, payments and tickets. It must
+// never be pointed at a shared database: local Postgres only.
+{
+  const host = (() => { try { return new URL(process.env.DATABASE_URL ?? '').hostname; } catch { return ''; } })();
+  if (!['localhost', '127.0.0.1', '::1'].includes(host)) {
+    throw new Error(`Refusing to seed ${host || 'an unknown database'}: synthetic seed runs only against a local DATABASE_URL. Use the admin dashboard or scripts/update-show-artwork.mjs for shared environments.`);
+  }
+}
 
 /** Evening curtain in IST (Asia/Kolkata), stored as timestamptz. */
 function istEvening(day: number, month = 12): string {
@@ -191,7 +199,10 @@ await transaction(async (c) => {
         festival.id,
       ],
     );
-    // Wipe synthetic programme so Dec 2026 can replace older sample shows.
+    // Wipe synthetic programme so Dec 2026 can replace older sample shows,
+    // but never a database that has taken real money.
+    const real = await one<{ n: number }>(c, "SELECT (SELECT count(*) FROM payments) + (SELECT count(*) FROM bookings WHERE status='CONFIRMED') AS n");
+    if (Number(real?.n ?? 0) > 0) throw new Error('Refusing to re-seed: this database has payments or confirmed bookings.');
     await c.query(`
       TRUNCATE
         admissions, scan_requests, entitlements, physical_issues, credentials, tickets,

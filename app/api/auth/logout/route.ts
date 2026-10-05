@@ -1,16 +1,10 @@
-import { cookies, headers } from 'next/headers';
-import { query } from '@/lib/db';
+import { presentedSessionToken, revokeSession } from '@/lib/auth';
 import { clearSessionCookie, jsonError, jsonOk } from '@/lib/http';
-import { hash } from '@/lib/security';
 
+/** Deletes the presented session server-side (cookie or bearer), then clears the cookie. */
 export async function POST(): Promise<Response> {
   try {
-    const authorization = (await headers()).get('authorization') ?? '';
-    const bearer = authorization.toLowerCase().startsWith('bearer ') ? authorization.slice(7).trim() : '';
-    const value = bearer || (await cookies()).get('festival_session')?.value;
-    if (value) {
-      await query('DELETE FROM sessions WHERE digest=$1', [hash(value)]);
-    }
+    await revokeSession(await presentedSessionToken());
     return clearSessionCookie(jsonOk({ ok: true }));
   } catch (error) {
     return jsonError(error);

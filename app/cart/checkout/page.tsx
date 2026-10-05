@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useCart, type CartItem } from '@/components/CartProvider';
 import { useLocale } from '@/components/LocaleProvider';
 import { FESTIVAL, FESTIVAL_BN } from '@/lib/brand';
@@ -15,6 +15,8 @@ type LineStatus = 'pending' | 'processing' | 'held' | 'ordered' | 'confirmed' | 
 type LineState = {
   item: CartItem;
   status: LineStatus;
+  /** One key per checkout of this line: retries of the same checkout reuse it; a new checkout gets a new one. */
+  holdKey: string;
   message?: string;
   bookingId?: string;
   reference?: string;
@@ -44,6 +46,7 @@ export default function CheckoutPage() {
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(false);
   const [me, setMe] = useState<{ contact?: string; name?: string }>({});
+  const runningRef = useRef(false);
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -62,7 +65,7 @@ export default function CheckoutPage() {
   }, [router]);
 
   useEffect(() => {
-    if (!running && !done) setLines(cart.items.map((item) => ({ item, status: 'pending' })));
+    if (!running && !done) setLines(cart.items.map((item) => ({ item, status: 'pending', holdKey: crypto.randomUUID() })));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart.items, running]);
 
@@ -86,7 +89,7 @@ export default function CheckoutPage() {
 
     if (!bookingId) {
       setLines((prev) => updateLine(prev, item.productId, { status: 'processing' }));
-      const idempotencyKey = `hold:${item.productId}:${item.quantity}:${item.version}`.slice(0, 128);
+      const idempotencyKey = line.holdKey;
       const recorded = await fetch('/api/booking-attempts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -131,6 +134,8 @@ export default function CheckoutPage() {
   }
 
   async function runCheckout() {
+    if (runningRef.current) return; // double-click / repeated submit
+    runningRef.current = true;
     setRunning(true);
     setDone(false);
     let anyFailure = false;
@@ -141,13 +146,20 @@ export default function CheckoutPage() {
       } catch (error) {
         anyFailure = true;
         const refund = error instanceof Error && error.message === 'REFUND_REQUIRED';
+        // The next attempt is a new checkout: fresh key, no stale booking/order.
+        // The server returns the same live hold if one is still open.
         setLines((prev) => updateLine(prev, line.item.productId, {
           status: 'error',
+          holdKey: crypto.randomUUID(),
+          bookingId: undefined,
+          reference: undefined,
+          order: undefined,
           message: refund ? t('pay.refunded') : error instanceof Error && /cancelled/i.test(error.message) ? t('pay.cancelled') : error instanceof Error ? error.message : t('pay.failed'),
         }));
       }
     }
 
+    runningRef.current = false;
     setRunning(false);
     setDone(true);
 
