@@ -20,6 +20,14 @@ export interface AdmitResult {
 
 const SCANNER_ROLES = ['scanner', 'supervisor', 'owner'] as const;
 
+export function entryAllowed(nowMs: number, startsAtIso: string, entryBefore: number, entryAfter: number) {
+  const start = new Date(startsAtIso).getTime();
+  if (Number.isNaN(start)) return false;
+  const open = start - entryBefore * 60_000;
+  const close = start + entryAfter * 60_000;
+  return nowMs >= open && nowMs <= close;
+}
+
 export async function admit(staff: User, input: AdmitInput): Promise<AdmitResult> {
   requireValue(
     (SCANNER_ROLES as readonly string[]).includes(staff.role),
@@ -69,6 +77,29 @@ export async function admit(staff: User, input: AdmitInput): Promise<AdmitResult
         );
         return result;
       }
+    }
+
+    const show = await c.query<{ status: string; starts_at: string; entry_before: number; entry_after: number }>(
+      `SELECT s.status, s.starts_at, f.entry_before, f.entry_after
+       FROM shows s JOIN festivals f ON f.id=s.festival_id WHERE s.id=$1`,
+      [input.showId],
+    );
+    const performance = show.rows[0];
+    if (!performance || performance.status !== 'PUBLISHED') {
+      const result: AdmitResult = { result: 'DENIED', reason: 'This performance is not open for entry.' };
+      await c.query(
+        'INSERT INTO scan_requests(id,actor_id,input_digest,result) VALUES($1,$2,$3,$4)',
+        [input.requestId, staff.id, hash(input.ticketToken), JSON.stringify(result)],
+      );
+      return result;
+    }
+    if (!entryAllowed(Date.now(), performance.starts_at, Number(performance.entry_before), Number(performance.entry_after))) {
+      const result: AdmitResult = { result: 'DENIED', reason: 'Entry is outside the allowed time window.' };
+      await c.query(
+        'INSERT INTO scan_requests(id,actor_id,input_digest,result) VALUES($1,$2,$3,$4)',
+        [input.requestId, staff.id, hash(input.ticketToken), JSON.stringify(result)],
+      );
+      return result;
     }
 
     // Hash the ticket token and find the credential

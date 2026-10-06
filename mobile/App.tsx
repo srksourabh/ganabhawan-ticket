@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as SecureStore from 'expo-secure-store';
-import { api, mediaUrl, type Catalogue, type Product, type Show, type User } from './src/api';
+import { api, mediaUrl, webUrl, type Catalogue, type Product, type Show, type User } from './src/api';
 
 const TOKEN_KEY = 'samatat-session';
 const ZONES = ['Balcony', 'Superior', 'Premier'] as const;
@@ -192,22 +192,21 @@ function Hall({ show, token, onBack }: { show: Show; token: string; onBack: () =
 
   const products = data?.products.filter((product) => product.kind === 'DAILY' && product.coverage.some((item) => item.id === show.id)) ?? [];
 
+  // The app has no payment screen, so it must not create holds it cannot pay for.
+  // Purchases go through the website checkout (Razorpay); tickets then appear here.
   async function add(product: Product) {
     setBusy(true);
     setMessage('');
     try {
-      await api('/api/holds', token, {
-        method: 'POST',
-        headers: { 'Idempotency-Key': `${Date.now()}-${product.id}` },
-        body: JSON.stringify({ productId: product.id, quantity: 1, version: product.version }),
-      });
-      setMessage(`${product.category} is held. Finish payment on My tickets, on this phone or the website.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Could not hold the seat.');
+      await Linking.openURL(webUrl('/catalogue'));
+      setMessage(`Opening the website to book ${product.category}. Your tickets appear under My tickets after payment.`);
+    } catch {
+      setMessage('Could not open the booking website.');
     } finally {
       setBusy(false);
     }
   }
+
 
   return (
     <ScrollView contentContainerStyle={styles.pad}>
@@ -295,8 +294,8 @@ function Door({ token }: { token: string }) {
         body: JSON.stringify({
           ticketToken: value,
           showId,
-          requestId: `${Date.now()}`,
-          gateId: 'main',
+          requestId: crypto.randomUUID(),
+          gateId: 'gate-one',
           deviceId: 'gate-one',
         }),
       });

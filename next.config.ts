@@ -1,13 +1,10 @@
 import type { NextConfig } from 'next';
+import { SECURITY_HEADER_LIST } from './src/lib/security-headers';
+
 const config: NextConfig = {
   serverExternalPackages: ['pg'],
   async headers() {
-    return [{ source: '/:path*', headers: [
-      { key: 'X-Content-Type-Options', value: 'nosniff' },
-      { key: 'X-Frame-Options', value: 'DENY' },
-      { key: 'Referrer-Policy', value: 'same-origin' },
-      { key: 'Permissions-Policy', value: 'camera=(self), microphone=(), geolocation=()' },
-    ] }];
+    return [{ source: '/:path*', headers: SECURITY_HEADER_LIST }];
   },
 };
 export default config;

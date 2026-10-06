@@ -9,7 +9,8 @@ export async function POST(request: Request): Promise<Response> {
       body.code ?? '',
       body.mfaCode ?? '',
     );
-    const response = jsonOk({ user: result.user, sessionToken: result.sessionToken });
+    const mobile = request.headers.get('x-client') === 'mobile';
+    const response = jsonOk(mobile ? { user: result.user, sessionToken: result.sessionToken } : { user: result.user });
     return setSessionCookie(response, result.sessionToken!);
   } catch (error) {
     return jsonError(error);

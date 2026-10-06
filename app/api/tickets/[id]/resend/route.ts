@@ -1,4 +1,4 @@
-import { authenticated } from '@/lib/auth';
+import { authenticated, rateLimit } from '@/lib/auth';
 import { query } from '@/lib/db';
 import { deliverBooking } from '@/lib/tickets';
 import { jsonOk, jsonError } from '@/lib/http';
@@ -19,6 +19,7 @@ export async function POST(
     );
     if (!rows[0]) throw new AppError(404, 'Ticket not found.');
     if (rows[0].user_id !== user.id && user.role !== 'owner') throw new AppError(403, 'Access denied.');
+    await rateLimit('resend:' + user.id + ':' + id, 3, 3600);
 
     await deliverBooking(rows[0].booking_id);
     return jsonOk({ ok: true });

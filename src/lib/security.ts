@@ -39,10 +39,42 @@ export function normalizeContact(value: string) {
   return phone;
 }
 export function maskContact(value: string) { return value.includes('@') ? value.slice(0, 2) + '***@' + value.split('@')[1] : value.slice(0, 3) + '••••••' + value.slice(-3); }
+const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+function base32Decode(key: string) {
+  const bits = key.toUpperCase().replace(/=+$/, '').split('').map(c => BASE32.indexOf(c).toString(2).padStart(5, '0')).join('');
+  return Buffer.from(bits.match(/.{8}/g)?.map(b => parseInt(b, 2)) ?? []);
+}
+
+/** 160-bit RFC 4226 secret, base32 (authenticator apps' format). */
+export function generateTotpSecret() {
+  const bytes = randomBytes(20);
+  let bits = '';
+  for (const byte of bytes) bits += byte.toString(2).padStart(8, '0');
+  return (bits.match(/.{1,5}/g) ?? []).map(chunk => BASE32[parseInt(chunk.padEnd(5, '0'), 2)]).join('');
+}
+
+export const totpStepAt = (nowMs = Date.now()) => Math.floor(nowMs / 30000);
+
+export function totpCode(key: string, step: number) {
+  const counter = Buffer.alloc(8); counter.writeBigUInt64BE(BigInt(step));
+  const h = createHmac('sha1', base32Decode(key)).update(counter).digest(); const p = h[h.length - 1] & 15;
+  return String((h.readUInt32BE(p) & 0x7fffffff) % 1000000).padStart(6, '0');
+}
+
+/** The 30-second step a code belongs to (±1 step of clock drift), or null. */
+export function totpMatchStep(key: string, code: string, nowMs = Date.now()): number | null {
+  if (!/^\d{6}$/.test(code)) return null;
+  const now = totpStepAt(nowMs);
+  for (const step of [now - 1, now, now + 1]) if (safeEqual(totpCode(key, step), code)) return step;
+  return null;
+}
+
 export function totpValid(key: string, code: string) {
-  if (!/^\d{6}$/.test(code)) return false;
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-  const bits = key.toUpperCase().replace(/=+$/, '').split('').map(c => alphabet.indexOf(c).toString(2).padStart(5, '0')).join('');
-  const bytes = Buffer.from(bits.match(/.{8}/g)?.map(b => parseInt(b, 2)) ?? []);
-  return [-1, 0, 1].some(offset => { const counter = Buffer.alloc(8); counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000) + offset)); const h = createHmac('sha1', bytes).update(counter).digest(); const p = h[h.length - 1] & 15; return safeEqual(String((h.readUInt32BE(p) & 0x7fffffff) % 1000000).padStart(6, '0'), code); });
+  return totpMatchStep(key, code) !== null;
+}
+
+export function otpauthUri(account: string, secretKey: string, issuer: string) {
+  const label = encodeURIComponent(`${issuer}:${account}`);
+  return `otpauth://totp/${label}?secret=${secretKey}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
 }

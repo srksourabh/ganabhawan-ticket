@@ -199,8 +199,14 @@ export async function ticketPass(user: User, ticketId: string) {
   return { qr, reference: row.reference };
 }
 
+export function confirmationLinks(appUrl: string, bookingId: string, references: string[]) {
+  const base = appUrl.replace(/\/$/, '');
+  const page = `${base}/tickets/${bookingId}`;
+  return references.map((reference) => `Ticket ${reference}: ${page}`).join('\n');
+}
+
 export async function deliverBooking(bookingId: string): Promise<void> {
-  const appUrl = process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'https://localhost:3000';
+  const appUrl = process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
 
   const tickets = await query<{
     id: string;
@@ -225,22 +231,14 @@ export async function deliverBooking(bookingId: string): Promise<void> {
 
   const { contact, booking_reference } = tickets[0];
 
-  const ticketLinks = tickets
-    .map((t) => `Ticket ${t.reference}: ${appUrl}/tickets/${t.id}`)
-    .join('\n');
+  const ticketLinks = confirmationLinks(appUrl, bookingId, tickets.map((t) => t.reference));
 
   const message =
     `Your booking ${booking_reference} is confirmed!\n\n` +
-    `Download your tickets:\n${ticketLinks}\n\n` +
-    `Present each ticket QR code at the venue entrance.`;
+    `Open your tickets:\n${ticketLinks}\n\n` +
+    `Each play has its own QR code on the page. Open it on your phone and show it at the venue entrance. You can keep the page on your Home Screen for offline viewing.`;
 
-  try {
-    await sendMessage(contact, `Your ${ORGANISATION} tickets – ${booking_reference}`, message);
-  } catch (err) {
-    console.error('[deliverBooking] sendMessage failed', err);
-  }
-
-  // Mark the delivery job done — handled in jobs.ts
+  await sendMessage(contact, `Your ${ORGANISATION} tickets - ${booking_reference}`, message);
 }
 
 // Re-export for convenience

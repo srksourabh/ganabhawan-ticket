@@ -15,6 +15,7 @@ const statusColour: Record<string, string> = {
   EXPIRED: '#999',
   CANCELLED: '#999',
   REFUND_REQUIRED: '#8b2f2f',
+  REFUNDED: '#999',
 };
 
 export type TicketRow = { id: string; reference: string; status: string; ordinal: number; credentialKind: string; admitted: number };
@@ -101,12 +102,6 @@ export default function TicketsView({
                     contact={contact}
                   />
                 )}
-                {b.status === 'CONFIRMED' && b.tickets?.map((ticket) => (
-                  <a key={ticket.id} href={`/api/tickets/${ticket.id}/pdf`} target="_blank" rel="noopener noreferrer"
-                    style={{ color: '#c9a227', textDecoration: 'none', fontWeight: 600, fontSize: '.9rem' }}>
-                    {t('tickets.download', { ordinal: ticket.ordinal })}
-                  </a>
-                ))}
               </div>
             </article>
           ))}

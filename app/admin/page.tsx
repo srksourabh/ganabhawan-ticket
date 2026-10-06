@@ -202,7 +202,19 @@ export default function AdminPage() {
       language: String(form.get('language') || 'Bengali'),
       status: String(form.get('status') || 'DRAFT'),
       artwork: artwork || 'red',
+      confirmCancellation: false,
     };
+    if (!creating && payload.status === 'CANCELLED' && editingShow?.status !== 'CANCELLED') {
+      const typed = window.prompt(
+        `Cancelling "${editingShow?.title}" voids every ticket and starts full refunds immediately. This cannot be undone.\n\nType the performance title to confirm:`,
+      );
+      if ((typed ?? '').trim() !== (editingShow?.title ?? '').trim()) {
+        setBusy(false);
+        setError('Cancellation not confirmed. Nothing was changed.');
+        return;
+      }
+      payload.confirmCancellation = true;
+    }
     const res = await fetch(creating ? '/api/admin/shows' : `/api/admin/shows/${editingShow?.id}`, {
       method: creating ? 'POST' : 'PATCH',
       headers: { 'Content-Type': 'application/json' },

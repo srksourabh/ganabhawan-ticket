@@ -1,5 +1,5 @@
 export type Role = 'customer' | 'owner' | 'inventory' | 'finance' | 'desk' | 'scanner' | 'supervisor';
-export interface User { id: string; contact: string; name: string; role: Role; mfa_secret?: string; username?: string | null; password_hash?: string | null; }
+export interface User { id: string; contact: string; name: string; role: Role; mfa_secret?: string | null; mfa_last_step?: number | string | null; username?: string | null; password_hash?: string | null; }
 export interface Show { id: string; title: string; title_bn: string; troupe: string; synopsis: string; synopsis_bn: string; starts_at: string; ends_at: string; language: string; runtime: number; genre: string; artwork: string; status: string; }
 export interface Product { id: string; name: string; name_bn: string; category: string; kind: 'DAILY' | 'SEASON'; price: number; version: number; enabled: boolean; show_id: string | null; available: number; coverage: Show[]; }
 export interface Festival { id: string; name: string; name_bn: string; venue: string; address: string; status: string; hold_minutes: number; max_quantity: number; entry_before: number; entry_after: number; physical_required: boolean; contact_email: string; terms: string; capacity_approved: boolean; policies_approved: boolean; theater_photo?: string; }

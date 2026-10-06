@@ -3,14 +3,23 @@ import { devMode } from '../src/lib/env';
 import { audit } from '../src/lib/audit';
 
 if (!devMode()) throw new Error('Synthetic seed is development-only.');
+// The seed TRUNCATEs the programme, bookings, payments and tickets. It must
+// never be pointed at a shared database: local Postgres only.
+{
+  const host = (() => { try { return new URL(process.env.DATABASE_URL ?? '').hostname; } catch { return ''; } })();
+  if (!['localhost', '127.0.0.1', '::1'].includes(host)) {
+    throw new Error(`Refusing to seed ${host || 'an unknown database'}: synthetic seed runs only against a local DATABASE_URL. Use the admin dashboard or scripts/update-show-artwork.mjs for shared environments.`);
+  }
+}
 
 /** Evening curtain in IST (Asia/Kolkata), stored as timestamptz. */
-function istEvening(day: number): string {
-  return `2026-12-${String(day).padStart(2, '0')}T18:30:00+05:30`;
+function istEvening(day: number, month = 12): string {
+  return `2026-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T18:30:00+05:30`;
 }
 
 /** Tentative Samatat Natyomela 2026 programme — Ganabhawan, Uttarpara. */
 const PROGRAMME: {
+  month?: number;
   day: number;
   title: string;
   titleBn: string;
@@ -22,6 +31,18 @@ const PROGRAMME: {
   artwork: string;
 }[] = [
   {
+    month: 10,
+    day: 12,
+    title: 'Samatat prologue (title TBA)',
+    titleBn: 'সমতট প্রস্তাবনা (নাম চূড়ান্ত নয়)',
+    troupe: 'সমতট',
+    synopsis: 'October prologue to Samatat Natyomela 2026. Final title to be announced.',
+    synopsisBn: 'সমতট নাট্যমেলা ২০২৬-এর অক্টোবর প্রস্তাবনা। নাম চূড়ান্ত হয়নি।',
+    runtime: 110,
+    genre: 'Prologue',
+    artwork: '/images/samatat/shows/samatat-double-bill.jpg',
+  },
+  {
     day: 19,
     title: 'Macbeth Two',
     titleBn: 'ম্যাকবেথ টু',
@@ -30,7 +51,7 @@ const PROGRAMME: {
     synopsisBn: 'ম্যাকবেথের নতুন মঞ্চভাষা। পরিচালনা: কৌশিক সেন — স্বপ্নসন্ধানী।',
     runtime: 120,
     genre: 'Drama',
-    artwork: 'red',
+    artwork: '/images/samatat/shows/macbeth-two.jpg',
   },
   {
     day: 20,
@@ -41,7 +62,7 @@ const PROGRAMME: {
     synopsisBn: 'থিয়েটার ওয়ার্কশপের গড়াইবাবু। পরিচালনা: গৌতম হালদার।',
     runtime: 120,
     genre: 'Drama',
-    artwork: 'ochre',
+    artwork: '/images/samatat/shows/goraibabu.jpg',
   },
   {
     day: 21,
@@ -52,7 +73,7 @@ const PROGRAMME: {
     synopsisBn: 'পূর্ব-পশ্চিমের আসক্তি। পরিচালনা: দেবশংকর হালদার।',
     runtime: 110,
     genre: 'Drama',
-    artwork: 'forest',
+    artwork: '/images/samatat/shows/asakti.jpg',
   },
   {
     day: 22,
@@ -63,7 +84,7 @@ const PROGRAMME: {
     synopsisBn: 'গড়িয়া আন্তরিকের বাবু জনা দুই। দেবশংকর হালদার ও অঞ্জনা বসু।',
     runtime: 110,
     genre: 'Drama',
-    artwork: 'blue',
+    artwork: '/images/samatat/shows/actor-anjana-basu.jpg',
   },
   {
     day: 23,
@@ -74,7 +95,7 @@ const PROGRAMME: {
     synopsisBn: 'সংস্কৃতির প্রথম পার্থ। পরিচালনা: রজতাভ দত্ত।',
     runtime: 120,
     genre: 'Drama',
-    artwork: 'red',
+    artwork: '/images/samatat/shows/pratham-partha.png',
   },
   {
     day: 24,
@@ -85,7 +106,7 @@ const PROGRAMME: {
     synopsisBn: 'সায়কের কুণ্ডুবাবু। পরিচালনা: মেঘনাদ ভট্টাচার্য।',
     runtime: 110,
     genre: 'Drama',
-    artwork: 'ochre',
+    artwork: '/images/samatat/shows/samatat-double-bill.jpg',
   },
   {
     day: 25,
@@ -96,7 +117,7 @@ const PROGRAMME: {
     synopsisBn: 'ইচ্ছেমতোর কীর্তনখোলা। পরিচালনা: সৌরভ পালোধী।',
     runtime: 120,
     genre: 'Drama',
-    artwork: 'forest',
+    artwork: '/images/samatat/shows/kirtankhola.jpg',
   },
   {
     day: 26,
@@ -107,7 +128,7 @@ const PROGRAMME: {
     synopsisBn: 'অনীকের আঙিনা জুড়ে ভোর।',
     runtime: 100,
     genre: 'Drama',
-    artwork: 'blue',
+    artwork: '/images/samatat/shows/angina-jure-bhor.jpg',
   },
   {
     day: 27,
@@ -118,7 +139,7 @@ const PROGRAMME: {
     synopsisBn: 'সমতটের নতুন নাটক। নাম চূড়ান্ত হয়নি।',
     runtime: 120,
     genre: 'Drama',
-    artwork: 'red',
+    artwork: '/images/samatat/shows/samatat-double-bill.jpg',
   },
   {
     day: 28,
@@ -129,7 +150,7 @@ const PROGRAMME: {
     synopsisBn: 'বাঘাযতীন আলাপের পদ্মা নদীর মাঝি। পরিচালনা: পার্থপ্রতিম।',
     runtime: 120,
     genre: 'Drama',
-    artwork: 'ochre',
+    artwork: '/images/samatat/shows/macbeth-two-still.jpg',
   },
   {
     day: 29,
@@ -140,7 +161,7 @@ const PROGRAMME: {
     synopsisBn: 'চারদল নাট্যজনের যাত্রা গোপাল। পরিচালনা: সঞ্জীব সরকার।',
     runtime: 110,
     genre: 'Drama',
-    artwork: 'forest',
+    artwork: '/images/samatat/shows/jatra-gopal.jpg',
   },
   {
     day: 30,
@@ -151,7 +172,7 @@ const PROGRAMME: {
     synopsisBn: 'অগ্রগামী অপেরার জীবনের চাওয়া-পাওয়া। অনল–কাকলি।',
     runtime: 120,
     genre: 'Opera',
-    artwork: 'blue',
+    artwork: '/images/samatat/shows/jatra-gopal-still.jpg',
   },
 ];
 
@@ -159,7 +180,7 @@ const FESTIVAL_NAME = 'Samatat Natyomela 2026';
 const FESTIVAL_NAME_BN = 'সমতট নাট্যমেলা ২০২৬';
 const CONTACT_EMAIL = process.env.FESTIVAL_CONTACT_EMAIL || 'tickets@samatat.org';
 const TERMS =
-  'One person per ticket. Unnumbered seating within your section. No standard re-entry. Daily tickets cover one performance. Season passes cover only the listed performances. Presented by Samatat Sanskriti at Ganabhawan, Uttarpara. Tentative programme 19–30 December 2026; titles may change before publication.';
+  'One person per ticket. Unnumbered seating within your section. No standard re-entry. Daily tickets cover one performance. Season passes cover only the listed performances, including the October prologue. Presented by Samatat Sanskriti at Ganabhawan, Uttarpara. Tentative programme October prologue + 19–30 December 2026; titles may change before publication.';
 
 await transaction(async (c) => {
   let festival = await one<{ id: string }>(c, 'SELECT id FROM festivals LIMIT 1');
@@ -178,7 +199,10 @@ await transaction(async (c) => {
         festival.id,
       ],
     );
-    // Wipe synthetic programme so Dec 2026 can replace older sample shows.
+    // Wipe synthetic programme so Dec 2026 can replace older sample shows,
+    // but never a database that has taken real money.
+    const real = await one<{ n: number }>(c, "SELECT (SELECT count(*) FROM payments) + (SELECT count(*) FROM bookings WHERE status='CONFIRMED') AS n");
+    if (Number(real?.n ?? 0) > 0) throw new Error('Refusing to re-seed: this database has payments or confirmed bookings.');
     await c.query(`
       TRUNCATE
         admissions, scan_requests, entitlements, physical_issues, credentials, tickets,
@@ -199,7 +223,7 @@ await transaction(async (c) => {
 
   const ids: string[] = [];
   for (const play of PROGRAMME) {
-    const start = istEvening(play.day);
+    const start = istEvening(play.day, play.month ?? 12);
     const end = new Date(new Date(start).getTime() + play.runtime * 60000).toISOString();
     const show = (await one(
       c,
@@ -308,8 +332,8 @@ await transaction(async (c) => {
     synthetic: true,
     festival: FESTIVAL_NAME,
     shows: PROGRAMME.length,
-    window: '2026-12-19..2026-12-30',
+    window: '2026-10-12 + 2026-12-19..2026-12-30',
   });
-  console.log(`Seeded ${FESTIVAL_NAME}: ${PROGRAMME.length} plays, 19–30 Dec 2026, inventory and staff scopes.`);
+  console.log(`Seeded ${FESTIVAL_NAME}: ${PROGRAMME.length} plays, Oct prologue + 19–30 Dec 2026, inventory and staff scopes.`);
 });
 await pool.end();

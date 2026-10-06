@@ -26,7 +26,10 @@
     "build:vinext": "vinext build",
     "start:vinext": "wrangler dev --config dist/server/wrangler.json",
     "deploy:vinext": "vinext-cloudflare deploy --config dist/server/wrangler.json",
-    "deploy:secrets": "node scripts/push-cf-secrets.mjs"
+    "deploy:secrets": "node scripts/push-cf-secrets.mjs",
+    "db:staff": "tsx scripts/staff.ts",
+    "db:purge-synthetic": "tsx scripts/purge-synthetic.ts",
+    "drill:razorpay": "tsx scripts/razorpay-drill.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.1",

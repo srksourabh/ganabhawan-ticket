@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useLocale } from '@/components/LocaleProvider';
+import { GATE_DEVICES, gateScanTarget } from '@/lib/gates';
 
 type ScanOutcome = 'ADMITTED' | 'DENIED' | 'UNKNOWN';
 type ScanResult = { outcome: ScanOutcome; message: string; ticketRef?: string };
@@ -15,11 +16,18 @@ export default function GatePage() {
   const busy = useRef(false);
   const [shows, setShows] = useState<ShowOption[]>([]);
   const [showId, setShowId] = useState('');
+  const [gateId, setGateId] = useState<string>(GATE_DEVICES[0].id);
   const [token, setToken] = useState('');
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraNote, setCameraNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('gate-device');
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (saved) setGateId(gateScanTarget(saved).gateId);
+  }, []);
 
   useEffect(() => {
     const link = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
@@ -58,8 +66,7 @@ export default function GatePage() {
           ticketToken: value,
           showId,
           requestId: crypto.randomUUID(),
-          gateId: 'main',
-          deviceId: 'gate-one',
+          ...gateScanTarget(gateId),
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -140,6 +147,22 @@ export default function GatePage() {
         </section>
       ) : (
         <div className="card stack">
+          <label className="field">
+            <span>{t('gate.device')}</span>
+            <select
+              value={gateId}
+              onChange={(e) => {
+                const next = gateScanTarget(e.target.value).gateId;
+                setGateId(next);
+                localStorage.setItem('gate-device', next);
+              }}
+            >
+              {GATE_DEVICES.map((gate) => (
+                <option key={gate.id} value={gate.id}>{gate.name}</option>
+              ))}
+            </select>
+          </label>
+
           <label className="field">
             <span>{t('gate.showId')}</span>
             {shows.length > 0 ? (

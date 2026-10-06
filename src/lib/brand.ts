@@ -19,17 +19,18 @@ export const SOURCE_SITE = 'https://samatat.org';
 export const AUDITORIUM_PHOTO = '/images/auditorium-two-floors.jpg';
 export const BRAND_LOGO = '/images/samatat/logo.png';
 export const STORY_PHOTO = '/images/samatat/story-swapnomoy.jpg';
-export const HERO_PHOTO = '/images/samatat/hero-bisarjan.jpg';
-/** Production stills from samatat.org / the Samatat archive. */
+/** Festival announcement hero for the 2026 Natyomela. */
+export const HERO_PHOTO = '/images/samatat/hero-natyomela-2026.jpg';
+/** Production posters and stills used when a show has no dedicated artwork. */
 export const STAGE_PHOTOS = [
-  '/images/samatat/collage-01.jpg',
-  '/images/samatat/collage-02.jpg',
-  '/images/samatat/collage-03.jpg',
-  '/images/samatat/collage-04.jpg',
-  '/images/samatat/collage-05.jpg',
-  '/images/samatat/collage-06.jpg',
-  '/images/samatat/collage-07.jpg',
-  '/images/samatat/collage-08.jpg',
-  '/images/samatat/collage-09.jpg',
-  '/images/samatat/collage-10.jpg',
+  '/images/samatat/shows/macbeth-two.jpg',
+  '/images/samatat/shows/goraibabu.jpg',
+  '/images/samatat/shows/asakti.jpg',
+  '/images/samatat/shows/pratham-partha.png',
+  '/images/samatat/shows/kirtankhola.jpg',
+  '/images/samatat/shows/angina-jure-bhor.jpg',
+  '/images/samatat/shows/jatra-gopal.jpg',
+  '/images/samatat/shows/samatat-double-bill.jpg',
+  '/images/samatat/shows/macbeth-two-still.jpg',
+  '/images/samatat/shows/asakti-still.jpg',
 ] as const;

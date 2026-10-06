@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { Show, SignInButton, UserButton } from '@clerk/nextjs';
-import { usePathname } from 'next/navigation';
+import { Show, SignInButton, UserButton, useClerk } from '@clerk/nextjs';
+import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { BRAND_LOGO, FESTIVAL, FESTIVAL_BN } from '@/lib/brand';
 import { useCart } from './CartProvider';
@@ -18,6 +18,8 @@ type BeforeInstallPromptEvent = Event & {
 
 export default function SiteHeader() {
   const pathname = usePathname();
+  const router = useRouter();
+  const clerk = useClerk();
   const { count } = useCart();
   const { locale, t } = useLocale();
   const [open, setOpen] = useState(false);
@@ -66,6 +68,14 @@ export default function SiteHeader() {
     setInstallPrompt(null);
   }, [installPrompt]);
 
+  async function signOut() {
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
+    if (clerk.session) await clerk.signOut().catch(() => undefined);
+    setUser(null);
+    setOpen(false);
+    router.refresh();
+  }
+
   const brandName = locale === 'bn' ? FESTIVAL_BN : FESTIVAL;
   const cartAria = count === 1 ? t('nav.cartBadgeOne') : t('nav.cartBadge', { count });
 
@@ -110,13 +120,20 @@ export default function SiteHeader() {
           {user && user.role !== 'customer' && (
             <Link href="/gate" className="site-header__link" onClick={() => setOpen(false)}>{t('nav.gate')}</Link>
           )}
-          <Link href="/admin" className="site-header__link" onClick={() => setOpen(false)}>{t('nav.admin')}</Link>
+          {user && user.role !== 'customer' && (
+            <Link href="/admin" className="site-header__link" onClick={() => setOpen(false)}>{t('nav.admin')}</Link>
+          )}
 
           <Show when="signed-in">
             <span className="site-header__clerk">
               <UserButton />
             </span>
           </Show>
+          {user && (
+            <button type="button" className="site-header__link" onClick={() => { void signOut(); }}>
+              {t('nav.signOut')}
+            </button>
+          )}
           <Show when="signed-out">
             {user ? (
               <span className="site-header__link" aria-label={t('nav.signedIn')}>{user.name || user.contact}</span>
@@ -155,6 +172,12 @@ export default function SiteHeader() {
           <Link href="/gate" className={`mobile-dock__link${pathname.startsWith('/gate') ? ' mobile-dock__link--active' : ''}`}>
             <span className="mobile-dock__icon" aria-hidden="true">🚪</span>
             <span>{t('nav.gate')}</span>
+          </Link>
+        )}
+        {user && user.role !== 'customer' && (
+          <Link href="/admin" className={`mobile-dock__link${pathname.startsWith('/admin') ? ' mobile-dock__link--active' : ''}`}>
+            <span className="mobile-dock__icon" aria-hidden="true">⚙️</span>
+            <span>{t('nav.admin')}</span>
           </Link>
         )}
       </nav>

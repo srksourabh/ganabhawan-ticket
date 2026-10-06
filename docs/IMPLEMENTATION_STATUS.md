@@ -56,3 +56,20 @@ Verified by `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build:
 - Secrets pushed via `npm run deploy:secrets` (DATABASE_URL, SESSION_SECRET, CREDENTIAL_KEY, CRON_SECRET, APP_*, PAYMENT_PROVIDER, OTP_PROVIDER, ALLOW_PUBLIC_SALES)
 
 Still deferred: live Razorpay/OTP (D16), Hyperdrive optional hardening, Chroma hosted search, commercial decisions D10–D22.
+
+## Change set — Oct 2026 review feedback (unverified, needs `npm run check` + reseed)
+
+- Header logo shows the mask mark only (CSS crops the wordmark); hero title follows the selected locale (EN shows English first).
+- Seed adds an October prologue (12 Oct 2026, title TBA, troupe Samatat): programme is 13 plays, December stats unchanged.
+- Programme rail is chronological; each play shows its troupe; artwork field is honoured so uploaded files under `public/images/plays/` replace collage placeholders (or set `artwork` via admin upload).
+- Season purchase moved to its own panel below the single-play picker; per-zone rows are Daily only.
+- Auditorium map is a schematic SVG (stage + Premier/Superior/Balcony) with keyboard-accessible zone buttons and sold-out states; photo overlay removed.
+- Nav: public sees Programme / Cart / My tickets; Gate and Admin links render for staff roles only (server APIs still enforce roles).
+- Sale cutoff: backend already rejects post-curtain holds; UI now disables Add buttons and shows "Sales closed". Season closes at the first covered curtain.
+- My tickets: coverage lists in chronological order; customer PDF buttons removed (PDF API kept for desk/staff); each ticket shows one QR card per covered play in date order with a save-to-Home-Screen hint.
+- Interim QR model: per-show cards share the ticket's single credential; the gate already limits each code to one admission per show. Distinct permanent per-show codes need a credentials migration (follow-up).
+- To apply locally: `npm run db:migrate && npm run db:seed && npm run check`. **Shared environments: migrate only; never seed** (the seed truncates bookings and now refuses non-local databases). See GO_LIVE.md.
+
+## Production remediation (Oct 2026)
+
+See `UDS_FINAL_PRODUCTION_READINESS_AND_HANDOVER.md` (outside the repo, next to the project folder) and `docs/GO_LIVE.md`, `docs/STAGING_DRILL.md`, `docs/RUNBOOK.md`.

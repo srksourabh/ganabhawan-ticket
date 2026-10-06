@@ -18,6 +18,8 @@ export type BookingDetail = {
   unit_price: number;
   currency: string;
   created_at: string;
+  holder_name?: string | null;
+  refunds?: { id: string; amount: number; state: string; reason: string }[];
   snapshot: { name: string; category: string; kind: string; coverage: { title: string; startsAt: string }[] };
   tickets: Ticket[];
 };
@@ -44,6 +46,7 @@ export default function TicketDetailView({ booking, contact }: { booking: Bookin
 
         <div className="card" style={{ marginBottom: '1.25rem' }}>
           <Row label={t('tickets.status')} value={booking.status.replace('_', ' ')} />
+          {booking.holder_name && <Row label={t('tickets.holder')} value={booking.holder_name} />}
           <Row label={t('tickets.quantity')} value={`${booking.quantity}`} />
           <Row label={t('tickets.unitPrice')} value={money(booking.unit_price, dl)} />
           <Row label={t('tickets.total')} value={money(booking.total, dl)} />
@@ -53,7 +56,7 @@ export default function TicketDetailView({ booking, contact }: { booking: Bookin
         {booking.snapshot?.coverage?.length > 0 && (
           <div className="card" style={{ marginBottom: '1.25rem' }}>
             <h2 style={{ fontFamily: 'Georgia, serif', fontSize: '1.1rem', margin: '0 0 .75rem' }}>{t('tickets.coverage')}</h2>
-            {booking.snapshot.coverage.map((c, i) => (
+            {[...booking.snapshot.coverage].sort((a, b) => +new Date(a.startsAt) - +new Date(b.startsAt)).map((c, i) => (
               <p key={i} style={{ margin: '.25rem 0', fontSize: '.9rem', color: '#3d2a1e' }}>
                 <strong>{c.title}</strong> — {new Date(c.startsAt).toLocaleString(dl, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}
               </p>
@@ -64,29 +67,26 @@ export default function TicketDetailView({ booking, contact }: { booking: Bookin
         {isConfirmed && booking.tickets?.length > 0 && (
           <div className="card">
             <h2 style={{ fontFamily: 'Georgia, serif', fontSize: '1.1rem', margin: '0 0 .75rem' }}>{t('tickets.yours')}</h2>
+            <p className="muted" style={{ marginTop: 0 }}>{t('tickets.saveHint')}</p>
             {booking.tickets.map((ticket) => (
-              <div key={ticket.id} className="ticket-pass">
-                <DoorCode ticketId={ticket.id} />
-                <p className="ticket-pass__ref">{ticket.reference}</p>
-                <p className="muted">
-                  {t('tickets.ticketMeta', {
-                    ordinal: ticket.ordinal,
-                    kind: ticket.credentialKind,
-                    scan: ticket.admitted > 0 ? t('tickets.admitted') : t('tickets.notScanned'),
-                  })}
-                </p>
-                <a href={`/api/tickets/${ticket.id}/pdf`} target="_blank" rel="noopener noreferrer" className="btn btn--primary btn--sm" style={{ marginTop: '0.75rem', display: 'inline-flex' }}>
-                  <span aria-hidden="true">📥</span>
-                  <span>{t('tickets.downloadPdf')}</span>
-                </a>
-              </div>
+              <TicketShowCodes
+                key={ticket.id}
+                ticketId={ticket.id}
+                ticketRef={ticket.reference}
+                admitted={ticket.admitted}
+                coverage={booking.snapshot?.coverage ?? []}
+              />
             ))}
           </div>
         )}
 
-        {booking.status === 'REFUND_REQUIRED' && (
-          <div style={{ padding: '1rem', background: '#fff0f0', border: '1px solid #e8c0c0', borderRadius: 8, marginTop: '1rem' }}>
-            {t('tickets.refundNotice')}
+        {(booking.status === 'REFUND_REQUIRED' || booking.status === 'REFUNDED' || (booking.status === 'CANCELLED' && (booking.refunds?.length ?? 0) > 0)) && (
+          <div role="status" style={{ padding: '1rem', background: '#fff0f0', border: '1px solid #e8c0c0', borderRadius: 8, marginTop: '1rem' }}>
+            {booking.status === 'REFUNDED' || booking.refunds?.every((r) => r.state === 'SUCCEEDED')
+              ? t('tickets.refundedNotice')
+              : booking.refunds?.some((r) => r.state === 'FAILED')
+                ? t('tickets.refundFailedNotice')
+                : t('tickets.refundNotice')}
           </div>
         )}
 
@@ -105,8 +105,25 @@ export default function TicketDetailView({ booking, contact }: { booking: Bookin
   );
 }
 
-function DoorCode({ ticketId }: { ticketId: string }) {
-  const { t } = useLocale();
+/**
+ * One QR card per covered performance, in chronological order.
+ * Interim: every card for a ticket shares that ticket's single credential
+ * (the gate already enforces one admission per show). Distinct per-show
+ * codes need a credentials migration — tracked as follow-up.
+ */
+function TicketShowCodes({
+  ticketId,
+  ticketRef,
+  admitted,
+  coverage,
+}: {
+  ticketId: string;
+  ticketRef: string;
+  admitted: number;
+  coverage: { title: string; startsAt: string }[];
+}) {
+  const { locale, t } = useLocale();
+  const dl = dateLocale(locale);
   const [qr, setQr] = useState('');
 
   useEffect(() => {
@@ -124,11 +141,26 @@ function DoorCode({ ticketId }: { ticketId: string }) {
     };
   }, [ticketId]);
 
+  const ordered = [...coverage].sort((a, b) => +new Date(a.startsAt) - +new Date(b.startsAt));
   if (!qr) return null;
   return (
     <div>
-      <img src={qr} alt="" width={240} height={240} />
-      <p>{t('tickets.showAtDoor')}</p>
+      {ordered.map((c, i) => (
+        <div key={`${ticketId}-${i}`} className="ticket-pass">
+          <p className="eyebrow" style={{ marginBottom: '.25rem' }}>
+            {ordered.length > 1 ? t('tickets.showCode', { ordinal: i + 1, total: ordered.length }) : t('tickets.yours')}
+          </p>
+          <p style={{ margin: '.2rem 0 .6rem', fontSize: '.9rem' }}>
+            <strong>{c.title}</strong>
+            {' — '}
+            {new Date(c.startsAt).toLocaleString(dl, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}
+          </p>
+          <img src={qr} alt="" width={240} height={240} />
+          <p className="ticket-pass__ref">{ticketRef}</p>
+          <p className="muted">{admitted > 0 ? t('tickets.admitted') : t('tickets.notScanned')}</p>
+          <p className="muted">{t('tickets.showAtDoor')}</p>
+        </div>
+      ))}
     </div>
   );
 }

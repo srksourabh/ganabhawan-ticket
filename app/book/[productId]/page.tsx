@@ -125,7 +125,8 @@ function BookPageInner() {
       await payExistingOrder(nextOrder, checkoutOpts());
       setStage('confirmed');
     } catch (err) {
-      setError(err instanceof Error && /cancelled/i.test(err.message) ? t('pay.cancelled') : err instanceof Error ? err.message : t('pay.failed'));
+      const refund = err instanceof Error && err.message === 'REFUND_REQUIRED';
+      setError(refund ? t('pay.refunded') : err instanceof Error && /cancelled/i.test(err.message) ? t('pay.cancelled') : err instanceof Error ? err.message : t('pay.failed'));
     } finally {
       setLoading(false);
     }

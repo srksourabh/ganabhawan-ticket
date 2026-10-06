@@ -8,7 +8,7 @@ on:
 
 jobs:
   ci:
-    name: Typecheck · Lint · Test
+    name: Typecheck · Lint · Unit + DB integration tests · Build · Bundle scan
     runs-on: ubuntu-latest
 
     services:
@@ -51,11 +51,14 @@ jobs:
           DIRECT_DATABASE_URL: postgresql://festival:test@127.0.0.1:5432/festival
           APP_MODE: development
 
+      # Unit tests plus DB-backed integration tests (tests/integration-*.test.ts),
+      # which switch themselves to a live/staging config with a simulated Razorpay.
       - name: Test
         run: npm test
         env:
           NODE_ENV: test
           APP_MODE: development
+          APP_URL: http://localhost:3000
           DATABASE_URL: postgresql://festival:test@127.0.0.1:5432/festival
           SESSION_SECRET: ci-session-secret-at-least-32-chars
           CREDENTIAL_KEY: ci-credential-key-32chars-min!!
@@ -63,3 +66,9 @@ jobs:
           PAYMENT_PROVIDER: development
           OTP_PROVIDER: development
           ALLOW_PUBLIC_SALES: "false"
+
+      - name: Build Workers artifact
+        run: npm run build:vinext
+
+      - name: No server secrets in the browser bundle
+        run: node scripts/check-bundle-secrets.mjs dist/client

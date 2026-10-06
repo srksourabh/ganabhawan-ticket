@@ -140,10 +140,29 @@ export async function razorpayFindOrderByReceipt(receipt: string): Promise<Razor
   return collection.items?.[0] ?? null;
 }
 
-export async function razorpayRefundPayment(paymentId: string, amount: number) {
-  return razorpayRequest<{ id: string }>(`/payments/${encodeURIComponent(paymentId)}/refund`, {
+export type RazorpayRefundEntity = {
+  id: string;
+  amount: number;
+  status: string;
+  payment_id?: string;
+  notes?: Record<string, string>;
+};
+
+export async function razorpayListPaymentRefunds(paymentId: string): Promise<RazorpayRefundEntity[]> {
+  const collection = await razorpayRequest<Collection<RazorpayRefundEntity>>(
+    `/payments/${encodeURIComponent(paymentId)}/refunds`,
+  );
+  return collection.items ?? [];
+}
+
+export async function razorpayFetchRefund(refundId: string): Promise<RazorpayRefundEntity> {
+  return razorpayRequest<RazorpayRefundEntity>(`/refunds/${encodeURIComponent(refundId)}`);
+}
+
+export async function razorpayRefundPayment(paymentId: string, amount: number, refundKey: string) {
+  return razorpayRequest<RazorpayRefundEntity>(`/payments/${encodeURIComponent(paymentId)}/refund`, {
     method: 'POST',
-    body: JSON.stringify({ amount }),
+    body: JSON.stringify({ amount, notes: { refundId: refundKey } }),
   });
 }
 

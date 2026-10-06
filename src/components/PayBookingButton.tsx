@@ -43,7 +43,9 @@ export default function PayBookingButton({
       });
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error && /cancelled/i.test(err.message) ? t('pay.cancelled') : err instanceof Error ? err.message : t('pay.failed'));
+      const refund = err instanceof Error && err.message === 'REFUND_REQUIRED';
+      setError(refund ? t('pay.refunded') : err instanceof Error && /cancelled/i.test(err.message) ? t('pay.cancelled') : err instanceof Error ? err.message : t('pay.failed'));
+      if (refund) router.refresh();
     } finally {
       setLoading(false);
     }

@@ -4,11 +4,14 @@
  * Env: ADMIN_EMAIL, ADMIN_PASSWORD, optional ADMIN_USERNAME / ADMIN_NAME
  */
 import { config } from 'dotenv';
-config({ path: '.env.local' });
+config({ path: process.env.ENV_FILE || '.env.local', quiet: true });
 config({ path: '.env' });
 
 import { upsertStaffPassword } from '../src/lib/auth';
 import { pool } from '../src/lib/db';
+import { assertScriptTarget } from './script-env';
+
+assertScriptTarget('db:admin');
 
 const email = process.env.ADMIN_EMAIL || 'srksourabh@gmail.com';
 const password = process.env.ADMIN_PASSWORD || '';
@@ -22,4 +25,5 @@ if (password.length < 8) {
 
 const user = await upsertStaffPassword(email, password, name, username);
 console.log(`Admin ready: ${user.contact} (username: ${username}, role: ${user.role})`);
+console.log(`Live mode requires an authenticator: npm run db:staff -- mfa-enroll ${user.contact}`);
 await pool.end();

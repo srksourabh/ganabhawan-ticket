@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import GoogleSignInButton from '@/components/GoogleSignInButton';
 import { useLocale } from '@/components/LocaleProvider';
 import { FESTIVAL, FESTIVAL_BN } from '@/lib/brand';
+import { safeNextPath } from '@/lib/redirect';
 
 const styles = {
   page: { minHeight: '100vh', background: '#f7f4ef', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem 1.25rem' },
@@ -27,7 +28,7 @@ const styles = {
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get('next') || '/catalogue';
+  const next = safeNextPath(searchParams.get('next'), '/catalogue');
   const { locale, t } = useLocale();
 
   const [step, setStep] = useState<'contact' | 'code'>('contact');
