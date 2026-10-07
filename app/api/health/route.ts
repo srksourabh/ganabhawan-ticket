@@ -20,6 +20,15 @@ export async function GET(): Promise<Response> {
     db = false;
   }
   const config = configurationProblems().length === 0;
-  const ok = db && config;
-  return jsonOk({ ok, db, config, mode: appMode(), env: deployEnv() ?? 'local' }, ok ? 200 : 503);
+  // The deploy workflow does not migrate: report a schema behind the code (e.g. 0007 not applied).
+  let schema = false;
+  if (db) {
+    try {
+      schema = (await query<{ ok: boolean }>("SELECT to_regclass('public.checkouts') IS NOT NULL AS ok"))[0]?.ok === true;
+    } catch {
+      schema = false;
+    }
+  }
+  const ok = db && config && schema;
+  return jsonOk({ ok, db, config, schema, mode: appMode(), env: deployEnv() ?? 'local' }, ok ? 200 : 503);
 }

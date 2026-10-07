@@ -94,10 +94,12 @@ export async function accountsLedger() {
      LIMIT 200`,
   );
   const payments = await query(
-    `SELECT pay.amount, pay.state, pay.created_at, b.reference, COALESCE(b.holder_name, u.name) AS name, u.contact
+    `SELECT pay.amount, pay.state, pay.created_at, COALESCE(b.reference, co.reference) AS reference,
+            COALESCE(b.holder_name, u.name) AS name, u.contact
      FROM payments pay
-     JOIN bookings b ON b.id = pay.booking_id
-     JOIN users u ON u.id = b.user_id
+     LEFT JOIN bookings b ON b.id = pay.booking_id
+     LEFT JOIN checkouts co ON co.id = pay.checkout_id
+     JOIN users u ON u.id = COALESCE(b.user_id, co.user_id)
      ORDER BY pay.created_at DESC
      LIMIT 80`,
   );

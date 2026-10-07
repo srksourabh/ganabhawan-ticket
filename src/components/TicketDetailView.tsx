@@ -19,6 +19,9 @@ export type BookingDetail = {
   currency: string;
   created_at: string;
   holder_name?: string | null;
+  checkout_id?: string | null;
+  checkout_reference?: string | null;
+  checkout_total?: number | null;
   refunds?: { id: string; amount: number; state: string; reason: string }[];
   snapshot: { name: string; category: string; kind: string; coverage: { title: string; startsAt: string }[] };
   tickets: Ticket[];
@@ -42,7 +45,12 @@ export default function TicketDetailView({ booking, contact }: { booking: Bookin
         <h1 style={{ fontFamily: 'Georgia, serif', fontSize: 'clamp(1.6rem, 5vw, 2.5rem)', lineHeight: 1.1, margin: '0 0 .5rem' }}>
           {booking.snapshot?.name}
         </h1>
-        <p style={{ fontFamily: 'monospace', fontSize: '1rem', color: '#64564d', margin: '0 0 1.5rem' }}>{booking.reference}</p>
+        <p style={{ fontFamily: 'monospace', fontSize: '1rem', color: '#64564d', margin: booking.checkout_id ? '0 0 .5rem' : '0 0 1.5rem' }}>{booking.reference}</p>
+        {booking.checkout_id && (
+          <p style={{ margin: '0 0 1.5rem' }}>
+            {t('receipt.partOf', { ref: booking.checkout_reference ?? '' })} · <Link href={`/receipts/${booking.checkout_id}`}>{t('receipt.viewReceipt')}</Link>
+          </p>
+        )}
 
         <div className="card" style={{ marginBottom: '1.25rem' }}>
           <Row label={t('tickets.status')} value={booking.status.replace('_', ' ')} />
@@ -94,7 +102,7 @@ export default function TicketDetailView({ booking, contact }: { booking: Bookin
           <div style={{ marginTop: '1rem' }}>
             <PayBookingButton
               bookingId={booking.id}
-              amount={booking.total}
+              amount={booking.checkout_total ?? booking.total}
               description={booking.snapshot?.name ?? booking.reference}
               contact={contact}
             />

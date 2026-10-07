@@ -115,6 +115,36 @@ export async function createClientPaymentOrder(bookingId: string): Promise<Razor
   return body as RazorpayOrder & { provider: 'development' | 'razorpay' };
 }
 
+export type CheckoutSummary = { id: string; reference: string; total: number; status: string; unauthenticated?: boolean };
+
+/** Holds the whole cart server-side (all lines or none) and returns the ONE checkout to pay. */
+export async function createClientCheckout(
+  lines: { productId: string; quantity: number; version: number; attemptId?: string }[],
+  idempotencyKey: string,
+): Promise<CheckoutSummary> {
+  const res = await fetch('/api/checkouts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
+    body: JSON.stringify({ lines }),
+  });
+  if (res.status === 401) return { id: '', reference: '', total: 0, status: '', unauthenticated: true };
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((body as { error?: string }).error || 'Unable to reserve these tickets.');
+  return body as CheckoutSummary;
+}
+
+/** ONE payment order for the checkout's server-computed total. */
+export async function createClientCheckoutOrder(checkoutId: string): Promise<RazorpayOrder & { provider: 'development' | 'razorpay' }> {
+  const res = await fetch('/api/payments/order', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ checkoutId }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((body as { error?: string }).error || 'Unable to create a payment order.');
+  return body as RazorpayOrder & { provider: 'development' | 'razorpay' };
+}
+
 export async function confirmRazorpayPayment(response: RazorpaySuccess) {
   const res = await fetch('/api/payments/confirm', {
     method: 'POST',
