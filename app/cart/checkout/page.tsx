@@ -8,7 +8,6 @@ import { useLocale } from '@/components/LocaleProvider';
 import { FESTIVAL, FESTIVAL_BN } from '@/lib/brand';
 import { dateLocale, kindLabel, zoneLabel, type MessageKey } from '@/lib/i18n';
 import { createClientCheckout, createClientCheckoutOrder, payExistingOrder, prefillFromContact } from '@/lib/razorpay-checkout';
-import { createClientCheckout, createClientCheckoutOrder, payExistingOrder, prefillFromContact } from '@/lib/razorpay-checkout';
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
 
@@ -26,8 +25,6 @@ function newCheckoutKey() {
   return 'chk-' + Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-function updateAll(lines: LineState[], patch: Partial<LineState>): LineState[] {
-  return lines.map((line) => ({ ...line, ...patch }));
 function updateAll(lines: LineState[], patch: Partial<LineState>): LineState[] {
   return lines.map((line) => ({ ...line, ...patch }));
 }
@@ -55,9 +52,6 @@ export default function CheckoutPage() {
   /** One key per checkout attempt: a retried request reuses it; after a failure the next attempt gets a new one. */
   const checkoutKey = useRef(newCheckoutKey());
   const [serverTotal, setServerTotal] = useState<number | null>(null);
-  /** One key per checkout attempt: a retried request reuses it; after a failure the next attempt gets a new one. */
-  const checkoutKey = useRef(newCheckoutKey());
-  const [serverTotal, setServerTotal] = useState<number | null>(null);
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -77,16 +71,9 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     if (!running && !done) setLines(cart.items.map((item) => ({ item, status: 'pending' })));
-    if (!running && !done) setLines(cart.items.map((item) => ({ item, status: 'pending' })));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart.items, running]);
 
-  /**
-   * ONE checkout for the whole cart: the server holds every line atomically,
-   * prices them, and creates ONE Razorpay order for the total. The cart is
-   * cleared only after the server confirms the booking; a dismissed or failed
-   * payment leaves the cart as it is, ready to retry.
-   */
   /**
    * ONE checkout for the whole cart: the server holds every line atomically,
    * prices them, and creates ONE Razorpay order for the total. The cart is
