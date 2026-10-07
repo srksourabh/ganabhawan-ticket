@@ -27,10 +27,11 @@ test('anything other than CONFIRMED never removes cart lines', () => {
   }
 });
 
-test('an open checkout stays remembered; finished ones are forgotten', () => {
+test('an open or expired checkout stays remembered (a late payment can still confirm it); final ones are forgotten', () => {
   assert.equal(reconcileCart(cart, pending, 'PAYMENT_PENDING').keepPending, true);
   assert.equal(reconcileCart(cart, pending, 'HELD').keepPending, true);
-  for (const status of ['CONFIRMED', 'REFUND_REQUIRED', 'REFUNDED', 'EXPIRED', 'CANCELLED']) {
+  assert.equal(reconcileCart(cart, pending, 'EXPIRED').keepPending, true);
+  for (const status of ['CONFIRMED', 'REFUND_REQUIRED', 'REFUNDED', 'CANCELLED']) {
     assert.equal(reconcileCart(cart, pending, status).keepPending, false, status);
   }
   assert.equal(outcomeOf('REFUNDED'), 'refunded');

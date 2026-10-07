@@ -25,7 +25,10 @@ export function outcomeOf(status: string | undefined): CheckoutOutcome {
  */
 export function reconcileCart<T extends Line>(items: T[], pending: PendingCheckout, status: string | undefined) {
   const outcome = outcomeOf(status);
-  if (outcome !== 'paid') return { items, outcome, keepPending: outcome === 'open' };
+  // EXPIRED is not final: a payment captured after the hold lapsed can still
+  // confirm the checkout (or refund it), so keep watching it. CANCELLED
+  // (superseded/show cancelled) is final: a late payment on it is refunded.
+  if (outcome !== 'paid') return { items, outcome, keepPending: outcome === 'open' || status === 'EXPIRED' };
   const paid = new Map(pending.lines.map((l) => [l.productId, l.quantity]));
   return { items: items.filter((item) => paid.get(item.productId) !== item.quantity), outcome, keepPending: false };
 }

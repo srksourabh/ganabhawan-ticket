@@ -106,6 +106,34 @@ test('browser never sees the result (modal lost / tab closed): webhook confirms,
   assert.equal((await checkout.checkoutReceipt(user2.id, two.co.id)).status, 'CONFIRMED');
 });
 
+test('the cart keeps watching an open, then expired, checkout and removes exactly its lines when a late payment confirms it', { skip }, async () => {
+  const { reconcileCart } = await import('../src/lib/cart-reconcile');
+  const user = await makeUser();
+  const { a, b, co, order } = await twoLineCart(user);
+  const pending = { id: co.id, reference: co.reference, lines: [{ productId: a.productId, quantity: 1 }, { productId: b.productId, quantity: 1 }] };
+  const cart = [...pending.lines, { productId: 'added-later', quantity: 2 }];
+  const step = async () => reconcileCart(cart, pending, (await checkout.checkoutReceipt(user.id, co.id)).status);
+
+  // Regression: the receipt (what the cart polls) reported every open checkout as EXPIRED, so the cart forgot it.
+  let r = await step();
+  assert.equal((await checkout.checkoutReceipt(user.id, co.id)).status, 'PAYMENT_PENDING');
+  assert.deepEqual([r.items, r.keepPending], [cart, true]);
+
+  await query("UPDATE bookings SET expires_at=now() - interval '1 second' WHERE checkout_id=$1", [co.id]);
+  r = await step();
+  assert.equal((await checkout.checkoutReceipt(user.id, co.id)).status, 'EXPIRED');
+  assert.deepEqual([r.items, r.keepPending], [cart, true], 'expired is not final: nothing removed, still watched');
+
+  // UPI capture lands after the hold lapsed; seats remain, so reconciliation confirms the whole cart.
+  fake.pay(order.orderId);
+  await query('UPDATE payment_attempts SET next_reconcile_at=now() WHERE checkout_id=$1', [co.id]);
+  await payments.reconcileOpenRazorpayPayments();
+  r = await step();
+  assert.equal(r.outcome, 'paid');
+  assert.deepEqual(r.items, [{ productId: 'added-later', quantity: 2 }], 'paid lines removed, the unrelated line stays');
+  assert.equal(r.keepPending, false);
+});
+
 test('callback + webhook + reconciliation all processing the same payment: one payment row, no duplicate tickets, ONE confirmation email', { skip }, async () => {
   const user = await makeUser();
   const { co, order } = await twoLineCart(user);
