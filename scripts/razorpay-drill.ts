@@ -39,6 +39,24 @@ try {
     WHERE p.state='CAPTURED' AND NOT EXISTS (SELECT 1 FROM refunds r WHERE r.payment_id=p.id)
       AND (b.status <> 'CONFIRMED' OR p.id <> (SELECT p2.id FROM payments p2 WHERE p2.booking_id=b.id ORDER BY p2.created_at LIMIT 1))`));
 
+  // Cart checkouts: the settling (first) payment must equal confirmed lines + refunds;
+  // any later payment on the same checkout must be refunded in full.
+  check('every captured cart payment is covered by confirmed lines plus refunds', await query(`
+    WITH pay AS (
+      SELECT p.id, p.checkout_id, p.amount, p.provider_payment_id,
+        row_number() OVER (PARTITION BY p.checkout_id ORDER BY p.created_at) AS n,
+        COALESCE((SELECT sum(r.amount) FROM refunds r WHERE r.payment_id=p.id AND r.state<>'FAILED'),0) AS refunded
+      FROM payments p WHERE p.checkout_id IS NOT NULL AND p.state='CAPTURED')
+    SELECT pay.provider_payment_id, pay.amount, pay.refunded,
+      (SELECT COALESCE(sum(b.total),0) FROM bookings b WHERE b.checkout_id=pay.checkout_id AND b.status='CONFIRMED') AS confirmed
+    FROM pay
+    WHERE (pay.n = 1 AND pay.amount <> pay.refunded + (SELECT COALESCE(sum(b.total),0) FROM bookings b WHERE b.checkout_id=pay.checkout_id AND b.status='CONFIRMED'))
+       OR (pay.n > 1 AND pay.refunded < pay.amount)`));
+
+  check('checkout totals equal the sum of their bookings', await query(`
+    SELECT co.reference, co.total, (SELECT sum(total) FROM bookings WHERE checkout_id=co.id) AS lines
+    FROM checkouts co WHERE co.total <> (SELECT COALESCE(sum(total),0) FROM bookings WHERE checkout_id=co.id)`));
+
   check('confirmed bookings have exactly quantity tickets with one active credential each', await query(`
     SELECT b.reference, b.quantity, count(DISTINCT t.id)::int tickets, count(c.id)::int creds
     FROM bookings b LEFT JOIN tickets t ON t.booking_id=b.id LEFT JOIN credentials c ON c.ticket_id=t.id AND c.status='ACTIVE'

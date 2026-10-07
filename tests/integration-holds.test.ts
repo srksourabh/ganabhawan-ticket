@@ -67,9 +67,12 @@ test('two tabs / mobile retry (10 concurrent, different keys) reuse the one live
   const results = await Promise.all(Array.from({ length: 10 }, () => hold(user, show.productId, 1, randomUUID())));
   assert.equal(new Set(results.map((r) => r.id)).size, 1);
   assert.equal((await pool(show.poolId)).held, 1);
-  // Once paying has started, a different quantity is refused rather than silently dropping the hold.
+  // Even after a payment order was opened (and dismissed), a new quantity supersedes
+  // the old hold instead of blocking the cart (Oct 2026 tester report).
   await payments.createPaymentOrder(user, results[0].id);
-  await assert.rejects(() => hold(user, show.productId, 3, randomUUID()), /checkout in progress/i);
+  const changed = await hold(user, show.productId, 3, randomUUID());
+  assert.notEqual(changed.id, results[0].id);
+  assert.equal((await pool(show.poolId)).held, 3, 'old hold released, new one held: no leak');
 });
 
 test('6: a new checkout after an expired hold gets a new hold (no 48 h lockout)', { skip }, async () => {

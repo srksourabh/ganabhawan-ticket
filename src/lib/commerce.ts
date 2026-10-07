@@ -20,38 +20,24 @@ export async function expireIn(c:Client,id?:string) {
  return expired.length;
 }
 export async function expireHolds() { return transaction(c=>expireIn(c),true); }
-export async function reserve(user:User,input:{productId:string;quantity:number;version:number},key:string) {
- requireValue(key.length>=8 && key.length<=128,'A valid idempotency key is required.',400);
- assertLiveConfiguration();
- return transaction(async c=>{
-  const scope='hold:'+user.id; const digest=hash(JSON.stringify(input));
-  const previous=await one(c,'SELECT * FROM idempotency WHERE scope=$1 AND key=$2',[scope,key]);
-  if(previous) {
-   requireValue(previous.input_digest===digest,'This request key was already used for another selection.');
-   // Same checkout retried: same booking, current state (never a stale snapshot).
-   return (await one(c,'SELECT * FROM bookings WHERE id=$1 AND user_id=$2',[previous.result.id,user.id])) ?? previous.result;
-  }
-  await expireIn(c);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SQL rows are loosely typed in this module
+type BookingRow = Record<string, any>;
+export type HoldInput = {productId:string;quantity:number;version:number};
+/** Loads and validates a product for a hold (locks the product row). */
+export async function loadProductForHold(c:Client,input:HoldInput) {
   const product=await one(c,'SELECT p.*,f.status festival_status,f.hold_minutes,f.max_quantity,f.terms,f.physical_required FROM products p JOIN festivals f ON f.id=p.festival_id WHERE p.id=$1 FOR UPDATE OF p',[input.productId]);
   requireValue(product && product.enabled,'This ticket option is not available.',404);
   requireValue(product.festival_status==='PUBLISHED' && (developmentAdaptersAllowed() || process.env.ALLOW_PUBLIC_SALES==='true'),'Ticket sales are paused.');
   requireValue(product.version===input.version,'This price has changed. Please refresh your selection.');
   requireValue(Number.isInteger(input.quantity)&&input.quantity>=1&&input.quantity<=product.max_quantity,'Choose a valid ticket quantity.',400);
-  let open=await one(c,"SELECT * FROM bookings WHERE user_id=$1 AND product_id=$2 AND status IN ('HELD','PAYMENT_PENDING') AND expires_at>now() ORDER BY created_at DESC LIMIT 1",[user.id,product.id]);
-  if(open && Number(open.quantity)!==input.quantity && open.status==='HELD') {
-   // Changed quantity before any payment order existed: release the old hold and start over.
-   const ordered=await one(c,'SELECT 1 FROM payment_attempts WHERE booking_id=$1',[open.id]);
-   if(!ordered) {
-    await c.query("UPDATE bookings SET expires_at=now() WHERE id=$1",[open.id]);
-    await expireIn(c,open.id);
-    open=undefined;
-   }
-  }
-  if(open) {
-   requireValue(Number(open.quantity)===input.quantity,'You already have a checkout in progress for this ticket. Finish it or wait for the hold to expire.',409);
-   await c.query('INSERT INTO idempotency(scope,key,input_digest,result) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING',[scope,key,digest,JSON.stringify(open)]);
-   return open;
-  }
+  return product;
+}
+/**
+ * Locks the product's pools, checks sales window, capacity and product cap,
+ * then creates a HELD booking with its allocations. Caller holds the commerce
+ * lock; any failure throws and rolls the caller's transaction back.
+ */
+export async function placeHold(c:Client,user:User,input:HoldInput,product:BookingRow) {
   const coverage=(await c.query('SELECT pc.*,p.allocation,p.held,p.committed,s.title,s.starts_at,s.status FROM product_coverage pc JOIN pools p ON p.id=pc.pool_id JOIN shows s ON s.id=pc.show_id WHERE pc.product_id=$1 ORDER BY s.starts_at, p.id FOR UPDATE OF p',[product.id])).rows;
   requireValue(coverage.length>0 && coverage.every(s=>s.status==='PUBLISHED'&&new Date(s.starts_at).getTime()>Date.now()),'Sales for this performance have closed.');
   requireValue(coverage.every(p=>p.allocation-p.held-p.committed>=input.quantity),'Not enough tickets remain. Please choose fewer tickets.');
@@ -65,9 +51,101 @@ export async function reserve(user:User,input:{productId:string;quantity:number;
    await c.query('UPDATE pools SET held=held+$1,version=version+1 WHERE id=$2',[input.quantity,p.pool_id]);
    await movement(c,p.pool_id,'reserve:'+booking.id,input.quantity,0,'Checkout reservation');
   }
+  await audit(c,user.id,'booking.hold',booking.id,{quantity:input.quantity});
+  return booking;
+}
+export async function reserve(user:User,input:HoldInput,key:string) {
+ requireValue(key.length>=8 && key.length<=128,'A valid idempotency key is required.',400);
+ assertLiveConfiguration();
+ return transaction(async c=>{
+  const scope='hold:'+user.id; const digest=hash(JSON.stringify(input));
+  const previous=await one(c,'SELECT * FROM idempotency WHERE scope=$1 AND key=$2',[scope,key]);
+  if(previous) {
+   requireValue(previous.input_digest===digest,'This request key was already used for another selection.');
+   // Same checkout retried: same booking, current state (never a stale snapshot).
+   return (await one(c,'SELECT * FROM bookings WHERE id=$1 AND user_id=$2',[previous.result.id,user.id])) ?? previous.result;
+  }
+  await expireIn(c);
+  const product=await loadProductForHold(c,input);
+  let open=await one(c,"SELECT * FROM bookings WHERE user_id=$1 AND product_id=$2 AND status IN ('HELD','PAYMENT_PENDING') AND expires_at>now() ORDER BY created_at DESC LIMIT 1",[user.id,product.id]);
+  if(open && (Number(open.quantity)!==input.quantity || open.checkout_id)) {
+   // The cart changed (or this ticket is part of a cart checkout): the old hold is
+   // superseded. Its order may still be open in a dismissed Razorpay modal; if it
+   // is paid anyway, fulfil() sees CANCELLED and refunds it automatically.
+   if(open.checkout_id) await supersedeCheckout(c,open.checkout_id,user.id); else await supersedeBooking(c,open,user.id);
+   open=undefined;
+  }
+  if(open) {
+   await c.query('INSERT INTO idempotency(scope,key,input_digest,result) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING',[scope,key,digest,JSON.stringify(open)]);
+   return open;
+  }
+  const booking=await placeHold(c,user,input,product);
   await c.query('INSERT INTO idempotency(scope,key,input_digest,result) VALUES($1,$2,$3,$4)',[scope,key,digest,JSON.stringify(booking)]);
-  await audit(c,user.id,'booking.hold',booking.id,{quantity:input.quantity}); return booking;
+  return booking;
  },true);
+}
+/**
+ * Releases a live (HELD / PAYMENT_PENDING) booking that the customer replaced
+ * with a different selection, and cancels it. Caller holds the commerce lock.
+ * Its provider order, if any, stays READY so reconciliation and the webhook
+ * still see a late payment, which fulfil() refunds because the booking is CANCELLED.
+ */
+export async function supersedeBooking(c:Client,b:Record<string,unknown>,actorId:string) {
+  const held=(await c.query("SELECT h.pool_id,h.quantity FROM hold_allocations h JOIN pools p ON p.id=h.pool_id WHERE h.booking_id=$1 AND h.state='HELD' ORDER BY h.pool_id FOR UPDATE OF p",[b.id])).rows as {pool_id:string;quantity:number}[];
+  for(const a of held) { await c.query('UPDATE pools SET held=held-$1,version=version+1 WHERE id=$2',[a.quantity,a.pool_id]); await movement(c,a.pool_id,'supersede:'+b.id,-a.quantity,0,'Checkout replaced by the customer'); }
+  await c.query("UPDATE hold_allocations SET state='RELEASED' WHERE booking_id=$1 AND state='HELD'",[b.id]);
+  await c.query("UPDATE bookings SET status='CANCELLED' WHERE id=$1 AND status IN ('HELD','PAYMENT_PENDING')",[b.id]);
+  await audit(c,actorId,'booking.superseded',String(b.id),{});
+}
+/** Supersedes every still-live booking of a checkout (the whole cart was replaced). */
+export async function supersedeCheckout(c:Client,checkoutId:string,actorId:string) {
+  const live=(await c.query("SELECT * FROM bookings WHERE checkout_id=$1 AND status IN ('HELD','PAYMENT_PENDING') ORDER BY id FOR UPDATE",[checkoutId])).rows;
+  for(const b of live) await supersedeBooking(c,b,actorId);
+  return live.length;
+}
+type Allocation = {pool_id:string;quantity:number;state:string;allocation:number;held:number;committed:number};
+export type BookingAssessment = { allocations:Allocation[]; live:boolean; covered:{showId:string;poolId:string;weight:number}[]; canFulfill:boolean };
+/**
+ * Can this booking be confirmed now? Locks its pools. Call after expireIn so an
+ * expired hold is already released. A live hold always fits; an expired one
+ * fits only if its pools still have room. Shows must be PUBLISHED and the
+ * product cap respected.
+ */
+export async function assessBooking(c:Client,b:BookingRow):Promise<BookingAssessment> {
+  const allocations=(await c.query('SELECT h.*,p.allocation,p.held,p.committed FROM hold_allocations h JOIN pools p ON p.id=h.pool_id WHERE h.booking_id=$1 ORDER BY p.id FOR UPDATE OF p',[b.id])).rows as Allocation[];
+  const live=allocations.length>0&&allocations.every(a=>a.state==='HELD');
+  const covered=b.snapshot.coverage as {showId:string;poolId:string;weight:number}[];
+  const shows=(await c.query('SELECT status FROM shows WHERE id=ANY($1::uuid[])',[covered.map(s=>s.showId)])).rows;
+  const productCap=await one<{cap:number|null}>(c,'SELECT cap FROM products WHERE id=$1',[b.product_id]);
+  let withinCap=true;
+  if(productCap && productCap.cap!==null) {
+   const used=await one<{n:number}>(c,"SELECT COALESCE(sum(quantity),0)::int n FROM bookings WHERE product_id=$1 AND status='CONFIRMED' AND id<>$2",[b.product_id,b.id]);
+   withinCap=(used?.n??0)+Number(b.quantity)<=Number(productCap.cap);
+  }
+  const canFulfill=b.status!=='CANCELLED' && shows.every(s=>s.status==='PUBLISHED') && allocations.length===covered.length && withinCap && (live||allocations.every(a=>a.allocation-a.held-a.committed>=a.quantity));
+  return {allocations,live,covered,canFulfill};
+}
+export async function releaseLiveHold(c:Client,b:BookingRow,allocations:Allocation[],operation:string,reason:string) {
+  for(const a of allocations) { await c.query('UPDATE pools SET held=held-$1,version=version+1 WHERE id=$2',[a.quantity,a.pool_id]); await movement(c,a.pool_id,operation+b.id,-a.quantity,0,reason); }
+  await c.query("UPDATE hold_allocations SET state='RELEASED' WHERE booking_id=$1",[b.id]);
+}
+/** Commits inventory, issues tickets/credentials, confirms and queues delivery. */
+export async function commitBooking(c:Client,b:BookingRow,a:BookingAssessment,paymentRecordId:string,queueDelivery=true) {
+  for(const al of a.allocations) {
+   await c.query('UPDATE pools SET held=held-$1,committed=committed+$2,version=version+1 WHERE id=$3',[a.live?al.quantity:0,al.quantity,al.pool_id]);
+   await movement(c,al.pool_id,'fulfill:'+b.id,a.live?-al.quantity:0,al.quantity,'Verified captured payment');
+  }
+  await c.query("UPDATE hold_allocations SET state='COMMITTED' WHERE booking_id=$1",[b.id]);
+  for(let i=1;i<=b.quantity;i++) {
+   const ticket=(await one(c,'INSERT INTO tickets(booking_id,ordinal,reference) VALUES($1,$2,$3) RETURNING id',[b.id,i,b.reference+'-'+i]))!;
+   for(const s of a.covered) await c.query('INSERT INTO entitlements(ticket_id,show_id,pool_id,weight) VALUES($1,$2,$3,$4)',[ticket.id,s.showId,s.poolId,s.weight]);
+   const qr=token(); await c.query("INSERT INTO credentials(ticket_id,digest,encrypted_token,kind,status) VALUES($1,$2,$3,'DIGITAL','ACTIVE')",[ticket.id,hash(qr),encrypt(qr)]);
+  }
+  await c.query("UPDATE bookings SET status='CONFIRMED' WHERE id=$1",[b.id]);
+  await c.query('UPDATE payment_attempts SET next_reconcile_at=NULL WHERE booking_id=$1',[b.id]);
+  await markAttemptsConfirmed(c, b.id);
+  if(queueDelivery) await job(c,'DELIVERY','confirmation:'+b.id,{bookingId:b.id});
+  await audit(c,b.user_id,'booking.confirmed',b.id,{paymentId:paymentRecordId});
 }
 export interface CapturedPayment { id:string;orderId:string;amount:number;currency:string;status:string; }
 export async function fulfill(bookingId:string,payment:CapturedPayment) {
@@ -80,39 +158,15 @@ export async function fulfill(bookingId:string,payment:CapturedPayment) {
   const record=(await one(c,"INSERT INTO payments(booking_id,provider_payment_id,provider_order_id,amount,currency,state) VALUES($1,$2,$3,$4,$5,'CAPTURED') RETURNING id",[bookingId,payment.id,payment.orderId,payment.amount,payment.currency]))!;
   if(b.status==='CONFIRMED'||b.status==='CANCELLED'||b.status==='REFUND_REQUIRED'||b.status==='REFUNDED') { await refundCase(c,b,record.id,payment.amount,'Excess captured payment'); return b; }
   await expireIn(c,bookingId);
-  const allocations=(await c.query('SELECT h.*,p.allocation,p.held,p.committed FROM hold_allocations h JOIN pools p ON p.id=h.pool_id WHERE h.booking_id=$1 ORDER BY p.id FOR UPDATE OF p',[bookingId])).rows;
-  const live=allocations.length>0&&allocations.every(a=>a.state==='HELD');
-  const covered=b.snapshot.coverage as {showId:string;poolId:string;weight:number}[];
-  const shows=(await c.query('SELECT status FROM shows WHERE id=ANY($1::uuid[])',[covered.map(s=>s.showId)])).rows;
-  const productCap=await one<{cap:number|null}>(c,'SELECT cap FROM products WHERE id=$1',[b.product_id]);
-  let withinCap=true;
-  if(productCap && productCap.cap!==null) {
-   const used=await one<{n:number}>(c,"SELECT COALESCE(sum(quantity),0)::int n FROM bookings WHERE product_id=$1 AND status='CONFIRMED' AND id<>$2",[b.product_id,b.id]);
-   withinCap=(used?.n??0)+Number(b.quantity)<=Number(productCap.cap);
-  }
-  const canFulfill=shows.every(s=>s.status==='PUBLISHED') && allocations.length===covered.length && withinCap && (live||allocations.every(a=>a.allocation-a.held-a.committed>=a.quantity));
-  if(!canFulfill) {
+  const assessment=await assessBooking(c,b);
+  if(!assessment.canFulfill) {
    // A live hold must also be released if an organiser cancelled its show.
-   if(live) { for(const a of allocations) { await c.query('UPDATE pools SET held=held-$1,version=version+1 WHERE id=$2',[a.quantity,a.pool_id]); await movement(c,a.pool_id,'capture-release:'+b.id,-a.quantity,0,'Captured booking no longer eligible'); } await c.query("UPDATE hold_allocations SET state='RELEASED' WHERE booking_id=$1",[b.id]); }
+   if(assessment.live) await releaseLiveHold(c,b,assessment.allocations,'capture-release:','Captured booking no longer eligible');
    await c.query("UPDATE bookings SET status='REFUND_REQUIRED' WHERE id=$1",[b.id]);
    await refundCase(c,b,record.id,payment.amount,'Capture arrived without available coverage');
    return {...b,status:'REFUND_REQUIRED'};
   }
-  for(const a of allocations) {
-   await c.query('UPDATE pools SET held=held-$1,committed=committed+$2,version=version+1 WHERE id=$3',[live?a.quantity:0,a.quantity,a.pool_id]);
-   await movement(c,a.pool_id,'fulfill:'+b.id,live?-a.quantity:0,a.quantity,'Verified captured payment');
-  }
-  await c.query("UPDATE hold_allocations SET state='COMMITTED' WHERE booking_id=$1",[b.id]);
-  for(let i=1;i<=b.quantity;i++) {
-   const ticket=(await one(c,'INSERT INTO tickets(booking_id,ordinal,reference) VALUES($1,$2,$3) RETURNING id',[b.id,i,b.reference+'-'+i]))!;
-   for(const s of covered) await c.query('INSERT INTO entitlements(ticket_id,show_id,pool_id,weight) VALUES($1,$2,$3,$4)',[ticket.id,s.showId,s.poolId,s.weight]);
-   const qr=token(); await c.query("INSERT INTO credentials(ticket_id,digest,encrypted_token,kind,status) VALUES($1,$2,$3,'DIGITAL','ACTIVE')",[ticket.id,hash(qr),encrypt(qr)]);
-  }
-  await c.query("UPDATE bookings SET status='CONFIRMED' WHERE id=$1",[b.id]);
-  await c.query('UPDATE payment_attempts SET next_reconcile_at=NULL WHERE booking_id=$1',[b.id]);
-  await markAttemptsConfirmed(c, b.id);
-  await job(c,'DELIVERY','confirmation:'+b.id,{bookingId:b.id});
-  await audit(c,b.user_id,'booking.confirmed',b.id,{paymentId:record.id});
+  await commitBooking(c,b,assessment,record.id);
   return {...b,status:'CONFIRMED'};
  },true);
 }
@@ -149,17 +203,20 @@ export async function cancelShowSales(c: Client, showId: string, actorId: string
   )).rows as { id: string }[];
   if (pools.length === 0) return { bookings: 0, refunds: 0 };
   const bookings = (await c.query(
-    `SELECT b.id, b.status FROM bookings b
+    `SELECT b.id, b.status, b.checkout_id, b.total FROM bookings b
      WHERE b.id IN (
        SELECT h.booking_id FROM hold_allocations h
        WHERE h.pool_id = ANY($1::uuid[]) AND h.state IN ('HELD','COMMITTED')
      ) AND b.status IN ('HELD','PAYMENT_PENDING','CONFIRMED')
      ORDER BY b.id FOR UPDATE`,
     [pools.map((p) => p.id)],
-  )).rows as { id: string; status: string }[];
+  )).rows as { id: string; status: string; checkout_id: string | null; total: number }[];
 
   let refunds = 0;
   for (const b of bookings) {
+    // An unpaid cart checkout cannot complete without this line: release the whole
+    // cart (all-or-nothing). A payment arriving later on its order is refunded.
+    if (b.checkout_id && b.status !== 'CONFIRMED') await supersedeCheckout(c, b.checkout_id, actorId);
     const allocations = (await c.query(
       "SELECT pool_id, quantity, state FROM hold_allocations WHERE booking_id=$1 AND state IN ('HELD','COMMITTED') ORDER BY pool_id FOR UPDATE",
       [b.id],
@@ -196,6 +253,24 @@ export async function cancelShowSales(c: Client, showId: string, actorId: string
       await refundCase(c, { id: b.id }, payment.id, Number(payment.amount), 'Show cancelled', false);
       refunds += 1;
     }
+    // A confirmed line of a cart checkout: refund THIS booking's price from the
+    // shared payment (owner decision), taken from the payment that still has
+    // that much unrefunded. Once per booking (it is now CANCELLED).
+    if (b.checkout_id && b.status === 'CONFIRMED') {
+      const shared = (await c.query(
+        `SELECT p.id, p.amount - COALESCE((SELECT sum(r.amount) FROM refunds r WHERE r.payment_id=p.id AND r.state<>'FAILED'),0) AS remaining
+         FROM payments p WHERE p.checkout_id=$1 AND p.state='CAPTURED' ORDER BY p.created_at`,
+        [b.checkout_id],
+      )).rows as { id: string; remaining: number }[];
+      const source = shared.find((p) => Number(p.remaining) >= Number(b.total));
+      if (source) {
+        await refundCase(c, { id: b.id }, source.id, Number(b.total), 'Show cancelled', false);
+        refunds += 1;
+      } else {
+        await c.query('INSERT INTO reconciliation_cases(key,kind,detail) VALUES($1,$2,$3) ON CONFLICT(key) DO NOTHING',
+          ['show-cancel-refund:' + b.id, 'REFUND', JSON.stringify({ bookingId: b.id, checkoutId: b.checkout_id, reason: 'No captured checkout payment with enough unrefunded balance' })]);
+      }
+    }
     await job(c, 'NOTICE', 'cancel-booking:' + showId + ':' + b.id, {
       bookingId: b.id,
       message: b.status === 'CONFIRMED'
@@ -206,13 +281,14 @@ export async function cancelShowSales(c: Client, showId: string, actorId: string
   }
   return { bookings: bookings.length, refunds };
 }
-async function refundCase(c:Client,b:Record<string,unknown>,paymentId:string,amount:number,reason:string,openCase=true) {
+export async function refundCase(c:Client,b:Record<string,unknown>,paymentId:string,amount:number,reason:string,openCase=true) {
  const refund=(await one(c,'INSERT INTO refunds(booking_id,payment_id,amount,reason) VALUES($1,$2,$3,$4) RETURNING id',[b.id,paymentId,amount,reason]))!;
  await job(c,'REFUND','refund:'+refund.id,{refundId:refund.id});
  if(openCase) await c.query('INSERT INTO reconciliation_cases(key,kind,detail) VALUES($1,$2,$3) ON CONFLICT(key) DO NOTHING',['capture:'+paymentId,'PAYMENT',JSON.stringify({bookingId:b.id,refundId:refund.id,reason})]);
 }
 export async function ownedBookings(userId:string,id?:string) {
  return query(`SELECT b.*,COALESCE((SELECT jsonb_agg(jsonb_build_object('id',t.id,'reference',t.reference,'status',t.status,'ordinal',t.ordinal,'credentialKind',cr.kind,'admitted',(SELECT count(*) FROM admissions a WHERE a.ticket_id=t.id)) ORDER BY t.ordinal) FROM tickets t LEFT JOIN credentials cr ON cr.ticket_id=t.id AND cr.status='ACTIVE' WHERE t.booking_id=b.id),'[]') tickets,
- COALESCE((SELECT jsonb_agg(jsonb_build_object('id',r.id,'amount',r.amount,'state',r.state,'reason',r.reason)) FROM refunds r WHERE r.booking_id=b.id),'[]') refunds
- FROM bookings b WHERE b.user_id=$1 AND ($2::uuid IS NULL OR b.id=$2) ORDER BY b.created_at DESC`,[userId,id??null]);
+ COALESCE((SELECT jsonb_agg(jsonb_build_object('id',r.id,'amount',r.amount,'state',r.state,'reason',r.reason)) FROM refunds r WHERE r.booking_id=b.id),'[]') refunds,
+ co.reference checkout_reference, co.total checkout_total
+ FROM bookings b LEFT JOIN checkouts co ON co.id=b.checkout_id WHERE b.user_id=$1 AND ($2::uuid IS NULL OR b.id=$2) ORDER BY b.created_at DESC`,[userId,id??null]);
 }

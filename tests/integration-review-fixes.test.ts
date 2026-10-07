@@ -137,11 +137,15 @@ test('changing quantity before paying replaces the unpaid hold; inventory stays 
   const second = (await commerce.reserve(user, { productId: show.productId, quantity: 3, version: 1 }, randomUUID())) as { id: string; quantity: number };
   assert.notEqual(second.id, first.id);
   assert.equal(Number(second.quantity), 3);
-  assert.equal((await db.query('SELECT status FROM bookings WHERE id=$1', [first.id]))[0].status, 'EXPIRED');
+  // Replaced holds are CANCELLED (superseded), so a late payment on them is refunded.
+  assert.equal((await db.query('SELECT status FROM bookings WHERE id=$1', [first.id]))[0].status, 'CANCELLED');
   assert.deepEqual(await pool(show.poolId), { allocation: 10, held: 3, committed: 0 });
-  // Once a payment order exists the hold is protected (customer may be paying in another tab).
+  // A payment order no longer protects a hold from a changed cart: it is superseded;
+  // a late payment on its order is refunded (covered in integration-cart-retry).
   await payments.createPaymentOrder(user, second.id);
-  await assert.rejects(() => commerce.reserve(user, { productId: show.productId, quantity: 1, version: 1 }, randomUUID()), /checkout in progress/);
+  const third = (await commerce.reserve(user, { productId: show.productId, quantity: 1, version: 1 }, randomUUID())) as { id: string };
+  assert.notEqual(third.id, second.id);
+  assert.deepEqual(await pool(show.poolId), { allocation: 10, held: 1, committed: 0 });
 });
 
 test('staff MFA enrolment refuses a CREDENTIAL_KEY that does not match the database', { skip }, async () => {

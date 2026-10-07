@@ -4,6 +4,7 @@ import { deliverBooking } from './tickets';
 import { reconcileOpenRazorpayPayments } from './payments';
 import { executeRefund, pollProcessingRefunds } from './refunds';
 import { sendMessage } from './auth';
+import { deliverCheckout } from './checkout';
 
 /** A RUNNING job whose lease (locked_at) is older than this is reclaimed. */
 export const STALE_JOB_MINUTES = 15;
@@ -134,6 +135,12 @@ async function handleJob(kind: string, payload: Record<string, unknown>): Promis
     }
 
     case 'DELIVERY': {
+      // A cart checkout gets ONE consolidated confirmation listing every line.
+      const checkoutId = payload['checkoutId'] as string | undefined;
+      if (checkoutId) {
+        await deliverCheckout(checkoutId);
+        break;
+      }
       const bookingId = payload['bookingId'] as string | undefined;
       if (!bookingId) throw new Error('DELIVERY job missing bookingId');
       await deliverBooking(bookingId);

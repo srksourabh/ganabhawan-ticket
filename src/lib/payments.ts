@@ -1,4 +1,6 @@
-import { query, transaction, one, withSerialLock } from './db';
+import { query, transaction, one } from './db';
+import { ensureProviderOrder } from './provider-order';
+import { createCheckoutPaymentOrder, fulfillCheckout, confirmDevelopmentCheckout, findOwnedCheckout } from './checkout';
 import { AppError, requireValue } from './errors';
 import { assertLiveConfiguration, developmentAdaptersAllowed, usingDevelopmentPayments } from './env';
 import { applyRefundWebhook } from './refunds';
@@ -9,9 +11,7 @@ import {
   assertCheckoutSignature,
   assertWebhookSignature,
   ensureCapturedPayment,
-  razorpayCreateOrder,
   razorpayFetchPayment,
-  razorpayFindOrderByReceipt,
   razorpayKeyId,
   razorpayListOrderPayments,
   razorpayWebhookDigest,
@@ -84,17 +84,22 @@ export function nextReconcileDelayMinutes(minutesSinceExpiry: number, live: bool
 const CLAIM_RECONCILE_SQL = `UPDATE payment_attempts a
    SET next_reconcile_at = now() + interval '5 minutes', reconcile_checks = a.reconcile_checks + 1, last_reconciled_at = now()
    WHERE a.id IN (
-     SELECT a2.id FROM payment_attempts a2 JOIN bookings b ON b.id = a2.booking_id
+     SELECT a2.id FROM payment_attempts a2
      WHERE a2.state = 'READY' AND a2.provider_order_id IS NOT NULL
        AND a2.provider_order_id NOT LIKE 'dev-%' -- development-adapter orders never existed at Razorpay
        AND a2.next_reconcile_at IS NOT NULL AND a2.next_reconcile_at <= now()
-       AND b.status IN ('HELD','PAYMENT_PENDING','EXPIRED','CANCELLED')
+       -- single-booking order, or a cart checkout order (bookings share checkout_id)
+       AND EXISTS (SELECT 1 FROM bookings b
+         WHERE (b.id = a2.booking_id OR (a2.checkout_id IS NOT NULL AND b.checkout_id = a2.checkout_id))
+           AND b.status IN ('HELD','PAYMENT_PENDING','EXPIRED','CANCELLED'))
      ORDER BY a2.next_reconcile_at, a2.id
      LIMIT $1
      FOR UPDATE OF a2 SKIP LOCKED)
    RETURNING a.id, a.provider_order_id, a.reconcile_checks, a.created_at,
-     (SELECT status FROM bookings WHERE id = a.booking_id) AS booking_status,
-     (SELECT expires_at FROM bookings WHERE id = a.booking_id) AS booking_expires_at`;
+     (SELECT CASE WHEN bool_and(b.status IN ('HELD','PAYMENT_PENDING')) THEN min(b.expires_at) END FROM bookings b
+       WHERE b.id = a.booking_id OR (a.checkout_id IS NOT NULL AND b.checkout_id = a.checkout_id)) AS live_until,
+     (SELECT max(b.expires_at) FROM bookings b
+       WHERE b.id = a.booking_id OR (a.checkout_id IS NOT NULL AND b.checkout_id = a.checkout_id)) AS booking_expires_at`;
 
 async function openPaymentCase(key: string, detail: unknown) {
   await query(
@@ -106,6 +111,9 @@ async function openPaymentCase(key: string, detail: unknown) {
 export async function createPaymentOrder(user: User, bookingId: string) {
   assertLiveConfiguration();
   requireValue(bookingId, 'Booking not found or no longer held.', 404);
+  // A booking created by a cart checkout is paid as part of that checkout (one payment for the cart).
+  const parent = (await query<{ checkout_id: string | null }>('SELECT checkout_id FROM bookings WHERE id=$1 AND user_id=$2', [bookingId, user.id]))[0];
+  if (parent?.checkout_id) return createCheckoutPaymentOrder(user, parent.checkout_id);
 
   const prepared = await transaction(async (c) => {
     await expireIn(c, bookingId);
@@ -175,66 +183,25 @@ export async function createPaymentOrder(user: User, bookingId: string) {
   }
 
   const attempt = prepared.attempt as AttemptRow;
-  try {
-    return await withSerialLock('pay-order:' + prepared.booking.id, async (client) => {
-      const current = await one<AttemptRow>(client, 'SELECT * FROM payment_attempts WHERE id=$1', [attempt.id]);
-      if (current?.state === 'READY' && current.provider_order_id) {
-        return orderResponse(prepared.booking, current.provider_order_id, 'razorpay');
-      }
-
-      const existing = await razorpayFindOrderByReceipt(prepared.booking.reference);
-      const rzOrder =
-        existing ??
-        (await razorpayCreateOrder({
-          amount: paise(prepared.booking.total),
-          currency: prepared.booking.currency,
-          receipt: prepared.booking.reference,
-          notes: { bookingId: prepared.booking.id, reference: prepared.booking.reference },
-        }));
-
-      const updated = await client.query<{ provider_order_id: string }>(
-        `UPDATE payment_attempts SET provider_order_id=$1, state='READY'
-         WHERE id=$2 AND (provider_order_id IS NULL OR provider_order_id=$1)
-         RETURNING provider_order_id`,
-        [rzOrder.id, attempt.id],
-      );
-      let orderId = rzOrder.id;
-      if (!updated.rows[0]) {
-        const winner = await one<AttemptRow>(client, 'SELECT * FROM payment_attempts WHERE id=$1', [attempt.id]);
-        await client.query(
-          'INSERT INTO reconciliation_cases(key,kind,detail) VALUES($1,$2,$3) ON CONFLICT(key) DO NOTHING',
-          ['orphan-order:' + rzOrder.id, 'PAYMENT', JSON.stringify({ bookingId, kept: winner?.provider_order_id ?? null, orphan: rzOrder.id })],
-        );
-        requireValue(winner?.provider_order_id, 'Unknown payment order.', 404);
-        orderId = winner.provider_order_id;
-      }
-
-      try {
-        await client.query('INSERT INTO audit_events(actor_id,action,entity,detail) VALUES($1,$2,$3,$4)', [
-          user.id,
-          'payment.order.razorpay',
-          bookingId,
-          JSON.stringify({ orderId }),
-        ]);
-      } catch (error) {
-        console.error('[payments] audit order', error);
-      }
-      return orderResponse(prepared.booking, orderId, 'razorpay');
-    });
-  } catch (error) {
-    const uncertain = error instanceof AppError && error.code === 'PROVIDER_TIMEOUT';
-    await query("UPDATE payment_attempts SET state=$1 WHERE id=$2 AND state='CREATING'", [
-      uncertain ? 'UNCERTAIN' : 'FAILED',
-      attempt.id,
-    ]);
-    throw error;
-  }
+  const orderId = await ensureProviderOrder({
+    attemptId: attempt.id,
+    lockKey: 'pay-order:' + prepared.booking.id,
+    receipt: prepared.booking.reference,
+    amount: paise(prepared.booking.total),
+    currency: prepared.booking.currency,
+    notes: { bookingId: prepared.booking.id, reference: prepared.booking.reference },
+    actorId: user.id,
+    auditEntity: bookingId,
+  });
+  return orderResponse(prepared.booking, orderId, 'razorpay');
 }
 
 export async function confirmDevelopmentPayment(user: User, bookingId: string, orderId: string) {
   assertLiveConfiguration();
   requireValue(developmentAdaptersAllowed(), 'Development payments are not available on a public host.', 403);
   requireValue(usingDevelopmentPayments(), 'Not available when Razorpay is enabled.', 403);
+  // Cart checkouts confirm through their parent (the client sends the checkout id).
+  if (await findOwnedCheckout(user.id, bookingId)) return confirmDevelopmentCheckout(user, bookingId, orderId);
 
   const booking = (
     await query(
@@ -255,7 +222,7 @@ export async function confirmDevelopmentPayment(user: User, bookingId: string, o
 
 async function settleRazorpayPayment(payment: RazorpayPaymentEntity) {
   const captured = await ensureCapturedPayment(payment);
-  const attempts = await query<{ booking_id: string; provider_order_id: string }>(
+  const attempts = await query<{ booking_id: string | null; checkout_id: string | null; provider_order_id: string }>(
     'SELECT * FROM payment_attempts WHERE provider_order_id=$1',
     [captured.order_id],
   );
@@ -268,7 +235,8 @@ async function settleRazorpayPayment(payment: RazorpayPaymentEntity) {
     throw new AppError(404, 'Unknown payment order.');
   }
   requireValue(captured.order_id === attempts[0].provider_order_id, 'Payment order mismatch.', 400);
-  return fulfill(attempts[0].booking_id, capturedFromEntity(captured));
+  if (attempts[0].checkout_id) return fulfillCheckout(attempts[0].checkout_id, capturedFromEntity(captured));
+  return fulfill(attempts[0].booking_id!, capturedFromEntity(captured));
 }
 
 export async function verifyRazorpayCallback(
@@ -287,16 +255,19 @@ export async function verifyRazorpayCallback(
 
   if (user) {
     const attempt = (
-      await query<{ booking_id: string }>(
-        'SELECT booking_id FROM payment_attempts WHERE provider_order_id=$1',
+      await query<{ booking_id: string | null; checkout_id: string | null }>(
+        'SELECT booking_id, checkout_id FROM payment_attempts WHERE provider_order_id=$1',
         [body.razorpay_order_id],
       )
     )[0];
     requireValue(attempt, 'Unknown payment order.', 404);
-    const booking = (
-      await query<{ user_id: string }>('SELECT user_id FROM bookings WHERE id=$1', [attempt.booking_id])
+    const owner = (
+      await query<{ user_id: string }>(
+        attempt.checkout_id ? 'SELECT user_id FROM checkouts WHERE id=$1' : 'SELECT user_id FROM bookings WHERE id=$1',
+        [attempt.checkout_id ?? attempt.booking_id],
+      )
     )[0];
-    requireValue(booking && booking.user_id === user.id, 'Booking not found or not awaiting payment.', 404);
+    requireValue(owner && owner.user_id === user.id, 'Booking not found or not awaiting payment.', 404);
   }
 
   return settleRazorpayPayment(payment);
@@ -306,6 +277,15 @@ export async function syncRazorpayPayment(user: User, bookingId: string) {
   requireValue(!usingDevelopmentPayments(), 'Razorpay is not the active payment provider.', 409);
   requireValue(bookingId, 'Booking not found or not awaiting payment.', 404);
 
+  const checkout = await findOwnedCheckout(user.id, bookingId);
+  if (checkout) {
+    const order = (await query<AttemptRow>(
+      'SELECT * FROM payment_attempts WHERE checkout_id=$1 AND provider_order_id IS NOT NULL ORDER BY created_at DESC LIMIT 1',
+      [checkout.id],
+    ))[0];
+    requireValue(order?.provider_order_id, 'No payment order to reconcile.', 404);
+    return settleRazorpayOrder(order.provider_order_id!);
+  }
   const booking = (
     await query("SELECT * FROM bookings WHERE id=$1 AND user_id=$2 AND status IN ('PAYMENT_PENDING','CONFIRMED','EXPIRED','REFUND_REQUIRED')", [
       bookingId,
@@ -346,16 +326,14 @@ export async function reconcileOpenRazorpayPayments(limit = 20): Promise<{ check
     provider_order_id: string;
     reconcile_checks: number;
     created_at: string;
-    booking_status: string;
+    live_until: string | null;
     booking_expires_at: string;
   }>(CLAIM_RECONCILE_SQL, [limit]);
 
   let settled = 0;
   let failed = 0;
   for (const row of rows) {
-    const live =
-      (row.booking_status === 'PAYMENT_PENDING' || row.booking_status === 'HELD') &&
-      new Date(row.booking_expires_at).getTime() > Date.now();
+    const live = row.live_until !== null && new Date(row.live_until).getTime() > Date.now();
     try {
       await settleRazorpayOrder(row.provider_order_id);
       settled += 1;

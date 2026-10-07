@@ -50,6 +50,8 @@ npm run db:migrate -- --confirm-host=<exact host printed above>   # remote targe
 
 Migrations are additive (`db/migrations/0006_production_remediation.sql` adds nullable or defaulted columns and widens one CHECK). The reversal is `db/rollback/0006_down.sql`, which you only need if the schema itself must be reverted (see RUNBOOK §Rollback).
 
+**Order matters for 0007 (one payment per cart).** The deploy workflow (`.github/workflows/deploy.yml`) ships code on every merge to `main` but never migrates. Apply `0007_checkouts.sql` to staging, then production (each after a Neon backup branch), **before** merging the branch that uses it. 0007 is additive, and the code already on `main` keeps working on it (verified). `/api/health` reports `"schema": false` (HTTP 503) if a deploy gets ahead of the schema. Reversal: `db/rollback/0007_down.sql` (refuses once any cart checkout exists).
+
 **Never run `npm run db:seed` against staging or production.** To load a programme use the admin dashboard (Festival → Dramas), or `node scripts/update-show-artwork.mjs` for artwork only.
 
 ## 3. Clean up the old development deployment (production database)
