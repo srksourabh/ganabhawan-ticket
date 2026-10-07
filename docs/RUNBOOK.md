@@ -36,7 +36,7 @@ It immediately: voids every ticket (the gate refuses them), cancels the bookings
 | Gate scanner offline / device broken | — | Use another phone with `/gate`; any scoped scanner works on either gate. Last resort: owner account on a supervised device |
 | Razorpay down | Order creation fails; holds remain | Customers retry; holds expire safely after 10 min. Nothing to reconcile |
 | `/api/health` 503 `config:false` | Live configuration incomplete | Worker logs show `[config] refusing to serve; missing or unsafe: …` with the names. Fix the secrets and redeploy |
-| `/api/ops/status` 503 "worker is behind" | Cron not firing | Check GitHub Actions → Hold expiry cron; run it manually (workflow_dispatch) |
+| `/api/ops/status` 503 "worker is behind" | Cron not firing, or ticks failing | Cloudflare → Worker → Cron Events / logs (`[cron] tick` lines; a 500 body lists the failed steps). Run one tick manually: GitHub Actions → Hold expiry cron (workflow_dispatch) |
 
 ## Secrets
 
