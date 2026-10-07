@@ -70,6 +70,21 @@ async function getPgPool() {
   return globalDb.festivalPgPool;
 }
 
+/**
+ * Upper bound for one Neon HTTP query. Without it a stalled fetch hangs the
+ * request (and a cron tick) indefinitely. It must exceed a Neon cold start
+ * (compute waking from scale-to-zero, ~1–5 s) and the longest lock wait a
+ * statement can see (withSerialLock's 20 s lock_timeout).
+ */
+export const DB_QUERY_TIMEOUT_MS = Number(process.env.DB_QUERY_TIMEOUT_MS ?? 25000);
+
+function isTimeout(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.name === 'TimeoutError' || error.name === 'AbortError') return true;
+  // The Neon driver wraps fetch failures in NeonDbError with the cause in sourceError.
+  return isTimeout((error as { sourceError?: unknown }).sourceError);
+}
+
 async function withRetry<T>(run: () => Promise<T>, attempts = 3): Promise<T> {
   let last: unknown;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -77,7 +92,8 @@ async function withRetry<T>(run: () => Promise<T>, attempts = 3): Promise<T> {
       return await run();
     } catch (error) {
       last = error;
-      if (attempt === attempts - 1) throw error;
+      // A timed-out statement may still run on the server: never send it twice.
+      if (attempt === attempts - 1 || isTimeout(error)) throw error;
       await new Promise((resolve) => setTimeout(resolve, 200 * 2 ** attempt));
     }
   }
@@ -93,7 +109,9 @@ function wrapClient(client: Queryable, release: () => void): Client {
 
 export async function query<T = QueryRow>(sql: string, values: unknown[] = []): Promise<T[]> {
   if (prefersNeonHttp()) {
-    const rows = await withRetry(() => getHttpSql().query(sql, values));
+    const rows = await withRetry(() =>
+      getHttpSql().query(sql, values, { fetchOptions: { signal: AbortSignal.timeout(DB_QUERY_TIMEOUT_MS) } }),
+    );
     return rows as T[];
   }
   const pool = await getPgPool();
