@@ -4,6 +4,12 @@ Mandatory before production. Automated tests simulate Razorpay's HTTP API; only 
 
 **Setup:** staging Worker deployed per GO_LIVE.md with `DEPLOY_ENV=staging` and `rzp_test_` keys, its own Neon database migrated, an owner and a scanner enrolled (`db:staff`), one festival with two published shows (one starting within the next hour for gate tests), `ALLOW_PUBLIC_SALES=true`. Razorpay test-mode webhook pointed at the staging URL with all five events.
 
+**Pre-flight: is staging running this commit?** A stale deployment reproduces bugs that are already fixed (e.g. "cart unusable after repeated cancel" and `/api/ops/status` 404 were both symptoms of a pre-`51a62c4` build).
+* `GET /api/ops/status` **without** credentials must return **401**. A **404** means the deployed build predates the endpoint: rebuild and redeploy before continuing.
+* `GET /api/health` must report `"mode":"live","env":"staging"`.
+* `npx wrangler deployments list --name <staging worker name>` must show a deployment created after the commit you are testing. `wrangler.jsonc` names a single Worker (`ganabhawan-festival`); deploy staging under a **different** Worker name so a staging deploy can never replace production.
+* Mobile OTP uses httpSMS, which relays through an Android gateway phone. Staging needs `OTP_PROVIDER=httpsms` (or both httpSMS keys), `HTTPSMS_API_KEY`, and `HTTPSMS_FROM` set to **the gateway phone's own number in +91… form**. The gateway phone must be online with the httpSMS app running and SMS credit. Worker logs show `httpsms accepted { id, status }` for each send; look that id up in the httpSMS dashboard if the SMS does not arrive.
+
 Test cards and UPI are listed at https://razorpay.com/docs/payments/payments/test-card-upi-details/ (success card, failure card, `success@razorpay` / `failure@razorpay` UPI).
 
 After **every** step run `ENV_FILE=.env.staging npm run drill:razorpay -- <booking ref>`. It is read-only and must show all PASS. Record: date, tester, booking reference, Razorpay payment/refund id, result.

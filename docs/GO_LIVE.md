@@ -44,7 +44,8 @@ CLERK_SECRET_KEY=…                       # required
 
 ```powershell
 # 1. Backup first (production): Neon console → Branches → create branch "pre-<version>" from main (instant, restorable).
-$env:DIRECT_DATABASE_URL="<direct url>"; npm run db:migrate
+$env:DIRECT_DATABASE_URL="<direct url>"; npm run db:migrate -- --dry-run             # shows target host + pending files
+npm run db:migrate -- --confirm-host=<exact host printed above>   # remote targets are refused without this
 ```
 
 Migrations are additive (`db/migrations/0006_production_remediation.sql` adds nullable or defaulted columns and widens one CHECK). The reversal is `db/rollback/0006_down.sql`, which you only need if the schema itself must be reverted (see RUNBOOK §Rollback).
