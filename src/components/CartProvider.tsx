@@ -2,6 +2,10 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { isLocale, LOCALE_COOKIE, LOCALE_STORAGE_KEY, t, type Locale } from '@/lib/i18n';
+import {
+  PENDING_CHECKOUT_KEY, readPendingCheckout, reconcileCart, writePendingCheckout,
+  type CheckoutOutcome, type PendingCheckout,
+} from '@/lib/cart-reconcile';
 
 export type CartItem = {
   productId: string;
@@ -23,6 +27,13 @@ type CartContextValue = {
   remove: (productId: string) => void;
   updateQty: (productId: string, quantity: number) => MutationResult;
   clear: () => void;
+  /** Remembers the server checkout started from this cart (for reconciliation). */
+  rememberCheckout: (pending: PendingCheckout) => void;
+  /** Asks the server about the remembered checkout; removes lines only if it is CONFIRMED. */
+  reconcileWithServer: () => Promise<CheckoutOutcome | null>;
+  /** Last checkout the server reported as finished (shown on the cart page). */
+  lastOrder: { checkoutId: string; reference: string; outcome: CheckoutOutcome } | null;
+  dismissLastOrder: () => void;
   total: number;
   count: number;
   maxTickets: number;
@@ -131,12 +142,61 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const clear = useCallback(() => setItems([]), []);
 
+  const [lastOrder, setLastOrder] = useState<CartContextValue['lastOrder']>(null);
+  const rememberCheckout = useCallback((pending: PendingCheckout) => writePendingCheckout(pending), []);
+  const dismissLastOrder = useCallback(() => setLastOrder(null), []);
+
+  // Server truth wins: only a CONFIRMED checkout removes (exactly its) lines.
+  const reconcileWithServer = useCallback(async (): Promise<CheckoutOutcome | null> => {
+    const pending = readPendingCheckout();
+    if (!pending) return null;
+    let status: string | undefined;
+    try {
+      const res = await fetch(`/api/checkouts/${encodeURIComponent(pending.id)}`, { cache: 'no-store' });
+      if (res.status === 401) return null; // signed out: keep everything, check again after sign-in
+      if (res.status === 404) { writePendingCheckout(null); return 'closed'; } // not this user's / gone
+      if (!res.ok) return null; // transient: try again later
+      status = ((await res.json()) as { status?: string }).status;
+    } catch {
+      return null;
+    }
+    // Re-read the remembered checkout: another tab may have settled it meanwhile.
+    if (readPendingCheckout()?.id !== pending.id) return null;
+    const result = reconcileCart(readStoredCart(), pending, status);
+    if (!result.keepPending) writePendingCheckout(null);
+    if (result.outcome === 'paid' || result.outcome === 'refunded') {
+      setItems(result.items);
+      setLastOrder({ checkoutId: pending.id, reference: pending.reference, outcome: result.outcome });
+    }
+    return result.outcome;
+  }, []);
+
+  // Reconcile once the cart is loaded, whenever the tab regains focus, and when
+  // another tab changes the remembered checkout.
+  useEffect(() => {
+    if (!hydrated) return;
+    // Syncing from an external system (the server's checkout state); state is set after the await.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void reconcileWithServer();
+    const onFocus = () => { void reconcileWithServer(); };
+    const onVisible = () => { if (document.visibilityState === 'visible') void reconcileWithServer(); };
+    const onStorage = (event: StorageEvent) => { if (event.key === PENDING_CHECKOUT_KEY) void reconcileWithServer(); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [hydrated, reconcileWithServer]);
+
   const total = useMemo(() => items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0), [items]);
   const count = useMemo(() => items.reduce((sum, item) => sum + item.quantity, 0), [items]);
 
   const value = useMemo<CartContextValue>(
-    () => ({ items, add, remove, updateQty, clear, total, count, maxTickets: MAX_TICKETS }),
-    [items, add, remove, updateQty, clear, total, count],
+    () => ({ items, add, remove, updateQty, clear, rememberCheckout, reconcileWithServer, lastOrder, dismissLastOrder, total, count, maxTickets: MAX_TICKETS }),
+    [items, add, remove, updateQty, clear, rememberCheckout, reconcileWithServer, lastOrder, dismissLastOrder, total, count],
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

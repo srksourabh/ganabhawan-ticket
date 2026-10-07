@@ -78,6 +78,12 @@ export async function openRazorpayCheckout(
     ...(opts.prefillName ? { name: opts.prefillName } : {}),
   };
 
+  // With retry enabled, Razorpay keeps the modal open after a failed attempt so
+  // the customer can pay again. A failure therefore must not settle this promise:
+  // only the final outcome does (success handler, or the customer closing the
+  // modal). Settling early lost a later successful retry, leaving the cart unpaid
+  // in the browser while the server confirmed the booking.
+  let lastFailure = '';
   return new Promise((resolve, reject) => {
     const rzp = new Razorpay({
       key: order.keyId,
@@ -94,11 +100,11 @@ export async function openRazorpayCheckout(
       theme: { color: '#c9a227' },
       handler: (response: RazorpaySuccess) => resolve(response),
       modal: {
-        ondismiss: () => reject(new Error('Payment cancelled.')),
+        ondismiss: () => reject(new Error(lastFailure || 'Payment cancelled.')),
       },
     });
     rzp.on('payment.failed', (response) => {
-      reject(new Error(response.error?.description || 'Payment failed.'));
+      lastFailure = response.error?.description || 'Payment failed.';
     });
     rzp.open();
   });

@@ -110,6 +110,9 @@ export default function CheckoutPage() {
       );
       if (checkout.unauthenticated) { router.replace('/login?next=/cart/checkout'); throw new Error('Sign-in required.'); }
       checkoutId = checkout.id;
+      // Remember which lines this checkout covers, so the cart can reconcile with
+      // the server even if this tab never sees the payment result.
+      cart.rememberCheckout({ id: checkout.id, reference: checkout.reference, lines: lines.map((l) => ({ productId: l.item.productId, quantity: l.item.quantity })) });
       setServerTotal(checkout.total);
       setLines((prev) => updateAll(prev, { status: 'held' }));
       const order = await createClientCheckoutOrder(checkout.id);
@@ -124,9 +127,22 @@ export default function CheckoutPage() {
       });
       // Confirmed by the server (payExistingOrder throws unless status is CONFIRMED).
       setLines((prev) => updateAll(prev, { status: 'confirmed', message: checkout.reference }));
-      cart.clear();
+      // Remove exactly the paid lines (lines added meanwhile stay), from server state.
+      if ((await cart.reconcileWithServer()) !== 'paid') {
+        for (const line of lines) {
+          const current = cart.items.find((i) => i.productId === line.item.productId);
+          if (current && current.quantity === line.item.quantity) cart.remove(line.item.productId);
+        }
+      }
       router.push(`/receipts/${checkoutId}`);
     } catch (error) {
+      // The browser may have missed the result (closed modal, lost network) while
+      // the server confirmed via webhook/reconciliation: trust the server.
+      if (checkoutId && (await cart.reconcileWithServer()) === 'paid') {
+        setLines((prev) => updateAll(prev, { status: 'confirmed' }));
+        router.push(`/receipts/${checkoutId}`);
+        return;
+      }
       const refund = error instanceof Error && error.message === 'REFUND_REQUIRED';
       // Next attempt is a new request; the server reuses the same live checkout
       // if the cart is unchanged, or replaces it if the cart changed.
