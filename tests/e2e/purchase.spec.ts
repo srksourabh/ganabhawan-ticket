@@ -88,6 +88,15 @@ test.describe('Ticket Purchase & Checkout Flow', () => {
       });
     });
 
+    // Mock cart checkout (one checkout for the whole cart)
+    await page.route('**/api/checkouts', async (route) => {
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({ id: 'checkout-999', reference: 'GC-999', total: 60000, status: 'HELD', bookings: [] }),
+      });
+    });
+
     // Mock payment order
     await page.route('**/api/payments/order', async (route) => {
       await route.fulfill({
