@@ -30,6 +30,10 @@ export function useLiveStagingEnv() {
     RESEND_API_KEY: 're_integration',
     EMAIL_FROM: 'tickets@tickets.test',
     ALLOW_PUBLIC_SALES: 'true',
+    // SMS goes to the fake MSG91 (tests/helpers/fake-razorpay.ts); nothing is really sent.
+    SMS_PROVIDER: 'msg91',
+    MSG91_AUTH_KEY: 'test-auth-key',
+    MSG91_TEMPLATE_ID: 'tmpl-confirm',
     DB_POOL_MAX: '10',
     ...TEST_SECRETS,
   });
@@ -49,7 +53,7 @@ export async function resetDatabase() {
   await query(`TRUNCATE admissions, scan_requests, entitlements, physical_issues, credentials, tickets, refunds, payments,
     payment_attempts, hold_allocations, booking_attempts, bookings, product_coverage, movements, pools, capacities, products,
     staff_scopes, devices, shows, festivals, sessions, otp_challenges, rate_limits, idempotency, jobs, reconciliation_cases,
-    webhook_events, audit_events, users RESTART IDENTITY CASCADE`);
+    webhook_events, audit_events, notification_deliveries, users RESTART IDENTITY CASCADE`);
 }
 
 export async function makeFestival() {
@@ -102,8 +106,18 @@ export async function makeSeason(shows: { showId: string; seasonPoolId: string }
   return { productId: product.id, version: 1, price };
 }
 
-export async function makeUser(role: User['role'] = 'customer', contact = `${role}-${randomUUID().slice(0, 8)}@tickets.test`): Promise<User> {
-  return (await query<User>('INSERT INTO users(contact,name,role) VALUES($1,$2,$3) RETURNING id,contact,name,role', [contact, role, role]))[0];
+let mobileCounter = 0;
+/**
+ * A user. An email account gets a verified mobile by default (a verified mobile is
+ * required to buy); pass `{ mobile: null }` for an email-only account. A mobile
+ * account (contact '+91…') is its own verified mobile.
+ */
+export async function makeUser(role: User['role'] = 'customer', contact = `${role}-${randomUUID().slice(0, 8)}@tickets.test`, opts: { mobile?: string | null } = {}): Promise<User> {
+  const mobile = contact.includes('@') && opts.mobile !== null
+    ? opts.mobile ?? `+9197${String(process.pid % 1000).padStart(3, '0')}${String(mobileCounter++).padStart(5, '0')}`
+    : null;
+  return (await query<User>('INSERT INTO users(contact,name,role,verified_mobile,mobile_verified_at) VALUES($1,$2,$3,$4,CASE WHEN $4::text IS NULL THEN NULL ELSE now() END) RETURNING id,contact,name,role',
+    [contact, role, role, mobile]))[0];
 }
 
 export async function pool(poolId: string) {

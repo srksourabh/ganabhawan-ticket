@@ -1,8 +1,25 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { AUDITORIUM_PHOTO } from '@/lib/brand';
+import InventoryPanel from '@/components/admin/InventoryPanel';
+import StaffPanel from '@/components/admin/StaffPanel';
+import MetricsPanel from '@/components/admin/MetricsPanel';
+
+type Tab = 'festival' | 'shows' | 'prices' | 'zones' | 'inventory' | 'staff' | 'metrics';
+/** What each role can open. The UI only mirrors this: every admin API checks the role itself. */
+const TABS: { id: Tab; label: string; roles: string[] }[] = [
+  { id: 'festival', label: 'Festival & theatre', roles: ['owner', 'inventory'] },
+  { id: 'shows', label: 'Dramas', roles: ['owner', 'inventory'] },
+  { id: 'prices', label: 'Ticket prices', roles: ['owner', 'inventory'] },
+  { id: 'inventory', label: 'Inventory', roles: ['owner', 'inventory'] },
+  { id: 'zones', label: 'Auditorium zones', roles: ['owner', 'inventory'] },
+  { id: 'staff', label: 'Staff', roles: ['owner'] },
+  { id: 'metrics', label: 'Metrics', roles: ['owner', 'inventory', 'finance'] },
+];
+const CATALOGUE_ROLES = ['owner', 'inventory'];
 
 type Festival = {
   id: string;
@@ -81,7 +98,8 @@ export default function AdminPage() {
   const [festival, setFestival] = useState<Festival | null>(null);
   const [shows, setShows] = useState<Show[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [tab, setTab] = useState<'festival' | 'shows' | 'prices' | 'zones'>('festival');
+  const [tab, setTab] = useState<Tab>('festival');
+  const router = useRouter();
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -107,8 +125,18 @@ export default function AdminPage() {
       setError('Staff sign-in required for the admin panel.');
       return;
     }
+    // Gate staff work at the scanner; the dashboard is not theirs (its APIs refuse them too).
+    if (body.role === 'scanner' || body.role === 'supervisor') {
+      router.replace('/gate');
+      return;
+    }
     setProfile({ contact: body.contact, name: body.name, role: body.role });
     setAllowed(true);
+    if (!CATALOGUE_ROLES.includes(body.role)) {
+      const first = TABS.find((t) => t.roles.includes(body.role));
+      if (first) setTab(first.id);
+      return;
+    }
     const [fRes, sRes, pRes] = await Promise.all([
       fetch('/api/admin/festival'),
       fetch('/api/admin/shows'),
@@ -121,7 +149,7 @@ export default function AdminPage() {
     setFestival((await fRes.json()).festival);
     setShows((await sRes.json()).shows || []);
     setProducts((await pRes.json()).products || []);
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -288,12 +316,7 @@ export default function AdminPage() {
         <div className="admin__tabs" role="tablist">
           <Link className="btn btn--primary" href="/admin/accounts">Accounts</Link>
           <Link className="btn btn--ghost" href="/gate">Check tickets</Link>
-          {([
-            ['festival', 'Festival & theatre'],
-            ['shows', 'Dramas'],
-            ['prices', 'Ticket prices'],
-            ['zones', 'Auditorium zones'],
-          ] as const).map(([id, label]) => (
+          {TABS.filter((t) => profile && t.roles.includes(profile.role)).map(({ id, label }) => (
             <button
               key={id}
               type="button"
@@ -308,6 +331,11 @@ export default function AdminPage() {
         </div>
       </div>
 
+      {profile && !TABS.some((t) => t.roles.includes(profile.role)) && (
+        <p className="banner" role="status">
+          This account has no dashboard sections. Desk staff work with the organiser; ask the owner if you need access to something.
+        </p>
+      )}
       {message && <p className="banner banner--ok" role="status">{message}</p>}
       {error && <p className="banner banner--err" role="alert">{error}</p>}
 
@@ -557,6 +585,10 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+
+      {tab === 'inventory' && <InventoryPanel onChanged={() => { void load(); }} />}
+      {tab === 'staff' && profile?.role === 'owner' && <StaffPanel />}
+      {tab === 'metrics' && <MetricsPanel shows={shows} />}
 
       {tab === 'zones' && (
         <div className="card stack admin__panel">

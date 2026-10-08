@@ -11,7 +11,7 @@ URLs (replace with the production host): site `/`, programme `/catalogue`, custo
 | See bookings, payments, refunds, people who tried to book | Admin → Accounts | owner, finance |
 | Operations health (critical items) | Admin → Accounts → Operations | owner, finance |
 | Scan tickets | `/gate` (choose gate, show, then scan) | scanner, supervisor, owner |
-| Add or remove staff, authenticator setup | `ENV_FILE=.env.production npm run db:staff -- …` (GO_LIVE §4) | engineer with DB access |
+| Add or remove staff (owners) | `ENV_FILE=.env.production npm run db:staff -- …` (GO_LIVE §4) | engineer with DB access |
 
 ## Cancelling a performance
 
@@ -30,7 +30,7 @@ It immediately: voids every ticket (the gate refuses them), cancels the bookings
 | Operations: "refund(s) failed" | Razorpay could not refund (bank/UPI issue) | Razorpay dashboard → refund → retry or contact the customer for alternate details; resolve the case with a note |
 | Refund pending > 7 days | Bank delay | Razorpay dashboard status; tell the customer the ARN; it updates automatically when processed |
 | "Email not received" | Delivery failed or spam | Customer can always open My tickets (sign in with the same email or phone). Use resend from the ticket page (3 per hour). Failed deliveries appear in Operations |
-| Gate scanner can't sign in | Wrong authenticator or no MFA | Check the phone clock. Lost phone: `npm run db:staff -- mfa-reset <email> "lost phone"` then enrol again |
+| Gate scanner can't sign in | Wrong page, wrong password, or deactivated | Scanners use `/gate/login` (office staff `/admin/login`). Owner resets the password or re-adds the person in the dashboard Staff tab |
 | Gate says "not authorized for this show" | Staff has no scope for that show or gate | `npm run db:staff -- scopes <email>` |
 | Gate says "outside the allowed time window" | Earlier than `entry_before` / later than `entry_after` minutes (Admin → Festival) | Supervisor decides on manual entry; adjust the festival entry window if policy allows |
 | Gate scanner offline / device broken | — | Use another phone with `/gate`; any scoped scanner works on either gate. Last resort: owner account on a supervised device |

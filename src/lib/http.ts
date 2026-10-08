@@ -9,7 +9,7 @@ export function jsonOk(data: unknown, status = 200): Response {
 
 export function jsonError(error: unknown): Response {
   if (error instanceof AppError) {
-    return Response.json({ error: error.message, code: error.code }, { status: error.status });
+    return Response.json({ error: error.message, code: error.code, ...(error.productId ? { productId: error.productId } : {}) }, { status: error.status });
   }
   console.error('[unhandled]', error);
   return Response.json({ error: 'An unexpected error occurred.', code: 'INTERNAL_ERROR' }, { status: 500 });

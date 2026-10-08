@@ -9,7 +9,7 @@ Three environments. Never mix their databases or keys.
 | production | `live` | `production` | `rzp_live_…` | production Neon | the public |
 
 **Fail-closed rules (enforced in code, `src/lib/env.ts`):**
-* Development adapters (OTP code in the response, staff MFA skip, free "payments", sales-switch bypass) run **only** when `APP_MODE=development` **and** `APP_URL` is explicitly `localhost`/`127.0.0.1` **and** the process is not a Cloudflare Worker. An unset `APP_URL`, or any unknown `APP_MODE` value, counts as live.
+* Development adapters (OTP code in the response, free "payments", sales-switch bypass) run **only** when `APP_MODE=development` **and** `APP_URL` is explicitly `localhost`/`127.0.0.1` **and** the process is not a Cloudflare Worker. An unset `APP_URL`, or any unknown `APP_MODE` value, counts as live.
 * In live mode, every API call returns `503 CONFIG_INVALID`, and `/api/health` returns 503, until all of these are set: `DATABASE_URL`, `SESSION_SECRET`, `CREDENTIAL_KEY` (32+ chars each), `CRON_SECRET`, an https `APP_URL`, `DEPLOY_ENV`, `PAYMENT_PROVIDER=razorpay`, `RAZORPAY_KEY_ID` (`rzp_test_` on staging, `rzp_live_` on production), `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, a real `OTP_PROVIDER`, email delivery (`RESEND_API_KEY`+`EMAIL_FROM`, or Composio), and Clerk (`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` + `CLERK_SECRET_KEY`; the site cannot render pages without them).
 * `npm run deploy:secrets` refuses to push a development config, a non-https/localhost `APP_URL`, or a Razorpay key that doesn't match `DEPLOY_ENV`.
 * `npm run db:seed` refuses any non-local database, and any database that has payments or confirmed bookings.
@@ -25,7 +25,7 @@ APP_URL=https://<worker>.workers.dev    # the exact public URL
 DATABASE_URL=postgresql://…neon.tech/…  # pooled
 DIRECT_DATABASE_URL=postgresql://…      # direct, for migrations
 SESSION_SECRET=<openssl rand -base64 48>
-CREDENTIAL_KEY=<openssl rand -base64 48>   # encrypts QR tokens and staff MFA secrets — never rotate casually (see RUNBOOK)
+CREDENTIAL_KEY=<openssl rand -base64 48>   # encrypts ticket QR tokens — never rotate casually (see RUNBOOK)
 CRON_SECRET=<openssl rand -base64 32>
 OPS_MONITOR_TOKEN=<openssl rand -base64 32>
 PAYMENT_PROVIDER=razorpay
@@ -68,19 +68,16 @@ npm run db:purge-synthetic -- --apply      # demotes them, removes sessions and 
 
 Then **rotate** `SESSION_SECRET` and `CRON_SECRET`, and delete all sessions (`DELETE FROM sessions;`) so nobody keeps a session minted in development mode. Treat `CREDENTIAL_KEY` as compromised only if it was ever exposed. Rotating it voids every issued QR code and staff MFA enrolment (RUNBOOK §Secrets).
 
-## 4. Staff and authenticators
+## 4. Staff accounts
 
 ```powershell
-$env:ENV_FILE=".env.production"            # the same CREDENTIAL_KEY as the deployed Worker; enrolment refuses a mismatched key
+$env:ENV_FILE=".env.production"
 $env:STAFF_PASSWORD="<12+ chars, give it to the person privately>"
 npm run db:staff -- add owner@samatat.org owner "Festival owner"
-npm run db:staff -- mfa-enroll owner@samatat.org     # scan the QR on the owner's phone
-npm run db:staff -- mfa-confirm owner@samatat.org 123456
-# repeat for finance / inventory / scanner / supervisor accounts
 npm run db:staff -- list
 ```
 
-Scanners and supervisors are scoped to both gates for every upcoming show automatically, and to every show created later. Sign-in: `/admin/login` with email + password + authenticator code. Google sign-in is refused for staff.
+The owner then creates scanner, supervisor, inventory, finance and desk accounts in the dashboard (Staff tab; see docs/ADMIN_USER_GUIDE.md). Staff sign in with **email + password only** (no authenticator): owner, inventory, finance and desk at `/admin/login`; scanner and supervisor at `/gate/login`. The server admits only each page's roles. Google sign-in and customer codes are refused for staff. Scanners and supervisors are scoped to both gates for every upcoming show automatically, and to every show created later.
 
 ## 5. Build, secrets, deploy
 
@@ -99,7 +96,7 @@ npm run deploy:vinext
 ## 7. Scheduler and monitoring
 
 * The Worker's Cron Trigger (`wrangler.jsonc` `triggers.crons`, handled in `worker/index.ts`) runs one tick every minute through `/api/cron/worker`. It needs the Worker secrets `CRON_SECRET` and `APP_URL`; failed ticks appear under the Worker's Cron Events / logs.
-* A tick stays under the Workers Free plan's 50 subrequests per invocation (`tests/integration-worker-budget.test.ts`): 3 jobs, 5 payment reconciliations and 2 refund polls per minute. On the Paid plan raise `WORKER_JOB_BATCH`, `WORKER_RECONCILE_BATCH`, `WORKER_REFUND_BATCH` (e.g. 20/20/10) for faster catch-up.
+* A tick stays under the Workers Free plan's 50 subrequests per invocation (`tests/integration-worker-budget.test.ts`): 2 jobs, 3 payment reconciliations and 2 refund polls per minute (about 120 confirmations an hour). On the Paid plan raise `WORKER_JOB_BATCH`, `WORKER_RECONCILE_BATCH`, `WORKER_REFUND_BATCH` (e.g. 20/20/10) for faster catch-up.
 * GitHub Actions `cron-holds.yml` posts to the same route as a fallback (repository secrets `CRON_SECRET` and `APP_URL`). GitHub's schedule is best-effort and in practice runs every few hours, so it is not the primary scheduler.
 * External uptime monitor (UptimeRobot, Better Stack…), alert on any non-200:
   * `GET https://<worker>/api/health` (public)

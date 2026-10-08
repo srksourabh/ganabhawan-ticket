@@ -20,7 +20,7 @@ export default function SiteHeader() {
   const pathname = usePathname();
   const router = useRouter();
   const clerk = useClerk();
-  const { count } = useCart();
+  const { count, signedOut } = useCart();
   const { locale, t } = useLocale();
   const [open, setOpen] = useState(false);
   const [user, setUser] = useState<MeResponse | null>(null);
@@ -71,6 +71,8 @@ export default function SiteHeader() {
   async function signOut() {
     await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
     if (clerk.session) await clerk.signOut().catch(() => undefined);
+    // This account's cart leaves the browser; whoever signs in next starts with their own.
+    signedOut();
     setUser(null);
     setOpen(false);
     router.refresh();

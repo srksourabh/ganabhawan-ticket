@@ -5,14 +5,14 @@
  * closed, on another tab, or by the webhook still clears exactly the lines that
  * were paid. The server's checkout status is the only signal used.
  */
-export const PENDING_CHECKOUT_KEY = 'samatat-pending-checkout';
 
 export type PendingCheckout = { id: string; reference: string; lines: { productId: string; quantity: number }[] };
 export type CheckoutOutcome = 'paid' | 'refunded' | 'open' | 'closed';
 type Line = { productId: string; quantity: number };
 
 export function outcomeOf(status: string | undefined): CheckoutOutcome {
-  if (status === 'CONFIRMED') return 'paid';
+  // PARTIALLY_CANCELLED: paid; a show was cancelled afterwards for some lines (refunded), the rest stand.
+  if (status === 'CONFIRMED' || status === 'PARTIALLY_CANCELLED') return 'paid';
   if (status === 'REFUND_REQUIRED' || status === 'REFUNDED') return 'refunded';
   if (status === 'HELD' || status === 'PAYMENT_PENDING') return 'open';
   return 'closed';
@@ -33,9 +33,11 @@ export function reconcileCart<T extends Line>(items: T[], pending: PendingChecko
   return { items: items.filter((item) => paid.get(item.productId) !== item.quantity), outcome, keepPending: false };
 }
 
-export function readPendingCheckout(): PendingCheckout | null {
+/** `key` is the signed-in account's pending-checkout key (cart-storage.ts pendingKey). */
+export function readPendingCheckout(key: string | null): PendingCheckout | null {
+  if (!key) return null;
   try {
-    const raw = window.localStorage.getItem(PENDING_CHECKOUT_KEY);
+    const raw = window.localStorage.getItem(key);
     const parsed = raw ? (JSON.parse(raw) as PendingCheckout) : null;
     return parsed && typeof parsed.id === 'string' && Array.isArray(parsed.lines) ? parsed : null;
   } catch {
@@ -43,10 +45,11 @@ export function readPendingCheckout(): PendingCheckout | null {
   }
 }
 
-export function writePendingCheckout(pending: PendingCheckout | null) {
+export function writePendingCheckout(key: string | null, pending: PendingCheckout | null) {
+  if (!key) return;
   try {
-    if (pending) window.localStorage.setItem(PENDING_CHECKOUT_KEY, JSON.stringify(pending));
-    else window.localStorage.removeItem(PENDING_CHECKOUT_KEY);
+    if (pending) window.localStorage.setItem(key, JSON.stringify(pending));
+    else window.localStorage.removeItem(key);
   } catch {
     // Storage unavailable: the cart simply won't auto-reconcile.
   }

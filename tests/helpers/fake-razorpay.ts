@@ -20,7 +20,10 @@ export class FakeRazorpay {
   payments = new Map<string, Payment>();
   refunds = new Map<string, Refund>();
   calls: string[] = [];
-  emails: { to: string; subject: string; text: string }[] = [];
+  emails: { to: string; subject: string; text: string; idempotencyKey?: string }[] = [];
+  /** MSG91 flow calls (transactional SMS). */
+  sms: { to: string; templateId: string; variables: Record<string, string> }[] = [];
+  failSms = false;
   latencyMs = 0;
   /** Status Razorpay reports for a newly created refund. */
   refundStatus: 'processed' | 'pending' | 'failed' = 'processed';
@@ -41,6 +44,7 @@ export class FakeRazorpay {
   reset() {
     this.orders.clear(); this.payments.clear(); this.refunds.clear(); this.calls = []; this.emails = [];
     this.latencyMs = 0; this.refundStatus = 'processed'; this.failEmail = false; this.down = false;
+    this.sms = []; this.failSms = false;
   }
 
   /** Customer pays an order in the checkout modal. */
@@ -63,8 +67,19 @@ export class FakeRazorpay {
       this.calls.push(`${method} resend`);
       if (this.failEmail) return json({ message: 'provider down' }, 503);
       const body = JSON.parse(String(init?.body ?? '{}'));
-      this.emails.push({ to: body.to?.[0], subject: body.subject, text: body.text });
+      const key = (init?.headers as Record<string, string> | undefined)?.['Idempotency-Key'];
+      // Resend honours Idempotency-Key: a repeat with the same key is not sent again.
+      if (key && this.emails.some((e) => e.idempotencyKey === key)) return json({ id: id('email') });
+      this.emails.push({ to: body.to?.[0], subject: body.subject, text: body.text, idempotencyKey: key });
       return json({ id: id('email') });
+    }
+    if (url === 'https://control.msg91.com/api/v5/flow') {
+      this.calls.push(`${method} msg91`);
+      if (this.failSms) return json({ type: 'error', message: 'gateway down' }, 503);
+      const body = JSON.parse(String(init?.body ?? '{}'));
+      const { mobiles, ...variables } = body.recipients?.[0] ?? {};
+      this.sms.push({ to: mobiles, templateId: body.template_id, variables });
+      return json({ type: 'success', message: id('req') });
     }
     if (!url.startsWith('https://api.razorpay.com/v1/')) throw new Error('fake fetch: unexpected URL ' + url);
     const path = url.slice('https://api.razorpay.com/v1'.length);

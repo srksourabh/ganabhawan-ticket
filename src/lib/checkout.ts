@@ -23,6 +23,8 @@ import {
 import { ensureProviderOrder } from './provider-order';
 import { razorpayKeyId } from './razorpay';
 import type { User } from './types';
+import { PICKUP_INSTRUCTION, appBaseUrl, smsShowLabel, type ConfirmationMessage } from './confirmation';
+import { assertCanPurchase, contactsOf } from './account-contacts';
 
 export const MAX_CHECKOUT_LINES = 10;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -51,9 +53,17 @@ function liveBooking(b: Row) {
 }
 
 /** Derived overall state of a checkout from its bookings. */
+/**
+ * Whole-checkout status. Line-level truth stays on each booking (shown per line):
+ * - PARTIALLY_CANCELLED: paid, some lines confirmed, the rest cancelled with their
+ *   show (those lines refunded, the others still valid).
+ * - REFUNDED: every line's refund is done (all-or-nothing settlement finished).
+ */
 export function checkoutStatus(bookings: { status: string; expires_at: string | Date }[]) {
   if (bookings.length && bookings.every((b) => b.status === 'CONFIRMED')) return 'CONFIRMED';
+  if (bookings.length && bookings.every((b) => b.status === 'REFUNDED')) return 'REFUNDED';
   if (bookings.some((b) => b.status === 'REFUND_REQUIRED' || b.status === 'REFUNDED')) return 'REFUND_REQUIRED';
+  if (bookings.some((b) => b.status === 'CONFIRMED') && bookings.every((b) => b.status === 'CONFIRMED' || b.status === 'CANCELLED')) return 'PARTIALLY_CANCELLED';
   if (bookings.length && bookings.every((b) => LIVE.includes(b.status) && new Date(b.expires_at).getTime() > Date.now())) {
     return bookings.some((b) => b.status === 'PAYMENT_PENDING') ? 'PAYMENT_PENDING' : 'HELD';
   }
@@ -92,6 +102,7 @@ async function checkoutView(db: Queryable, checkoutId: string, userId: string) {
 export async function createCheckout(user: User, rawLines: unknown, key: string) {
   requireValue(key.length >= 8 && key.length <= 128, 'A valid idempotency key is required.', 400);
   assertLiveConfiguration();
+  await assertCanPurchase(user.id); // a verified mobile is required to buy (before anything is held)
   const lines = normaliseCheckoutLines(rawLines);
   const result = await transaction(async (c) => {
     const scope = 'checkout:' + user.id;
@@ -131,8 +142,8 @@ export async function createCheckout(user: User, rawLines: unknown, key: string)
 
     const held: Row[] = [];
     for (const line of lines) {
-      const product = await loadProductForHold(c, line).catch((error) => { throw lineError(error, line.productId); });
-      held.push(await placeHold(c, user, line, product).catch((error) => { throw lineError(error, String(product.name)); }));
+      const product = await loadProductForHold(c, line).catch((error) => { throw lineError(error, line.productId, line.productId); });
+      held.push(await placeHold(c, user, line, product).catch((error) => { throw lineError(error, String(product.name), line.productId); }));
     }
     const total = held.reduce((sum, b) => sum + Number(b.total), 0);
     const checkout = (await one<{ id: string }>(
@@ -148,8 +159,9 @@ export async function createCheckout(user: User, rawLines: unknown, key: string)
   return result;
 }
 
-function lineError(error: unknown, label: string) {
-  if (error instanceof AppError) return new AppError(error.status, `${label}: ${error.message}`, error.code);
+/** Names the failing cart line (label in the message, productId for the client to act on). */
+function lineError(error: unknown, label: string, productId: string) {
+  if (error instanceof AppError) return new AppError(error.status, `${label}: ${error.message}`, error.code, productId);
   return error;
 }
 
@@ -159,6 +171,7 @@ function lineError(error: unknown, label: string) {
  */
 export async function createCheckoutPaymentOrder(user: User, checkoutId: string) {
   assertLiveConfiguration();
+  await assertCanPurchase(user.id); // a verified mobile is required to buy
   requireValue(UUID.test(checkoutId), 'Checkout not found.', 404);
   const prepared = await transaction(async (c) => {
     const co = await one<Row>(c, 'SELECT * FROM checkouts WHERE id=$1 AND user_id=$2 FOR UPDATE', [checkoutId, user.id]);
@@ -306,7 +319,7 @@ export type Receipt = {
   checkoutId: string; reference: string; status: string; currency: string; total: number; createdAt: string;
   customer: { name: string; contact: string };
   payment: { reference: string; paidAt: string; amount: number } | null;
-  refunds: { amount: number; state: string; reason: string }[];
+  refunds: { bookingId: string; amount: number; state: string; reason: string }[];
   lines: ReceiptLine[];
 };
 
@@ -329,7 +342,7 @@ async function buildReceipt(co: Row): Promise<Receipt> {
     [co.id],
   ))[0];
   const refunds = await query<Row>(
-    'SELECT r.amount, r.state, r.reason FROM refunds r JOIN bookings b ON b.id=r.booking_id WHERE b.checkout_id=$1 ORDER BY r.created_at',
+    'SELECT r.booking_id, r.amount, r.state, r.reason FROM refunds r JOIN bookings b ON b.id=r.booking_id WHERE b.checkout_id=$1 ORDER BY r.created_at',
     [co.id],
   );
   return {
@@ -341,7 +354,7 @@ async function buildReceipt(co: Row): Promise<Receipt> {
     createdAt: new Date(co.created_at).toISOString(),
     customer: { name: bookings.find((b) => b.holder_name)?.holder_name ?? user?.name ?? '', contact: user?.contact ?? '' },
     payment: paid ? { reference: paid.provider_payment_id, paidAt: new Date(paid.created_at).toISOString(), amount: Number(paid.amount) } : null,
-    refunds: refunds.map((r) => ({ amount: Number(r.amount), state: r.state, reason: r.reason })),
+    refunds: refunds.map((r) => ({ bookingId: r.booking_id, amount: Number(r.amount), state: r.state, reason: r.reason })),
     lines: bookings.map((b) => ({
       bookingId: b.id,
       bookingReference: b.reference,
@@ -362,38 +375,62 @@ async function buildReceipt(co: Row): Promise<Receipt> {
 const rupees = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN')}`;
 const ist = (iso: string) => new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' });
 
-/** Plain-text consolidated receipt (email/SMS body). No secrets; customer's own data only. */
+/** Plain-text consolidated receipt (the confirmation email body). No secrets; customer's own data only. */
 export function receiptText(r: Receipt, appUrl: string) {
   const base = appUrl.replace(/\/$/, '');
   const items = r.lines.map((l, i) => [
-    `${i + 1}. ${l.product}${l.category ? ` — ${l.category}` : ''}`,
+    `${i + 1}. ${l.product}${l.status !== 'CONFIRMED' ? ` [${l.status.replace('_', ' ')}]` : ''}`,
+    `   Zone: ${l.category}${l.kind ? ` · ${l.kind === 'SEASON' ? 'Season ticket' : 'Daily ticket'}` : ''}`,
     ...l.performances.map((p) => `   ${p.title}: ${ist(p.startsAt)}`),
     `   Quantity: ${l.quantity} × ${rupees(l.unitPrice)} = ${rupees(l.lineTotal)}`,
-    `   Booking ${l.bookingReference}: ${base}/tickets/${l.bookingId}`,
+    `   Tickets and QR codes (booking ${l.bookingReference}): ${base}/tickets/${l.bookingId}`,
   ].join('\n'));
   return [
+    r.customer.name ? `Dear ${r.customer.name},` : '',
+    '',
     `Order ${r.reference} is confirmed.`,
     r.payment ? `Payment ${r.payment.reference} on ${ist(r.payment.paidAt)}` : '',
-    r.customer.name ? `Customer: ${r.customer.name}` : '',
     '',
     'Items',
     ...items,
     '',
     `Total paid: ${rupees(r.total)}`,
+    ...r.refunds.map((x) => `Refund: ${rupees(x.amount)} (${x.reason}) — ${x.state.toLowerCase()}`),
     '',
-    `Full receipt: ${base}/receipts/${r.checkoutId}`,
+    PICKUP_INSTRUCTION,
     'Each ticket has its QR code on its booking page. Show it at the venue entrance.',
-  ].filter((line, i, all) => line !== '' || all[i - 1] !== '').join('\n');
+    '',
+    `My tickets: ${base}/tickets`,
+    `Full receipt: ${base}/receipts/${r.checkoutId}`,
+  ].filter((line, i, all) => line !== '' || (i > 0 && all[i - 1] !== '')).join('\n');
 }
 
-/** DELIVERY job for a checkout: one consolidated confirmation. Throws on send failure (job retries). */
-export async function deliverCheckout(checkoutId: string) {
-  const co = (await query<Row>('SELECT * FROM checkouts WHERE id=$1', [checkoutId]))[0];
-  if (!co) return;
+/**
+ * The confirmation for a paid checkout: ONE message per checkout listing every
+ * line, sent to each channel the customer gave (notify.ts). `confirmed` is false
+ * for anything not paid and issued, so nothing is ever announced early.
+ */
+export async function checkoutConfirmation(checkoutId: string): Promise<ConfirmationMessage | null> {
+  // Contacts in the same query (each query is a Worker subrequest in the cron tick).
+  const co = (await query<Row>(`SELECT co.*, u.contact AS account_contact, u.verified_mobile AS account_mobile
+    FROM checkouts co JOIN users u ON u.id=co.user_id WHERE co.id=$1`, [checkoutId]))[0];
+  if (!co) return null;
   const receipt = await buildReceipt(co);
-  if (receipt.status !== 'CONFIRMED') return;
-  const { sendMessage } = await import('./auth');
   const { ORGANISATION } = await import('./brand');
-  const appUrl = process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
-  await sendMessage(receipt.customer.contact, `Your ${ORGANISATION} tickets - ${receipt.reference}`, receiptText(receipt, appUrl));
+  const base = appBaseUrl();
+  const { email, mobile } = contactsOf(co.account_contact, co.account_mobile);
+  const confirmedLines = receipt.lines.filter((l) => l.status === 'CONFIRMED');
+  return {
+    confirmed: (receipt.status === 'CONFIRMED' || receipt.status === 'PARTIALLY_CANCELLED') && receipt.payment !== null,
+    email,
+    mobile,
+    subject: `Your ${ORGANISATION} tickets - ${receipt.reference}`,
+    emailText: receiptText(receipt, base),
+    sms: {
+      REFERENCE: receipt.reference,
+      SHOW: smsShowLabel(confirmedLines.map((l) => l.performances[0]?.title ?? l.product)),
+      LINK: `${base}/tickets`,
+      NAME: receipt.customer.name || 'Guest',
+    },
+  };
 }

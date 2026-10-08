@@ -3,8 +3,10 @@ import QRCode from 'qrcode';
 import { query } from './db';
 import { requireValue } from './errors';
 import { decrypt } from './security';
-import { sendMessage } from './auth';
+import { sendEmail, sendMessage } from './auth';
 import { DEFAULT_VENUE, ORGANISATION } from './brand';
+import { PICKUP_INSTRUCTION, appBaseUrl, smsShowLabel, type ConfirmationMessage } from './confirmation';
+import { verifiedContacts } from './account-contacts';
 import type { User } from './types';
 
 export async function ticketPdf(user: User, ticketId: string): Promise<Uint8Array> {
@@ -205,40 +207,63 @@ export function confirmationLinks(appUrl: string, bookingId: string, references:
   return references.map((reference) => `Ticket ${reference}: ${page}`).join('\n');
 }
 
-export async function deliverBooking(bookingId: string): Promise<void> {
-  const appUrl = process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+const istTime = (iso: string) => new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' });
 
-  const tickets = await query<{
-    id: string;
-    reference: string;
-    user_id: string;
-    contact: string;
-    booking_reference: string;
-    product_name: string;
+/** Confirmation for a single (non-cart) paid booking; same channels and rules as a checkout's. */
+export async function bookingConfirmation(bookingId: string): Promise<ConfirmationMessage | null> {
+  const base = appBaseUrl();
+  const booking = (await query<{
+    user_id: string; contact: string; user_name: string; holder_name: string | null; reference: string; status: string;
+    quantity: number; unit_price: number; total: number; snapshot: { name?: string; category?: string; kind?: string; coverage?: { title: string; startsAt: string }[] };
+    payment_reference: string | null; paid_at: string | null;
   }>(
-    `SELECT t.id, t.reference, b.user_id,
-            u.contact, b.reference booking_reference,
-            (b.snapshot->>'name') product_name
-     FROM tickets t
-     JOIN bookings b ON b.id=t.booking_id
-     JOIN users u ON u.id=b.user_id
-     WHERE t.booking_id=$1 AND t.status='ACTIVE'
-     ORDER BY t.ordinal`,
+    `SELECT b.user_id, u.contact, u.name user_name, b.holder_name, b.reference, b.status, b.quantity, b.unit_price, b.total, b.snapshot,
+       (SELECT p.provider_payment_id FROM payments p WHERE p.booking_id=b.id AND p.state='CAPTURED' ORDER BY p.created_at LIMIT 1) payment_reference,
+       (SELECT p.created_at FROM payments p WHERE p.booking_id=b.id AND p.state='CAPTURED' ORDER BY p.created_at LIMIT 1) paid_at
+     FROM bookings b JOIN users u ON u.id=b.user_id WHERE b.id=$1`,
     [bookingId],
-  );
+  ))[0];
+  if (!booking) return null;
+  const tickets = await query<{ reference: string }>("SELECT reference FROM tickets WHERE booking_id=$1 AND status='ACTIVE' ORDER BY ordinal", [bookingId]);
+  const name = booking.holder_name || booking.user_name;
+  const s = booking.snapshot ?? {};
+  const rupees = (paise: number) => `₹${(Number(paise) / 100).toLocaleString('en-IN')}`;
+  const emailText = [
+    name ? `Dear ${name},` : '',
+    '',
+    `Your booking ${booking.reference} is confirmed.`,
+    booking.payment_reference && booking.paid_at ? `Payment ${booking.payment_reference} on ${istTime(booking.paid_at)}` : '',
+    '',
+    `${s.name ?? 'Tickets'}`,
+    `Zone: ${s.category ?? ''}${s.kind ? ` · ${s.kind === 'SEASON' ? 'Season ticket' : 'Daily ticket'}` : ''}`,
+    ...(s.coverage ?? []).map((p) => `${p.title}: ${istTime(p.startsAt)}`),
+    `Quantity: ${booking.quantity} × ${rupees(booking.unit_price)} = ${rupees(booking.total)}`,
+    '',
+    'Open your tickets and QR codes:',
+    confirmationLinks(base, bookingId, tickets.map((t) => t.reference)),
+    '',
+    PICKUP_INSTRUCTION,
+    'Each play has its own QR code on the page. Open it on your phone and show it at the venue entrance. You can keep the page on your Home Screen for offline viewing.',
+    '',
+    `My tickets: ${base}/tickets`,
+  ].filter((line, i, all) => line !== '' || (i > 0 && all[i - 1] !== '')).join('\n');
+  const { email, mobile } = await verifiedContacts(booking.user_id);
+  return {
+    confirmed: booking.status === 'CONFIRMED' && tickets.length > 0,
+    email,
+    mobile,
+    subject: `Your ${ORGANISATION} tickets - ${booking.reference}`,
+    emailText,
+    sms: { REFERENCE: booking.reference, SHOW: smsShowLabel([s.coverage?.[0]?.title ?? s.name ?? '']), LINK: `${base}/tickets/${bookingId}`, NAME: name || 'Guest' },
+  };
+}
 
-  if (tickets.length === 0) return;
-
-  const { contact, booking_reference } = tickets[0];
-
-  const ticketLinks = confirmationLinks(appUrl, bookingId, tickets.map((t) => t.reference));
-
-  const message =
-    `Your booking ${booking_reference} is confirmed!\n\n` +
-    `Open your tickets:\n${ticketLinks}\n\n` +
-    `Each play has its own QR code on the page. Open it on your phone and show it at the venue entrance. You can keep the page on your Home Screen for offline viewing.`;
-
-  await sendMessage(contact, `Your ${ORGANISATION} tickets - ${booking_reference}`, message);
+/** Re-sends the confirmation to the account (customer "resend tickets"): email if verified, else the mobile. */
+export async function deliverBooking(bookingId: string): Promise<void> {
+  const message = await bookingConfirmation(bookingId);
+  if (!message?.confirmed) return;
+  if (message.email) await sendEmail(message.email, message.subject, message.emailText);
+  else if (message.mobile) await sendMessage(message.mobile, message.subject, message.emailText);
 }
 
 // Re-export for convenience

@@ -27,7 +27,7 @@ export default function ReceiptView({ receipt }: { receipt: Receipt }) {
           ) : (
             <p className="muted">{t('receipt.notPaid')}</p>
           )}
-          <p>{t('tickets.status')}: {receipt.status.replace('_', ' ')}</p>
+          <p>{t('tickets.status')}: {receipt.status === 'PARTIALLY_CANCELLED' ? t('receipt.statusPartial') : receipt.status.replace('_', ' ')}</p>
           {receipt.customer.name && <p>{t('receipt.customer')}: {receipt.customer.name}</p>}
         </div>
 
@@ -42,7 +42,18 @@ export default function ReceiptView({ receipt }: { receipt: Receipt }) {
               ))}
               <p style={{ margin: 0 }}>{t('receipt.qty', { qty: line.quantity, unit: money(line.unitPrice, dl) })}</p>
               <p style={{ margin: 0, fontWeight: 700 }}>{t('receipt.lineTotal')}: {money(line.lineTotal, dl)}</p>
-              <Link href={`/tickets/${line.bookingId}`}>{t('receipt.viewTickets')} · {line.bookingReference}</Link>
+              {/* Line-level truth: one cancelled line never makes the other lines look cancelled. */}
+              {line.status !== 'CONFIRMED' && receipt.payment && (
+                <p role="status" className="banner banner--err" style={{ margin: 0 }}>
+                  {line.status === 'CANCELLED' ? t('receipt.lineCancelled') : line.status === 'REFUNDED' ? t('receipt.lineRefunded') : t('receipt.lineRefund')}
+                  {receipt.refunds.filter((r) => r.bookingId === line.bookingId).map((r, i) => (
+                    <span key={i}> · {money(r.amount, dl)} {r.state.toLowerCase()}</span>
+                  ))}
+                </p>
+              )}
+              {line.status === 'CONFIRMED' && (
+                <Link href={`/tickets/${line.bookingId}`}>{t('receipt.viewTickets')} · {line.bookingReference}</Link>
+              )}
             </li>
           ))}
         </ol>

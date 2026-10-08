@@ -27,8 +27,8 @@ After **every** step run `ENV_FILE=.env.staging npm run drill:razorpay -- <booki
 | 9 | Payment after hold expiry, sold out | Set allocation to 1, user A opens checkout and waits > 10 min, user B buys the last seat, then A pays | A sees "Payment received… refund started"; refund appears in Razorpay; booking becomes REFUNDED after Razorpay processes it | |
 | 10 | Two tabs / double click | Two tabs, same product, Pay in both; or double-click Pay | One hold, one Razorpay order (drill: one READY attempt) | |
 | 11 | Show cancellation | Owner cancels show 2 (type its title) with 2 paid bookings | Bookings CANCELLED, refunds created and processed in Razorpay, customers emailed, the gate DENIES the old QR | |
-| 12 | Gate | Scanner signs in (password + authenticator) at `/gate`, scans a valid ticket, then scans it again, then scans a ticket for another show | ADMITTED, then "already admitted", then "No active entitlement" | |
-| 13 | Staff MFA | Scanner signs in without a code / with an old code | Refused both times | |
+| 12 | Gate | Scanner signs in (email + password) at `/gate/login`, scans a valid ticket, then scans it again, then scans a ticket for another show | ADMITTED, then "already admitted", then "No active entitlement" | |
+| 13 | Staff doors | Scanner tries `/admin/login`; owner tries `/gate/login` | Refused, pointed to the right page, no session | |
 | 14 | Logout | Sign out, then reuse the old session (browser back / saved bearer) | 401 | |
 | 15 | Worker crash | Simulate a worker killed mid-job: take the id of a DONE delivery job from step 2 and run `UPDATE jobs SET state='RUNNING', locked_at=now() - interval '20 minutes' WHERE id='<job id>'`, then wait one cron tick | `/api/ops/status` shows the worker as stuck until the tick; the job is reclaimed and DONE again (the customer gets the email a second time, which is harmless); status back to 200 | |
 | 16 | Email provider down | Temporarily set a wrong `RESEND_API_KEY` on staging, buy a ticket | Ticket visible in My tickets; delivery job retries, then shows in Operations as failed; restore the key, use "resend" | |

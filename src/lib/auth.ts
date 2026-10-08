@@ -3,7 +3,7 @@ import { cookies, headers } from 'next/headers';
 import { auth, currentUser as clerkCurrentUser } from '@clerk/nextjs/server';
 import { query, transaction, one } from './db';
 import { assertLiveConfiguration, developmentAdaptersAllowed } from './env';
-import { keyedHash, normalizeContact, token, hash, safeEqual, decrypt, totpMatchStep, hashPassword, verifyPassword } from './security';
+import { keyedHash, normalizeContact, token, hash, safeEqual, hashPassword, verifyPassword } from './security';
 import type { Client } from './db';
 import { AppError, requireValue } from './errors';
 import type { User, Role } from './types';
@@ -21,6 +21,32 @@ export async function rateLimit(key: string, limit: number, seconds: number) {
   if (rows[0].count > limit) throw new AppError(429, 'Too many attempts. Please wait before trying again.');
 }
 
+/**
+ * Plain-text email via Composio Gmail or Resend. `idempotencyKey` (Resend's
+ * Idempotency-Key, honoured for 24 h) makes a retried job that already sent
+ * the email — e.g. the send succeeded but marking the job done failed — a no-op
+ * at the provider instead of a second email. No-op in local development.
+ */
+export async function sendEmail(to: string, subject: string, message: string, idempotencyKey?: string) {
+  if (composioGmailConfigured()) {
+    await sendComposioGmail(to, subject, message);
+    return;
+  }
+  if (developmentAdaptersAllowed() && otpProvider() === 'development') return;
+  requireValue(process.env.RESEND_API_KEY && process.env.EMAIL_FROM, 'Email delivery is not configured.', 503);
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer ' + process.env.RESEND_API_KEY,
+      'Content-Type': 'application/json',
+      ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey.slice(0, 256) } : {}),
+    },
+    body: JSON.stringify({ from: process.env.EMAIL_FROM, to: [to], subject, text: message }),
+    signal: AbortSignal.timeout(10000),
+  });
+  requireValue(response.ok, 'Email delivery is temporarily unavailable.', 503);
+}
+
 export async function sendMessage(contact: string, subject: string, message: string, requestId?: string) {
   const phone = !contact.includes('@');
   const viaHttpsms = phone && httpsmsEnabled();
@@ -29,18 +55,7 @@ export async function sendMessage(contact: string, subject: string, message: str
   if (developmentAdaptersAllowed() && otpProvider() === 'development' && !viaHttpsms && !viaComposio) return;
 
   if (!phone) {
-    if (viaComposio) {
-      await sendComposioGmail(contact, subject, message);
-      return;
-    }
-    requireValue(process.env.RESEND_API_KEY && process.env.EMAIL_FROM, 'Email delivery is not configured.', 503);
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: process.env.EMAIL_FROM, to: [contact], subject, text: message }),
-      signal: AbortSignal.timeout(10000),
-    });
-    requireValue(response.ok, 'Email delivery is temporarily unavailable.', 503);
+    await sendEmail(contact, subject, message);
     return;
   }
 
@@ -59,33 +74,21 @@ export async function sendMessage(contact: string, subject: string, message: str
   requireValue(response.ok, 'SMS delivery is temporarily unavailable.', 503);
 }
 
-function staffMfaRequired() {
-  return !developmentAdaptersAllowed();
-}
-
 /**
- * Checks a staff TOTP code against the enrolled secret and records its step,
- * so the same code (or an older one) cannot be replayed. Caller holds the
- * user row lock (SELECT ... FOR UPDATE) inside the same transaction.
+ * Staff sign in with email (or username) + password only, at one of two doors.
+ * Each door admits only its roles; the check runs on the server before any
+ * session exists. The owner uses the admin door and keeps every existing
+ * permission (including scanning at /gate).
  */
-export async function verifyStaffTotp(
-  c: Client,
-  user: { id: string; mfa_secret?: string | null; mfa_last_step?: number | string | null },
-  code: string,
-  nowMs = Date.now(),
-): Promise<boolean> {
-  if (!user.mfa_secret) return false;
-  let key: string;
-  try {
-    key = decrypt(user.mfa_secret);
-  } catch {
-    return false;
-  }
-  const step = totpMatchStep(key, code.trim(), nowMs);
-  if (step === null) return false;
-  if (user.mfa_last_step !== null && user.mfa_last_step !== undefined && step <= Number(user.mfa_last_step)) return false;
-  await c.query('UPDATE users SET mfa_last_step=$1 WHERE id=$2', [step, user.id]);
-  return true;
+export type StaffPortal = 'admin' | 'gate';
+export const PORTAL_ROLES: Record<StaffPortal, readonly Role[]> = {
+  admin: ['owner', 'inventory', 'finance', 'desk'],
+  gate: ['scanner', 'supervisor'],
+};
+export const PORTAL_LOGIN: Record<StaffPortal, string> = { admin: '/admin/login', gate: '/gate/login' };
+
+export function isStaffPortal(value: unknown): value is StaffPortal {
+  return value === 'admin' || value === 'gate';
 }
 
 export function verifiedClerkEmail(clerkUser: {
@@ -127,7 +130,7 @@ export async function requestOtp(raw: string, ip: string) {
   };
 }
 
-export async function verifyOtp(challengeId: string, code: string, mfaCode = '') {
+export async function verifyOtp(challengeId: string, code: string) {
   const result = await transaction(async (c) => {
     const challenge = await one(c, 'SELECT * FROM otp_challenges WHERE id=$1 FOR UPDATE', [challengeId]);
     if (!challenge || challenge.used || new Date(challenge.expires_at).getTime() < Date.now() || challenge.attempts >= 5) {
@@ -136,11 +139,11 @@ export async function verifyOtp(challengeId: string, code: string, mfaCode = '')
     await c.query('UPDATE otp_challenges SET attempts=attempts+1 WHERE id=$1', [challengeId]);
     if (!safeEqual(challenge.digest, keyedHash(challenge.contact + ':' + code))) return { error: 'The code is incorrect. Please try again.' };
     let user = await one<User>(c, 'SELECT * FROM users WHERE contact=$1 FOR UPDATE', [challenge.contact]);
-    if (user && user.role !== 'customer' && staffMfaRequired()) {
-      if (!(await verifyStaffTotp(c, user, mfaCode))) {
-        await audit(c, user.id, 'auth.mfa.failed', user.id, { via: 'otp' });
-        return { error: 'A valid staff authenticator code is required.' };
-      }
+    // Staff accounts sign in with their password at /admin/login or /gate/login only:
+    // a customer code must never become a password-less staff login.
+    if (user && user.role !== 'customer') {
+      await audit(c, user.id, 'auth.otp.staff_refused', user.id);
+      return { error: 'Staff accounts sign in with email and password at /admin/login or /gate/login.' };
     }
     await c.query('UPDATE otp_challenges SET used=true WHERE id=$1', [challengeId]);
     if (!user) user = (await one<User>(c, 'INSERT INTO users(contact) VALUES($1) RETURNING *', [challenge.contact]))!;
@@ -154,8 +157,14 @@ export async function verifyOtp(challengeId: string, code: string, mfaCode = '')
 }
 
 /** Email/username + password for staff/admin dashboard access. */
-export async function loginWithPassword(identifier: string, password: string, mfaCode = '', ip = '') {
+/**
+ * THE staff authentication (both doors): email or username + password, the
+ * existing scrypt hash, rate limits, then the door's role check, then the same
+ * hashed-token session as every other login. No second factor.
+ */
+export async function loginStaff(identifier: string, password: string, portal: StaffPortal, ip = '') {
   assertLiveConfiguration();
+  requireValue(isStaffPortal(portal), 'Choose the admin or gate sign-in page.', 400);
   const raw = identifier.trim();
   requireValue(raw.length > 0 && password.length >= 8, 'Enter your email (or username) and password (min 8 characters).', 400);
   await rateLimit('password-ip:' + hash(ip || 'unknown'), 20, 3600);
@@ -172,19 +181,18 @@ export async function loginWithPassword(identifier: string, password: string, mf
       await audit(c, user.id, 'auth.password.failed', user.id);
       return { error: 'Incorrect email or password.' };
     }
-    if (user.role === 'customer') return { error: 'This account cannot access the admin dashboard.' };
-    if (staffMfaRequired()) {
-      if (!(await verifyStaffTotp(c, user, mfaCode))) {
-        await audit(c, user.id, 'auth.mfa.failed', user.id, { via: 'password' });
-        return { error: 'A valid staff authenticator code is required.' };
-      }
+    if (user.role === 'customer') return { error: 'This account is not a staff account.' };
+    if (!PORTAL_ROLES[portal].includes(user.role)) {
+      await audit(c, user.id, 'auth.password.wrong_portal', user.id, { portal });
+      const other: StaffPortal = portal === 'admin' ? 'gate' : 'admin';
+      return { error: other === 'gate' ? 'Gate staff sign in at /gate/login.' : 'Admin staff sign in at /admin/login.', redirect: PORTAL_LOGIN[other] };
     }
     const sessionToken = token();
     await c.query("INSERT INTO sessions(digest,user_id,expires_at) VALUES($1,$2,now()+interval '12 hours')", [hash(sessionToken), user.id]);
-    await audit(c, user.id, 'auth.password', user.id);
+    await audit(c, user.id, 'auth.password', user.id, { portal });
     return { sessionToken, user: { id: user.id, contact: user.contact, name: user.name, role: user.role } };
   });
-  if ('error' in result) throw new AppError(401, result.error!);
+  if ('error' in result) throw new AppError(result.redirect ? 403 : 401, result.error!, result.redirect ? 'WRONG_PORTAL' : 'INVALID_REQUEST');
   return result;
 }
 
@@ -218,13 +226,13 @@ export async function ensureUserFromClerk(clerkId: string, email: string, name =
   return transaction(async (c) => {
     let user = await one<User>(c, 'SELECT id, contact, name, role FROM users WHERE clerk_id=$1', [clerkId]);
     if (user) {
-      if (user.role !== 'customer') throw new AppError(403, 'Staff accounts must sign in with a password and authenticator.');
+      if (user.role !== 'customer') throw new AppError(403, 'Staff accounts must sign in with email and password.');
       if (name && !user.name) await c.query('UPDATE users SET name=$1 WHERE id=$2', [name, user.id]);
       return (await one<User>(c, 'SELECT id, contact, name, role FROM users WHERE id=$1', [user.id]))!;
     }
     user = await one<User>(c, 'SELECT id, contact, name, role FROM users WHERE contact=$1 FOR UPDATE', [contact]);
     if (user) {
-      if (user.role !== 'customer') throw new AppError(403, 'Staff accounts must sign in with a password and authenticator.');
+      if (user.role !== 'customer') throw new AppError(403, 'Staff accounts must sign in with email and password.');
       await c.query("UPDATE users SET clerk_id=$1, name=CASE WHEN name='' AND $2<>'' THEN $2 ELSE name END WHERE id=$3", [clerkId, name, user.id]);
       await audit(c, user.id, 'auth.clerk.link', user.id, { clerkId });
       return (await one<User>(c, 'SELECT id, contact, name, role FROM users WHERE id=$1', [user.id]))!;
@@ -283,9 +291,14 @@ export async function currentUser(): Promise<User | null> {
   return userFromClerkSession();
 }
 
-export async function authenticated(roles?: Role[]): Promise<User> {
+/** Server-side role check (the owner passes every check). */
+export function assertRole(user: User, roles?: readonly Role[]) {
+  if (roles && user.role !== 'owner' && !roles.includes(user.role)) throw new AppError(403, 'You do not have permission for this action.');
+}
+
+export async function authenticated(roles?: readonly Role[]): Promise<User> {
   const user = await currentUser();
   if (!user) throw new AppError(401, 'Please sign in to continue.');
-  if (roles && user.role !== 'owner' && !roles.includes(user.role)) throw new AppError(403, 'You do not have permission for this action.');
+  assertRole(user, roles);
   return user;
 }

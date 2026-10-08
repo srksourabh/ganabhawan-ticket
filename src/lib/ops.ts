@@ -13,7 +13,7 @@ export interface OpsStatus {
   payments: { openCases: number; unmatchedCaptures: number; livePending: number };
   refunds: { failed: number; processingOver7d: number; requestedOver1h: number };
   gate: { denied24h: number; unknown24h: number };
-  auth: { staffMfaFailures24h: number; staffPasswordFailures24h: number };
+  auth: { staffPasswordFailures24h: number };
   critical: string[];
   /** Needs attention but no customer money is at risk (e.g. an email could not be sent; tickets remain in the app). */
   warnings: string[];
@@ -34,7 +34,6 @@ export async function opsStatus(): Promise<OpsStatus> {
       (SELECT count(*) FROM refunds WHERE state IN ('REQUESTED','PROCESSING') AND provider_refund_id IS NULL AND created_at < now() - interval '1 hour')::int AS refunds_stalled,
       (SELECT count(*) FROM scan_requests WHERE created_at > now() - interval '24 hours' AND result->>'result'='DENIED')::int AS denied,
       (SELECT count(*) FROM scan_requests WHERE created_at > now() - interval '24 hours' AND result->>'result'='UNKNOWN')::int AS unknown,
-      (SELECT count(*) FROM audit_events WHERE action='auth.mfa.failed' AND created_at > now() - interval '24 hours')::int AS mfa_fail,
       (SELECT count(*) FROM audit_events WHERE action='auth.password.failed' AND created_at > now() - interval '24 hours')::int AS pw_fail`,
     [STALE_JOB_MINUTES],
   );
@@ -45,7 +44,7 @@ export async function opsStatus(): Promise<OpsStatus> {
     payments: { openCases: n('open_cases'), unmatchedCaptures: n('unmatched'), livePending: n('live_pending') },
     refunds: { failed: n('refunds_failed'), processingOver7d: n('refunds_slow'), requestedOver1h: n('refunds_stalled') },
     gate: { denied24h: n('denied'), unknown24h: n('unknown') },
-    auth: { staffMfaFailures24h: n('mfa_fail'), staffPasswordFailures24h: n('pw_fail') },
+    auth: { staffPasswordFailures24h: n('pw_fail') },
     critical: [],
     warnings: [],
   };

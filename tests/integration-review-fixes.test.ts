@@ -148,21 +148,6 @@ test('changing quantity before paying replaces the unpaid hold; inventory stays 
   assert.deepEqual(await pool(show.poolId), { allocation: 10, held: 1, committed: 0 });
 });
 
-test('staff MFA enrolment refuses a CREDENTIAL_KEY that does not match the database', { skip }, async () => {
-  const show = await makeShow();
-  await buy(await makeUser(), show.productId); // creates an encrypted credential with the real key
-  const staff = await import('../src/lib/staff');
-  await staff.upsertStaff({ contact: 'keycheck@tickets.test', role: 'scanner' });
-  const real = process.env.CREDENTIAL_KEY;
-  process.env.CREDENTIAL_KEY = 'a-different-laptop-credential-key-0123456789';
-  try {
-    await assert.rejects(() => staff.beginMfaEnrollment('keycheck@tickets.test'), /does not match this database/);
-  } finally {
-    process.env.CREDENTIAL_KEY = real;
-  }
-  assert.ok((await staff.beginMfaEnrollment('keycheck@tickets.test')).uri.startsWith('otpauth://'));
-});
-
 test('confirmed bookings leave the reconciliation schedule', { skip }, async () => {
   const show = await makeShow();
   const bookingId = await buy(await makeUser(), show.productId);

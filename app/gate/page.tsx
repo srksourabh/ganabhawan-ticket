@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useLocale } from '@/components/LocaleProvider';
 import { GATE_DEVICES, gateScanTarget } from '@/lib/gates';
 
@@ -22,6 +23,19 @@ export default function GatePage() {
   const [cameraNote, setCameraNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
+  const router = useRouter();
+  /** Who is signed in. The scan API enforces every rule itself; this only routes people to the right door. */
+  const [staffNote, setStaffNote] = useState('');
+
+  useEffect(() => {
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then(async (res) => {
+        if (res.status === 401) { router.replace('/gate/login'); return; }
+        const me = (await res.json().catch(() => ({}))) as { role?: string };
+        if (!['scanner', 'supervisor', 'owner'].includes(me.role ?? '')) setStaffNote(t('gate.notGateStaff'));
+      })
+      .catch(() => undefined);
+  }, [router, t]);
 
   useEffect(() => {
     const saved = localStorage.getItem('gate-device');
@@ -127,6 +141,7 @@ export default function GatePage() {
         <h1>{t('gate.title')}</h1>
         <p className="muted">{t('gate.sub')}</p>
         <p className="muted">{t('gate.install')}</p>
+        {staffNote && <p role="alert" className="banner banner--err">{staffNote} <Link href="/gate/login">/gate/login</Link></p>}
       </div>
 
       {result ? (
@@ -204,7 +219,7 @@ export default function GatePage() {
             </button>
           </form>
           <div style={{ textAlign: 'center', paddingTop: '0.5rem' }}>
-            <Link href="/admin/login" className="muted" style={{ fontSize: '0.88rem' }}>{t('gate.staff')}</Link>
+            <Link href="/gate/login" className="muted" style={{ fontSize: '0.88rem' }}>{t('gate.staff')}</Link>
           </div>
         </div>
       )}

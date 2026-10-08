@@ -32,6 +32,9 @@ type CatalogueProduct = {
   price: number;
   version: number;
   coverage?: Coverage[];
+  /** Server-decided (availability.ts). */
+  state?: 'SELLABLE' | 'SOLD_OUT' | 'CLOSED';
+  available?: number;
 };
 type HoldResult = { id: string; reference: string; total: number; currency: string; expires_at: string | null; unit_price: number; quantity: number };
 type OrderResult = RazorpayOrder & { provider: 'development' | 'razorpay' };
@@ -304,10 +307,13 @@ function BookPageInner() {
                   {[1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n}</option>)}
                 </select>
               </label>
+              {product && product.state && product.state !== 'SELLABLE' && (
+                <p role="alert" className="banner banner--err">{product.state === 'CLOSED' ? t('catalogue.closed') : t('catalogue.soldOut')}</p>
+              )}
               {error && <p role="alert" className="banner banner--err">{error}</p>}
               {added && <p className="banner banner--ok" role="status">{t('book.added')}</p>}
               <p className="muted">{t('book.who')}</p>
-              <button type="button" className={added ? 'btn btn--ghost btn--block' : 'btn btn--primary btn--block'} disabled={loading || !product} onClick={() => { void addToCart(); }}>
+              <button type="button" className={added ? 'btn btn--ghost btn--block' : 'btn btn--primary btn--block'} disabled={loading || !product || (product.state !== undefined && product.state !== 'SELLABLE')} onClick={() => { void addToCart(); }}>
                 {loading ? t('book.reserving') : t('catalogue.addToCart')}
               </button>
               {added && (

@@ -28,6 +28,17 @@ export default function CartPage() {
         <p style={{ color: 'var(--muted)', margin: '0 0 1.5rem' }}>{t('cart.limitHint', { max: cart.maxTickets })}</p>
 
         {notice && <p role="alert" className="alert alert--error">{notice}</p>}
+        {/* After sign-in the guest cart joined the account cart: say what could not be added. */}
+        {cart.notices.length > 0 && (
+          <div role="status" className="banner" style={{ marginBottom: '1rem' }}>
+            {cart.notices.map((n) => (
+              <p key={n.productId + n.reason} style={{ margin: 0 }}>
+                {cart.items.find((i) => i.productId === n.productId)?.name ?? t('cart.aTicket')} {t(`cart.notice.${n.reason}` as const)}
+              </p>
+            ))}
+            <button type="button" className="btn btn--ghost btn--sm" onClick={cart.dismissNotices}>{t('cart.dismiss')}</button>
+          </div>
+        )}
 
         {cart.lastOrder && (
           <div role="status" className={`banner ${cart.lastOrder.outcome === 'paid' ? 'banner--ok' : 'banner--err'}`} style={{ marginBottom: '1rem' }}>
@@ -61,6 +72,9 @@ export default function CartPage() {
                 <div>
                   <p className="eyebrow" style={{ margin: 0 }}>{kindLabel(locale, item.kind)} · {zoneLabel(locale, item.category)}</p>
                   <h3 style={{ fontSize: '1.1rem', margin: '.3rem 0' }}>{item.name}</h3>
+                  {item.state && item.state !== 'SELLABLE' && (
+                    <p role="status" className="banner banner--err" style={{ margin: '.25rem 0' }}>{t('cart.lineUnavailable')}</p>
+                  )}
                   {item.showTitle && (
                     <p style={{ color: 'var(--muted)', fontSize: '.85rem', margin: 0 }}>
                       {item.showTitle} · {new Date(item.startsAt).toLocaleString(dl, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}

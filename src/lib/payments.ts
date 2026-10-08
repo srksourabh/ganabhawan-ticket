@@ -7,6 +7,7 @@ import { applyRefundWebhook } from './refunds';
 import { expireIn, fulfill, type CapturedPayment } from './commerce';
 import { audit } from './audit';
 import type { User } from './types';
+import { assertCanPurchase } from './account-contacts';
 import {
   assertCheckoutSignature,
   assertWebhookSignature,
@@ -110,6 +111,7 @@ async function openPaymentCase(key: string, detail: unknown) {
 
 export async function createPaymentOrder(user: User, bookingId: string) {
   assertLiveConfiguration();
+  await assertCanPurchase(user.id); // a verified mobile is required to buy
   requireValue(bookingId, 'Booking not found or no longer held.', 404);
   // A booking created by a cart checkout is paid as part of that checkout (one payment for the cart).
   const parent = (await query<{ checkout_id: string | null }>('SELECT checkout_id FROM bookings WHERE id=$1 AND user_id=$2', [bookingId, user.id]))[0];
