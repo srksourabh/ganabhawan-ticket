@@ -67,7 +67,6 @@ export interface TickSummary {
   /** Steps that threw; the remaining steps still ran. */
   errors: string[];
   /** Steps that threw; the remaining steps still ran. */
-  errors: string[];
 }
 
 /**
