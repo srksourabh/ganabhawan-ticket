@@ -65,7 +65,7 @@ jobs:
           CRON_SECRET: ci-cron-secret
           PAYMENT_PROVIDER: development
           OTP_PROVIDER: development
-          ALLOW_PUBLIC_SALES: "false"
+          ALLOW_PUBLIC_SALES: "true"
 
       - name: Build Workers artifact
         run: npm run build:vinext
