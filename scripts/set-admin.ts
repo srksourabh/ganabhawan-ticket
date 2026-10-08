@@ -25,5 +25,4 @@ if (password.length < 8) {
 
 const user = await upsertStaffPassword(email, password, name, username);
 console.log(`Admin ready: ${user.contact} (username: ${username}, role: ${user.role})`);
-console.log(`Live mode requires an authenticator: npm run db:staff -- mfa-enroll ${user.contact}`);
 await pool.end();

@@ -53,7 +53,7 @@ type Ops = {
   jobs: { failed7d: number; stuckRunning: number; overduePending: number };
   refunds: { failed: number; processingOver7d: number };
   gate: { denied24h: number; unknown24h: number };
-  auth: { staffMfaFailures24h: number; staffPasswordFailures24h: number };
+  auth: { staffPasswordFailures24h: number };
 };
 
 const money = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN')}`;
@@ -153,7 +153,7 @@ export default function AccountsPage() {
             Jobs failed (7 days): {ops.jobs.failed7d} · stuck: {ops.jobs.stuckRunning} · overdue: {ops.jobs.overduePending} ·
             Refunds failed: {ops.refunds.failed} · processing &gt; 7 days: {ops.refunds.processingOver7d} ·
             Gate denied (24 h): {ops.gate.denied24h} · unknown codes (24 h): {ops.gate.unknown24h} ·
-            Staff MFA failures (24 h): {ops.auth.staffMfaFailures24h} · password failures (24 h): {ops.auth.staffPasswordFailures24h}
+            Staff password failures (24 h): {ops.auth.staffPasswordFailures24h}
           </p>
         </section>
       )}

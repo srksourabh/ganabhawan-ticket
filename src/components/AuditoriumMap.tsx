@@ -13,6 +13,8 @@ export type AuditoriumZone = {
   productId: string | null;
   price: number;
   available: number;
+  /** Server-decided: sales for this performance have closed. */
+  closed?: boolean;
   seasonPrice?: number | null;
   seasonAvailable?: number | null;
 };

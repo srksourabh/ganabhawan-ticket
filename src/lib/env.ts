@@ -1,4 +1,5 @@
 import { AppError } from './errors';
+import { smsConfigured } from './sms';
 
 /**
  * Two runtime modes. Anything other than an explicit APP_MODE=development is
@@ -44,7 +45,7 @@ export function onWorkersRuntime(): boolean {
 
 /**
  * The single switch for every development shortcut (OTP code in responses,
- * staff MFA skip, free dev payments, sales-switch bypass, silent delivery).
+ * free dev payments, sales-switch bypass, silent delivery).
  * All four conditions must hold; each one alone fails closed. The database
  * condition stops a laptop with a development .env.local from acting on a
  * shared (staging/production) database, e.g. a CLI "refunding" for free.
@@ -102,6 +103,12 @@ export function configurationProblems(): string[] {
   const otp = (process.env.OTP_PROVIDER || 'development').trim().toLowerCase();
   if (otp === 'development') problems.push('OTP_PROVIDER (real provider)');
   if (otp === 'httpsms' && !(present('HTTPSMS_API_KEY') && present('HTTPSMS_FROM'))) problems.push('HTTPSMS_API_KEY/HTTPSMS_FROM');
+  // A verified mobile is required to buy, and mobile-only customers are confirmed by SMS:
+  // live sales need a working SMS provider (msg91, httpsms or the generic webhook).
+  if (!smsConfigured()) problems.push('SMS delivery (SMS_PROVIDER=msg91 with MSG91_AUTH_KEY+MSG91_TEMPLATE_ID, or httpSMS, or SMS_API_URL+SMS_API_TOKEN)');
+  const sms = (process.env.SMS_PROVIDER || '').trim().toLowerCase();
+  if (sms === 'msg91' && !(present('MSG91_AUTH_KEY') && present('MSG91_TEMPLATE_ID'))) problems.push('MSG91_AUTH_KEY/MSG91_TEMPLATE_ID (SMS_PROVIDER=msg91)');
+  if (sms && !['msg91', 'httpsms', 'generic'].includes(sms)) problems.push('SMS_PROVIDER (msg91, httpsms or generic)');
 
   const resend = present('RESEND_API_KEY') && present('EMAIL_FROM');
   const composio = present('COMPOSIO_API_KEY') && (present('COMPOSIO_CONNECTED_ACCOUNT_ID') || present('COMPOSIO_USER_ID'));

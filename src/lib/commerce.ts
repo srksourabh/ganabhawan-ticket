@@ -5,6 +5,8 @@ import { token, hash, encrypt } from './security';
 import { audit, job } from './audit';
 import { markAttemptsConfirmed } from './attempts';
 import { developmentAdaptersAllowed, assertLiveConfiguration } from './env';
+import { salesOpen } from './availability';
+import { assertCanPurchase } from './account-contacts';
 import type { User } from './types';
 export async function movement(c:Client,poolId:string,operation:string,held:number,committed:number,reason:string) {
  await c.query('INSERT INTO movements(pool_id,operation,delta_held,delta_committed,reason) VALUES($1,$2,$3,$4,$5)',[poolId,operation,held,committed,reason]);
@@ -39,7 +41,7 @@ export async function loadProductForHold(c:Client,input:HoldInput) {
  */
 export async function placeHold(c:Client,user:User,input:HoldInput,product:BookingRow) {
   const coverage=(await c.query('SELECT pc.*,p.allocation,p.held,p.committed,s.title,s.starts_at,s.status FROM product_coverage pc JOIN pools p ON p.id=pc.pool_id JOIN shows s ON s.id=pc.show_id WHERE pc.product_id=$1 ORDER BY s.starts_at, p.id FOR UPDATE OF p',[product.id])).rows;
-  requireValue(coverage.length>0 && coverage.every(s=>s.status==='PUBLISHED'&&new Date(s.starts_at).getTime()>Date.now()),'Sales for this performance have closed.');
+  requireValue(salesOpen(coverage as { status: string; starts_at: string }[]),'Sales for this performance have closed.');
   requireValue(coverage.every(p=>p.allocation-p.held-p.committed>=input.quantity),'Not enough tickets remain. Please choose fewer tickets.');
   if(product.cap!==null) { const used=await one(c,"SELECT COALESCE(sum(quantity),0)::int n FROM bookings WHERE product_id=$1 AND status IN ('HELD','PAYMENT_PENDING','CONFIRMED')",[product.id]); requireValue(used!.n+input.quantity<=product.cap,'The product limit has been reached.'); }
   const snapshot={name:product.name,category:product.category,kind:product.kind,terms:product.terms,physicalRequired:product.physical_required,coverage:coverage.map(s=>({showId:s.show_id,poolId:s.pool_id,title:s.title,startsAt:s.starts_at,weight:s.weight}))};
@@ -57,6 +59,7 @@ export async function placeHold(c:Client,user:User,input:HoldInput,product:Booki
 export async function reserve(user:User,input:HoldInput,key:string) {
  requireValue(key.length>=8 && key.length<=128,'A valid idempotency key is required.',400);
  assertLiveConfiguration();
+ await assertCanPurchase(user.id); // a verified mobile is required to buy
  return transaction(async c=>{
   const scope='hold:'+user.id; const digest=hash(JSON.stringify(input));
   const previous=await one(c,'SELECT * FROM idempotency WHERE scope=$1 AND key=$2',[scope,key]);

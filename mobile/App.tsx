@@ -88,6 +88,10 @@ export default function App() {
 }
 
 function SignIn({ onSuccess }: { onSuccess: (token: string, user: User) => Promise<void> }) {
+  // Gate staff (scanner / supervisor) sign in with email + password, the same staff
+  // sign-in as /gate/login (customer codes are refused for staff accounts).
+  const [staffMode, setStaffMode] = useState(false);
+  const [password, setPassword] = useState('');
   const [contact, setContact] = useState('');
   const [challengeId, setChallengeId] = useState('');
   const [code, setCode] = useState('');
@@ -127,6 +131,40 @@ function SignIn({ onSuccess }: { onSuccess: (token: string, user: User) => Promi
     }
   }
 
+  async function staffSignIn() {
+    setBusy(true);
+    setMessage('');
+    try {
+      const body = await api<{ sessionToken: string; user: User }>('/api/auth/password', null, {
+        method: 'POST',
+        body: JSON.stringify({ email: contact, password, portal: 'gate' }),
+      });
+      await onSuccess(body.sessionToken, body.user);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not sign in.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (staffMode) {
+    return (
+      <View style={styles.pad}>
+        <Text style={styles.h1}>Gate Staff Login</Text>
+        <Text style={styles.muted}>Scanner / Supervisor. Use the email and password your organiser gave you.</Text>
+        <TextInput style={styles.input} autoCapitalize="none" keyboardType="email-address" placeholder="Email" value={contact} onChangeText={setContact} />
+        <TextInput style={styles.input} autoCapitalize="none" secureTextEntry placeholder="Password" value={password} onChangeText={setPassword} />
+        <Pressable style={styles.primary} disabled={busy || contact.trim().length < 3 || password.length < 8} onPress={staffSignIn}>
+          <Text style={styles.primaryText}>{busy ? 'Signing in…' : 'Login'}</Text>
+        </Pressable>
+        <Pressable onPress={() => { setStaffMode(false); setMessage(''); }}>
+          <Text style={styles.muted}>Customer? Sign in with a code instead</Text>
+        </Pressable>
+        {!!message && <Text style={styles.note}>{message}</Text>}
+      </View>
+    );
+  }
+
   return (
     <View style={styles.pad}>
       <Text style={styles.h1}>Sign in</Text>
@@ -144,6 +182,9 @@ function SignIn({ onSuccess }: { onSuccess: (token: string, user: User) => Promi
           </Pressable>
         </>
       )}
+      <Pressable onPress={() => { setStaffMode(true); setChallengeId(''); setMessage(''); }}>
+        <Text style={styles.muted}>Gate staff? Sign in with email and password</Text>
+      </Pressable>
       {!!message && <Text style={styles.note}>{message}</Text>}
     </View>
   );

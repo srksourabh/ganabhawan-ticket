@@ -1,18 +1,22 @@
 import { query } from './db';
 import { expireHolds } from './commerce';
-import { deliverBooking } from './tickets';
 import { reconcileOpenRazorpayPayments } from './payments';
 import { executeRefund, pollProcessingRefunds } from './refunds';
 import { sendMessage } from './auth';
-import { deliverCheckout } from './checkout';
+import { deliverConfirmation, sendSmsConfirmation, type ConfirmationTarget } from './notify';
+import { pruneExpiredCartLines, removePurchasedFromCart } from './account-cart';
 
 /** A RUNNING job whose lease (locked_at) is older than this is reclaimed. */
 export const STALE_JOB_MINUTES = 15;
 
+/**
+ * Housekeeping, as ONE statement (each statement is a Worker subrequest). scan_requests
+ * is also the scan log behind the admission metrics, so it is kept for a year, not a week.
+ */
 export const PRUNE_SQL = [
-  "DELETE FROM rate_limits WHERE reset_at < now() - interval '1 day'",
-  "DELETE FROM idempotency WHERE created_at < now() - interval '2 days'",
-  "DELETE FROM scan_requests WHERE created_at < now() - interval '7 days'",
+  `WITH rate AS (DELETE FROM rate_limits WHERE reset_at < now() - interval '1 day' RETURNING 1),
+        keys AS (DELETE FROM idempotency WHERE created_at < now() - interval '2 days' RETURNING 1)
+   DELETE FROM scan_requests WHERE created_at < now() - interval '365 days'`,
 ];
 
 export const MAX_ATTEMPTS = 5;
@@ -45,7 +49,10 @@ export function workerTickLimits(): TickLimits {
     const value = Number(process.env[name]);
     return Number.isInteger(value) && value > 0 ? value : fallback;
   };
-  return { jobs: read('WORKER_JOB_BATCH', 3), reconcile: read('WORKER_RECONCILE_BATCH', 5), refunds: read('WORKER_REFUND_BATCH', 2) };
+  // A confirmation (receipt, verified contacts, delivery ledger, SMS queue, cart cleanup)
+  // costs ~11 subrequests and a settled reconciliation ~6; 2 jobs + 3 reconciliations keep
+  // the worst mix under the budget (3 jobs / 5 reconciliations exceeded it in the budget test).
+  return { jobs: read('WORKER_JOB_BATCH', 2), reconcile: read('WORKER_RECONCILE_BATCH', 3), refunds: read('WORKER_REFUND_BATCH', 2) };
 }
 
 export interface TickSummary {
@@ -53,6 +60,8 @@ export interface TickSummary {
   expired: number;
   reconcile: { checked: number; settled: number; failed: number };
   refundsPolled: number;
+  /** Unpaid account-cart lines removed because every performance they cover has ended or been cancelled. */
+  cartLinesExpired: number;
   processed: number;
   failed: number;
   /** Steps that threw; the remaining steps still ran. */
@@ -68,7 +77,7 @@ export interface TickSummary {
 export async function processJobs(limits: number | TickLimits = 20): Promise<TickSummary> {
   const { jobs: limit, reconcile: reconcileLimit, refunds: refundLimit } =
     typeof limits === 'number' ? { jobs: limits, reconcile: 20, refunds: 20 } : limits;
-  const summary: TickSummary = { reclaimed: 0, expired: 0, reconcile: { checked: 0, settled: 0, failed: 0 }, refundsPolled: 0, processed: 0, failed: 0, errors: [] };
+  const summary: TickSummary = { reclaimed: 0, expired: 0, reconcile: { checked: 0, settled: 0, failed: 0 }, refundsPolled: 0, cartLinesExpired: 0, processed: 0, failed: 0, errors: [] };
   try {
     const reclaimed = await query(
       `UPDATE jobs SET state='PENDING', locked_at=NULL
@@ -111,6 +120,13 @@ export async function processJobs(limits: number | TickLimits = 20): Promise<Tic
     console.error('[jobs] refund poll error', err);
   }
 
+  try {
+    summary.cartLinesExpired = await pruneExpiredCartLines();
+  } catch (err) {
+    summary.errors.push('cart');
+    console.error('[jobs] cart cleanup error', err);
+  }
+
   // Claim pending/runnable jobs. A failed claim is reported like any other step.
   let jobs: { id: string; kind: string; key: string; payload: Record<string, unknown>; attempts: number; state: string }[] = [];
   try {
@@ -133,7 +149,7 @@ export async function processJobs(limits: number | TickLimits = 20): Promise<Tic
 
   for (const job of jobs) {
     try {
-      await handleJob(job.kind, job.payload);
+      await handleJob(job.kind, job.key, job.payload);
       // locked_at is kept as the completion time (ops "last done"); reclaim only looks at RUNNING.
       await query("UPDATE jobs SET state='DONE', last_error=NULL WHERE id=$1", [job.id]);
       summary.processed++;
@@ -161,7 +177,15 @@ export async function processJobs(limits: number | TickLimits = 20): Promise<Tic
   return summary;
 }
 
-async function handleJob(kind: string, payload: Record<string, unknown>): Promise<void> {
+function confirmationTarget(payload: Record<string, unknown>, kind: string): ConfirmationTarget {
+  const checkoutId = payload['checkoutId'] as string | undefined;
+  if (checkoutId) return { checkoutId };
+  const bookingId = payload['bookingId'] as string | undefined;
+  if (!bookingId) throw new Error(`${kind} job missing bookingId`);
+  return { bookingId };
+}
+
+async function handleJob(kind: string, key: string, payload: Record<string, unknown>): Promise<void> {
   switch (kind) {
     case 'EXPIRE': {
       await expireHolds();
@@ -169,15 +193,18 @@ async function handleJob(kind: string, payload: Record<string, unknown>): Promis
     }
 
     case 'DELIVERY': {
-      // A cart checkout gets ONE consolidated confirmation listing every line.
-      const checkoutId = payload['checkoutId'] as string | undefined;
-      if (checkoutId) {
-        await deliverCheckout(checkoutId);
-        break;
-      }
-      const bookingId = payload['bookingId'] as string | undefined;
-      if (!bookingId) throw new Error('DELIVERY job missing bookingId');
-      await deliverBooking(bookingId);
+      // Post-payment confirmation: a cart checkout gets ONE consolidated message listing
+      // every line; email and SMS per the contacts the customer gave (notify.ts).
+      const target = confirmationTarget(payload, 'DELIVERY');
+      // A paid checkout's lines leave the account cart even if the browser never came back.
+      if ('checkoutId' in target) await removePurchasedFromCart(target.checkoutId);
+      await deliverConfirmation(target, key);
+      break;
+    }
+
+    case 'NOTIFY': {
+      if (payload['channel'] !== 'sms') throw new Error('NOTIFY job with unknown channel');
+      await sendSmsConfirmation(confirmationTarget(payload, 'NOTIFY'), key);
       break;
     }
 

@@ -9,7 +9,6 @@ import { confirmationLinks } from '../src/lib/tickets';
 import { festivalLimits, resolveEnabled } from '../src/lib/catalogue';
 import { nextReconcileDelayMinutes, RECONCILE_MAX_BACKOFF_MINUTES } from '../src/lib/payments';
 import { clerkFrontendHost } from '../src/lib/security-headers';
-import { generateTotpSecret, otpauthUri, totpCode, totpMatchStep, totpStepAt } from '../src/lib/security';
 import { refundStateFromProvider } from '../src/lib/refunds';
 import { assertBookingIssued } from '../src/lib/razorpay-checkout';
 import { PRUNE_SQL, STALE_JOB_MINUTES } from '../src/lib/jobs';
@@ -45,6 +44,10 @@ const LIVE_STAGING = {
   RAZORPAY_KEY_SECRET: 'secret',
   RAZORPAY_WEBHOOK_SECRET: 'whsec',
   OTP_PROVIDER: 'email',
+  // A verified mobile is required to buy, so live mode needs SMS delivery (test values, never sent).
+  SMS_PROVIDER: 'msg91',
+  MSG91_AUTH_KEY: 'test-auth-key',
+  MSG91_TEMPLATE_ID: 'test-template',
   RESEND_API_KEY: 're_x',
   EMAIL_FROM: 'tickets@example.org',
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk',
@@ -123,6 +126,8 @@ test('live mode lists every missing production requirement by name only', () => 
   withEnv({ ...LIVE_STAGING, RAZORPAY_KEY_ID: 'rzp_live_abc' }, () => assert.ok(configurationProblems().some((p) => /test key/.test(p))));
   withEnv({ ...LIVE_STAGING, RESEND_API_KEY: undefined }, () => assert.ok(configurationProblems().some((p) => p.startsWith('email'))));
   withEnv({ ...LIVE_STAGING, CLERK_SECRET_KEY: undefined }, () => assert.ok(configurationProblems().includes('CLERK_SECRET_KEY')));
+  withEnv({ ...LIVE_STAGING, SMS_PROVIDER: undefined, MSG91_AUTH_KEY: undefined, MSG91_TEMPLATE_ID: undefined }, () => assert.ok(configurationProblems().some((p) => p.startsWith('SMS delivery'))));
+  withEnv({ ...LIVE_STAGING, MSG91_TEMPLATE_ID: undefined }, () => assert.ok(configurationProblems().some((p) => p.startsWith('MSG91_AUTH_KEY/MSG91_TEMPLATE_ID'))));
   withEnv({ ...LIVE_STAGING, SESSION_SECRET: 'short' }, () => assert.ok(configurationProblems().some((p) => p.startsWith('SESSION_SECRET'))));
   // Problems name settings, never their values.
   withEnv({ ...LIVE_STAGING, SESSION_SECRET: 'short-secret-value' }, () => assert.ok(!configurationProblems().join(' ').includes('short-secret-value')));
@@ -137,18 +142,6 @@ test('development adapters are refused on Cloudflare Workers even with a localho
     if (descriptor) Object.defineProperty(globalThis, 'navigator', descriptor);
     else delete (globalThis as { navigator?: unknown }).navigator;
   }
-});
-
-test('TOTP: generated secret round-trips, drift is +/-1 step, other codes fail', () => {
-  const key = generateTotpSecret();
-  assert.match(key, /^[A-Z2-7]{32}$/);
-  const now = Date.parse('2026-10-05T10:00:00Z');
-  const step = totpStepAt(now);
-  assert.equal(totpMatchStep(key, totpCode(key, step), now), step);
-  assert.equal(totpMatchStep(key, totpCode(key, step - 1), now), step - 1);
-  assert.equal(totpMatchStep(key, totpCode(key, step - 3), now), null);
-  assert.equal(totpMatchStep(key, '12345', now), null);
-  assert.ok(otpauthUri('scanner@example.org', key, 'Samatat Natyomela').startsWith('otpauth://totp/'));
 });
 
 test('Clerk Frontend API host is derived from the publishable key for CSP', () => {

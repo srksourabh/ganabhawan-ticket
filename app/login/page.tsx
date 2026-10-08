@@ -36,7 +36,6 @@ function LoginForm() {
   const [challengeId, setChallengeId] = useState('');
   const [devCode, setDevCode] = useState('');
   const [code, setCode] = useState('');
-  const [mfaCode, setMfaCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -70,7 +69,7 @@ function LoginForm() {
       const res = await fetch('/api/auth/otp/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ challengeId, code, mfaCode }),
+        body: JSON.stringify({ challengeId, code }),
       });
       const body = await res.json();
       if (!res.ok) { setError(body.error || t('login.verifyFail')); return; }
@@ -124,8 +123,6 @@ function LoginForm() {
         <form onSubmit={verifyCode} noValidate>
           <label htmlFor="code" style={styles.label}>{t('login.otp')}</label>
           <input id="code" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={e => setCode(e.target.value)} style={styles.input} disabled={loading} />
-          <label htmlFor="mfa" style={{ ...styles.label, marginTop: '1rem' }}>{t('login.mfa')}</label>
-          <input id="mfa" inputMode="numeric" value={mfaCode} onChange={e => setMfaCode(e.target.value)} style={styles.input} disabled={loading} />
           {error && <p role="alert" style={styles.error}>{error}</p>}
           <button type="submit" style={{ ...styles.btn, ...(loading || !code.trim() ? styles.btnDisabled : {}) }} disabled={loading || !code.trim()}>
             {loading ? t('login.checking') : t('login.verify')}

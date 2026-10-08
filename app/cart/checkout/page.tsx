@@ -7,11 +7,13 @@ import { useCart, type CartItem } from '@/components/CartProvider';
 import { useLocale } from '@/components/LocaleProvider';
 import { FESTIVAL, FESTIVAL_BN } from '@/lib/brand';
 import { dateLocale, kindLabel, zoneLabel, type MessageKey } from '@/lib/i18n';
-import { createClientCheckout, createClientCheckoutOrder, payExistingOrder, prefillFromContact } from '@/lib/razorpay-checkout';
+import MobileVerify from '@/components/MobileVerify';
+import { CheckoutLineError, createClientCheckout, createClientCheckoutOrder, payExistingOrder, prefillFromContact } from '@/lib/razorpay-checkout';
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
 
-type LineStatus = 'pending' | 'processing' | 'held' | 'ordered' | 'confirmed' | 'error';
+/** unavailable: the server refused this line (closed, sold out, changed); it must be removed before paying. */
+type LineStatus = 'pending' | 'processing' | 'held' | 'ordered' | 'confirmed' | 'error' | 'unavailable';
 type LineState = {
   item: CartItem;
   status: LineStatus;
@@ -36,6 +38,7 @@ const STATUS_KEYS: Record<LineStatus, MessageKey> = {
   ordered: 'checkout.status.ordered',
   confirmed: 'checkout.status.confirmed',
   error: 'checkout.status.error',
+  unavailable: 'checkout.status.unavailable',
 };
 
 export default function CheckoutPage() {
@@ -47,7 +50,7 @@ export default function CheckoutPage() {
   const [lines, setLines] = useState<LineState[]>([]);
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(false);
-  const [me, setMe] = useState<{ contact?: string; name?: string }>({});
+  const [me, setMe] = useState<{ contact?: string; name?: string; mobile?: string | null }>({});
   const runningRef = useRef(false);
   /** One key per checkout attempt: a retried request reuses it; after a failure the next attempt gets a new one. */
   const checkoutKey = useRef(newCheckoutKey());
@@ -63,14 +66,19 @@ export default function CheckoutPage() {
         return res.json();
       })
       .then((body) => {
-        if (body?.contact) setMe({ contact: body.contact, name: body.name });
+        if (body?.contact) setMe({ contact: body.contact, name: body.name, mobile: body.mobile ?? null });
         setAuthChecked(true);
       })
       .catch(() => setAuthChecked(true));
   }, [router]);
 
   useEffect(() => {
-    if (!running && !done) setLines(cart.items.map((item) => ({ item, status: 'pending' })));
+    // Lines the server already knows cannot be bought start as unavailable (no Pay button).
+    if (!running && !done) {
+      setLines(cart.items.map((item) => (item.state && item.state !== 'SELLABLE'
+        ? { item, status: 'unavailable', message: t(item.state === 'SOLD_OUT' ? 'catalogue.soldOut' : 'catalogue.closed') }
+        : { item, status: 'pending' })));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart.items, running]);
 
@@ -147,6 +155,16 @@ export default function CheckoutPage() {
       // Next attempt is a new request; the server reuses the same live checkout
       // if the cart is unchanged, or replaces it if the cart changed.
       checkoutKey.current = newCheckoutKey();
+      // The server named the line it cannot sell. Nothing was held and no payment
+      // order exists: mark only that line, and block payment until it is removed.
+      if (error instanceof CheckoutLineError && error.productId && lines.some((l) => l.item.productId === error.productId)) {
+        const failed = error.productId;
+        setServerTotal(null);
+        setLines((prev) => prev.map((line) => (line.item.productId === failed
+          ? { ...line, status: 'unavailable', message: error.message }
+          : { ...line, status: 'pending', message: undefined })));
+        return;
+      }
       setLines((prev) => updateAll(prev, {
         status: 'error',
         message: refund ? t('pay.refunded') : error instanceof Error && /cancelled/i.test(error.message) ? t('pay.cancelled') : error instanceof Error ? error.message : t('pay.failed'),
@@ -184,6 +202,14 @@ export default function CheckoutPage() {
 
   // The server's total is authoritative once a checkout exists; before that, the cart's estimate is shown.
   const total = serverTotal ?? lines.reduce((sum, l) => sum + l.item.unitPrice * l.item.quantity, 0);
+  const blocked = lines.some((l) => l.status === 'unavailable');
+
+  function removeLine(productId: string) {
+    cart.remove(productId);
+    setServerTotal(null);
+    setDone(false); // the lines re-sync from the cart
+    setLines((prev) => prev.filter((l) => l.item.productId !== productId).map((l) => ({ ...l, status: 'pending', message: undefined })));
+  }
 
   return (
     <main className="page-pad">
@@ -213,23 +239,39 @@ export default function CheckoutPage() {
                   {t(STATUS_KEYS[line.status])}
                 </span>
               </div>
+              {line.status === 'unavailable' && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <p className="banner banner--err" style={{ margin: 0 }}>{line.message}</p>
+                  <button type="button" className="btn btn--ghost btn--sm" onClick={() => removeLine(line.item.productId)}>{t('checkout.removeLine')}</button>
+                </div>
+              )}
             </article>
           ))}
 
-          {lines[0]?.message && (
+          {!blocked && lines[0]?.message && (
             <p role={lines[0].status === 'error' ? 'alert' : 'status'} className={lines[0].status === 'error' ? 'banner banner--err' : 'muted'}>
               {lines[0].status === 'confirmed' ? t('checkout.ref', { ref: lines[0].message }) : lines[0].message}
             </p>
           )}
+          {blocked && <p role="alert" className="banner banner--err">{t('checkout.blocked')}</p>}
 
           <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700 }}>
             <span>{t('cart.total')}</span>
             <span>{money(total, dl)}</span>
           </div>
 
-          <button type="button" className="btn btn--primary btn--block" disabled={running} onClick={runCheckout}>
-            {running ? t('checkout.processing') : t('checkout.pay', { amount: money(total, dl) })}
-          </button>
+          {/* No Pay button while a line cannot be sold: paying would only fail again. */}
+          {me.contact && !me.mobile ? (
+            <MobileVerify onVerified={(mobile) => setMe((current) => ({ ...current, mobile }))} />
+          ) : blocked ? (
+            <Link href="/cart" className="btn btn--ghost btn--block">{t('checkout.editCart')}</Link>
+          ) : (
+            <button type="button" className="btn btn--primary btn--block" disabled={running} onClick={runCheckout}>
+              {running ? t('checkout.processing') : t('checkout.pay', { amount: money(total, dl) })}
+            </button>
+          )}
+
+          <p className="muted" style={{ margin: 0 }}>{t('checkout.noRefunds')}</p>
 
           {done && lines.some((l) => l.status === 'error') && (
             <p className="muted">{t('checkout.retryHint')}</p>

@@ -1360,3 +1360,8 @@ input:focus, select:focus, textarea:focus {
   color: var(--muted);
   font-size: 0.82rem;
 }
+
+/* Admin metrics tables */
+.admin__table { width: 100%; border-collapse: collapse; font-size: .9rem; display: block; overflow-x: auto; }
+.admin__table th, .admin__table td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.admin__table th { color: var(--ink-light); font-weight: 600; }

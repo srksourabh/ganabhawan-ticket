@@ -4,6 +4,8 @@ import { AppError, requireValue } from './errors';
 import { audit } from './audit';
 import { developmentAdaptersAllowed } from './env';
 import { assertShowCancellable, cancelShowSales } from './commerce';
+import { sellState, type CoveredPerformance } from './availability';
+import { zoneTemplate } from './inventory-admin';
 export async function catalogue() {
  const festival=(await query<Festival>('SELECT * FROM festivals ORDER BY created_at LIMIT 1'))[0];
  if(!festival) return {festival:null,shows:[],products:[],development:developmentAdaptersAllowed()};
@@ -11,14 +13,37 @@ export async function catalogue() {
   return {festival,shows:[],products:[],development:developmentAdaptersAllowed()};
  }
  const shows=await query<Show>("SELECT * FROM shows WHERE festival_id=$1 AND status='PUBLISHED' AND ends_at>now() ORDER BY starts_at",[festival.id]);
- const products=await query<Product>(`SELECT p.*, GREATEST(0,LEAST(COALESCE(MIN(i.allocation-i.held-i.committed),0),
- COALESCE(p.cap-(SELECT COALESCE(sum(quantity),0) FROM bookings b WHERE b.product_id=p.id AND b.status IN ('HELD','PAYMENT_PENDING','CONFIRMED')),2147483647)))::int available,
- jsonb_agg(jsonb_build_object('id',s.id,'title',s.title,'title_bn',s.title_bn,'starts_at',s.starts_at,'status',s.status) ORDER BY s.starts_at) coverage
- FROM products p JOIN product_coverage pc ON pc.product_id=p.id JOIN pools i ON i.id=pc.pool_id JOIN shows s ON s.id=pc.show_id
- WHERE p.festival_id=$1 AND p.enabled=true AND s.status='PUBLISHED' AND s.ends_at>now()
- GROUP BY p.id
- ORDER BY p.price`,[festival.id]);
- return {festival,shows,products,development:developmentAdaptersAllowed()};
+ return {festival,shows,products:await publicProducts(festival.id),development:developmentAdaptersAllowed()};
+}
+type CoverageRow = Record<string, unknown> & CoveredPerformance & { product_id: string; show_id: string; title: string; title_bn: string; ends_at: string; cap_used: number };
+/**
+ * Enabled products with their sale state, judged over EVERY covered performance
+ * by the same rule as placeHold (availability.ts). `coverage` still lists only the
+ * performances a customer can see (published, not yet ended); a product with none
+ * is not listed. A product that cannot be sold is returned as CLOSED / SOLD_OUT
+ * with available 0, never as purchasable.
+ */
+export async function publicProducts(festivalId: string, nowMs = Date.now()) {
+ const rows=await query<CoverageRow>(`SELECT p.*, p.id product_id, pc.show_id, s.title, s.title_bn, s.starts_at, s.ends_at, s.status, i.allocation, i.held, i.committed,
+  (SELECT COALESCE(sum(quantity),0)::int FROM bookings b WHERE b.product_id=p.id AND b.status IN ('HELD','PAYMENT_PENDING','CONFIRMED')) cap_used
+  FROM products p JOIN product_coverage pc ON pc.product_id=p.id JOIN pools i ON i.id=pc.pool_id JOIN shows s ON s.id=pc.show_id
+  WHERE p.festival_id=$1 AND p.enabled=true ORDER BY p.price, p.id, s.starts_at`,[festivalId]);
+ const byProduct=new Map<string,CoverageRow[]>();
+ for(const row of rows) byProduct.set(row.product_id,[...(byProduct.get(row.product_id)??[]),row]);
+ const products:Product[]=[];
+ for(const coverage of byProduct.values()) {
+  const visible=coverage.filter(s=>s.status==='PUBLISHED'&&new Date(s.ends_at).getTime()>nowMs);
+  if(visible.length===0) continue;
+  const first=coverage[0];
+  const {state,available}=sellState(coverage,first.cap===null?null:Number(first.cap),Number(first.cap_used),nowMs);
+  const product:Record<string,unknown>={};
+  for(const [key,value] of Object.entries(first)) {
+   if(!['product_id','show_id','title','title_bn','starts_at','ends_at','status','allocation','held','committed','cap_used'].includes(key)) product[key]=value;
+  }
+  products.push({...(product as unknown as Product),available,state,
+   coverage:visible.map(s=>({id:s.show_id,title:s.title,title_bn:s.title_bn,starts_at:new Date(s.starts_at).toISOString(),status:s.status}) as unknown as Show)});
+ }
+ return products;
 }
 export async function adminCatalogue() {
  const festival=(await query<Festival>('SELECT * FROM festivals ORDER BY created_at LIMIT 1'))[0];
@@ -122,11 +147,6 @@ export async function updateFestival(user:User,input:Record<string,unknown>) {
   await audit(c,user.id,'festival.update',f.id,input); return {ok:true};
  },true);
 }
-const ZONES: {zone:'Premier'|'Superior'|'Balcony';ceiling:number;price:number}[] = [
- {zone:'Premier',ceiling:100,price:50000},
- {zone:'Superior',ceiling:120,price:35000},
- {zone:'Balcony',ceiling:80,price:25000},
-];
 export interface ShowInput {
  title:string; titleBn:string; troupe:string; synopsis:string; synopsisBn:string;
  startsAt:string; runtime:number; genre:string; language?:string; artwork?:string; status?:string;
@@ -147,19 +167,21 @@ export async function upsertShow(user:User, input:ShowInput) {
    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
    [festival!.id,input.title,input.titleBn,input.troupe,input.synopsis,input.synopsisBn,startsAt.toISOString(),endsAt.toISOString(),
     input.language??'Bengali',input.runtime,input.genre,input.artwork??'red',status]))!;
-  const seasonProducts=(await c.query("SELECT * FROM products WHERE festival_id=$1 AND kind='SEASON'",[festival!.id])).rows;
-  for(const {zone,ceiling,price} of ZONES) {
-   const capacity=(await one(c,'INSERT INTO capacities(show_id,zone,ceiling) VALUES($1,$2,$3) RETURNING *',[show.id,zone,ceiling]))!;
+  // A new performance never joins an existing season ticket by itself: that would change
+  // what season customers bought (and close season sales while the show is a draft). The
+  // admin adds it explicitly (addShowToSeason), which is refused once the season has sales.
+  // Capacity, allocations and prices come from the dashboard configuration (the latest
+  // performance), never from code. The first performance starts empty and unsellable.
+  const template=await zoneTemplate(c,festival!.id,show.id);
+  for(const {zone,ceiling,seasonAllocation,daily,season,price,enabled} of template) {
+   const capacity=(await one(c,'INSERT INTO capacities(show_id,zone,ceiling,season_allocation) VALUES($1,$2,$3,$4) RETURNING *',[show.id,zone,ceiling,seasonAllocation]))!;
    const dailyPool=(await one(c,"INSERT INTO pools(capacity_id,kind,allocation,row_start,row_end) VALUES($1,'DAILY',$2,1,$3) RETURNING *",
-    [capacity.id,ceiling-40,capacity.row_count]))!;
-   const seasonPool=(await one(c,"INSERT INTO pools(capacity_id,kind,allocation,row_start,row_end) VALUES($1,'SEASON',30,1,$2) RETURNING *",
-    [capacity.id,capacity.row_count]))!;
-   const dailyProduct=(await one<Product>(c,`INSERT INTO products(festival_id,name,name_bn,category,kind,price,show_id) VALUES($1,$2,$3,$4,'DAILY',$5,$6) RETURNING *`,
-    [festival!.id,`${input.title} \u2013 ${zone}`,`${input.titleBn} \u2013 ${zone}`,zone,price,show.id]))!;
+    [capacity.id,daily,capacity.row_count]))!;
+   await c.query("INSERT INTO pools(capacity_id,kind,allocation,row_start,row_end) VALUES($1,'SEASON',$2,1,$3)",
+    [capacity.id,season,capacity.row_count]);
+   const dailyProduct=(await one<Product>(c,`INSERT INTO products(festival_id,name,name_bn,category,kind,price,show_id,enabled) VALUES($1,$2,$3,$4,'DAILY',$5,$6,$7) RETURNING *`,
+    [festival!.id,`${input.title} \u2013 ${zone}`,`${input.titleBn} \u2013 ${zone}`,zone,price,show.id,enabled]))!;
    await c.query('INSERT INTO product_coverage(product_id,show_id,pool_id) VALUES($1,$2,$3)',[dailyProduct.id,show.id,dailyPool.id]);
-   for(const sp of seasonProducts) {
-    if(sp.category===zone) await c.query('INSERT INTO product_coverage(product_id,show_id,pool_id) VALUES($1,$2,$3)',[sp.id,show.id,seasonPool.id]);
-   }
   }
   await c.query(`INSERT INTO devices(id,name) VALUES('gate-one','Main entrance'),('gate-two','Balcony entrance') ON CONFLICT(id) DO NOTHING`);
   await c.query(

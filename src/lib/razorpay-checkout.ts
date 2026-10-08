@@ -134,9 +134,18 @@ export async function createClientCheckout(
     body: JSON.stringify({ lines }),
   });
   if (res.status === 401) return { id: '', reference: '', total: 0, status: '', unauthenticated: true };
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((body as { error?: string }).error || 'Unable to reserve these tickets.');
-  return body as CheckoutSummary;
+  const body = (await res.json().catch(() => ({}))) as { error?: string; productId?: string };
+  if (!res.ok) throw new CheckoutLineError(body.error || 'Unable to reserve these tickets.', body.productId);
+  return body as unknown as CheckoutSummary;
+}
+
+/**
+ * The server refused the checkout. With `productId` it names the cart line that
+ * cannot be bought (closed, sold out, price changed, unavailable): nothing was
+ * held and no payment order exists, so that line must be removed or changed first.
+ */
+export class CheckoutLineError extends Error {
+  constructor(message: string, public productId?: string) { super(message); }
 }
 
 /** ONE payment order for the checkout's server-computed total. */
@@ -170,7 +179,8 @@ export async function confirmRazorpayPayment(response: RazorpaySuccess) {
  */
 export function assertBookingIssued(body: unknown) {
   const status = body && typeof body === 'object' && 'status' in body ? String((body as { status?: unknown }).status ?? '') : '';
-  if (status === 'CONFIRMED') return body;
+  // PARTIALLY_CANCELLED: paid and issued; a line's show was cancelled since (that line refunded).
+  if (status === 'CONFIRMED' || status === 'PARTIALLY_CANCELLED') return body;
   if (status === 'REFUND_REQUIRED' || status === 'CANCELLED' || status === 'REFUNDED') {
     throw new Error('REFUND_REQUIRED');
   }

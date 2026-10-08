@@ -19,6 +19,8 @@ type Product = {
   version: number;
   available: number;
   coverage: { id: string; title: string; starts_at: string }[];
+  /** Server-decided (availability.ts): only SELLABLE can be added to the cart. */
+  state?: 'SELLABLE' | 'SOLD_OUT' | 'CLOSED';
 };
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
@@ -105,7 +107,8 @@ export default function CataloguePage() {
         category,
         productId: product?.id ?? null,
         price: product?.price ?? 0,
-        available: product?.available ?? 0,
+        available: product?.state === 'SELLABLE' ? product.available : 0,
+        closed: product?.state === 'CLOSED',
         seasonPrice: season?.price ?? null,
         seasonAvailable: season?.available ?? null,
       };
@@ -114,7 +117,6 @@ export default function CataloguePage() {
 
   const [now] = useState(() => Date.now());
   const dailyClosed = selectedShow ? new Date(selectedShow.starts_at).getTime() <= now : false;
-  const seasonClosed = shows.length > 0 && new Date(shows[0].starts_at).getTime() <= now;
   const seasonLines = ZONE_ORDER.map((category) => {
     const product = products.find((p) => p.kind === 'SEASON' && p.category === category);
     return { category, product: product ?? null };
@@ -133,7 +135,8 @@ export default function CataloguePage() {
       category: product.category,
       kind: product.kind,
       showTitle: t('catalogue.season'),
-      startsAt: shows[0]?.starts_at || new Date().toISOString(),
+      // The season's own first covered performance (not the festival's first show).
+      startsAt: product.coverage[0]?.starts_at || shows[0]?.starts_at || new Date().toISOString(),
       unitPrice: product.price,
       version: product.version,
     });
@@ -305,12 +308,12 @@ export default function CataloguePage() {
                       <p>
                         {t('catalogue.daily')} {money(zone.price, dl)}
                         {' · '}
-                        {dailyClosed ? t('catalogue.closed') : zone.available > 0 ? t('map.available', { count: zone.available }) : t('map.soldOut')}
+                        {dailyClosed || zone.closed ? t('catalogue.closed') : zone.available > 0 ? t('map.available', { count: zone.available }) : t('map.soldOut')}
                       </p>
                     </div>
                     <div className="pick__actions">
-                      <button type="button" className="btn btn--primary btn--sm" disabled={dailyClosed || zone.available <= 0 || !zone.productId} onClick={() => handleAddDaily(zone)}>
-                        {dailyClosed ? t('catalogue.closed') : zone.available > 0 ? t('catalogue.addDaily') : t('catalogue.soldOut')}
+                      <button type="button" className="btn btn--primary btn--sm" disabled={dailyClosed || zone.closed || zone.available <= 0 || !zone.productId} onClick={() => handleAddDaily(zone)}>
+                        {dailyClosed || zone.closed ? t('catalogue.closed') : zone.available > 0 ? t('catalogue.addDaily') : t('catalogue.soldOut')}
                       </button>
                     </div>
                   </li>
@@ -330,7 +333,9 @@ export default function CataloguePage() {
             <p className="muted">{t('catalogue.seasonHint')}</p>
             <ul className="pick__zones">
               {seasonLines.map((line) => {
-                const available = line.product?.available ?? 0;
+                // Server-decided (availability.ts): CLOSED when any covered performance can no longer be sold.
+                const seasonClosed = line.product?.state === 'CLOSED';
+                const available = line.product?.state === 'SELLABLE' ? line.product.available : 0;
                 const closed = seasonClosed || available <= 0 || !line.product;
                 return (
                   <li key={line.category}>

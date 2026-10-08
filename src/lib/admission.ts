@@ -3,6 +3,21 @@ import { requireValue } from './errors';
 import { hash } from './security';
 import { audit } from './audit';
 import type { User } from './types';
+import type { Client } from './db';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Reason codes stored with every scan for reporting (the customer-facing result is unchanged). */
+export type ScanCode = 'ADMITTED' | 'DUPLICATE' | 'NOT_SCOPED' | 'DEVICE_REVOKED' | 'SHOW_NOT_OPEN' | 'OUTSIDE_WINDOW' | 'UNKNOWN_CREDENTIAL' | 'TICKET_INACTIVE' | 'WRONG_SHOW';
+
+/** One row per scan request: who, where, which ticket and show, and the outcome. */
+async function logScan(c: Client, staff: User, input: AdmitInput, digest: string, result: AdmitResult, code: ScanCode, ticketId: string | null = null) {
+  await c.query(
+    'INSERT INTO scan_requests(id,actor_id,input_digest,result,show_id,gate,device_id,ticket_id,outcome,code) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
+    [input.requestId, staff.id, digest, JSON.stringify(result), UUID.test(input.showId) ? input.showId : null,
+      input.gateId || null, input.deviceId || null, ticketId, result.result, code],
+  );
+}
 
 export interface AdmitInput {
   requestId: string;
@@ -57,10 +72,7 @@ export async function admit(staff: User, input: AdmitInput): Promise<AdmitResult
           result: 'DENIED',
           reason: 'Staff not authorized for this show, gate, or device.',
         };
-        await c.query(
-          'INSERT INTO scan_requests(id,actor_id,input_digest,result) VALUES($1,$2,$3,$4)',
-          [input.requestId, staff.id, hash(input.ticketToken), JSON.stringify(result)],
-        );
+        await logScan(c, staff, input, hash(input.ticketToken), result, 'NOT_SCOPED');
         return result;
       }
 
@@ -71,10 +83,7 @@ export async function admit(staff: User, input: AdmitInput): Promise<AdmitResult
       );
       if (!device.rows[0] || device.rows[0].revoked) {
         const result: AdmitResult = { result: 'DENIED', reason: 'Device is revoked or unknown.' };
-        await c.query(
-          'INSERT INTO scan_requests(id,actor_id,input_digest,result) VALUES($1,$2,$3,$4)',
-          [input.requestId, staff.id, hash(input.ticketToken), JSON.stringify(result)],
-        );
+        await logScan(c, staff, input, hash(input.ticketToken), result, 'DEVICE_REVOKED');
         return result;
       }
     }
@@ -87,18 +96,12 @@ export async function admit(staff: User, input: AdmitInput): Promise<AdmitResult
     const performance = show.rows[0];
     if (!performance || performance.status !== 'PUBLISHED') {
       const result: AdmitResult = { result: 'DENIED', reason: 'This performance is not open for entry.' };
-      await c.query(
-        'INSERT INTO scan_requests(id,actor_id,input_digest,result) VALUES($1,$2,$3,$4)',
-        [input.requestId, staff.id, hash(input.ticketToken), JSON.stringify(result)],
-      );
+      await logScan(c, staff, input, hash(input.ticketToken), result, 'SHOW_NOT_OPEN');
       return result;
     }
     if (!entryAllowed(Date.now(), performance.starts_at, Number(performance.entry_before), Number(performance.entry_after))) {
       const result: AdmitResult = { result: 'DENIED', reason: 'Entry is outside the allowed time window.' };
-      await c.query(
-        'INSERT INTO scan_requests(id,actor_id,input_digest,result) VALUES($1,$2,$3,$4)',
-        [input.requestId, staff.id, hash(input.ticketToken), JSON.stringify(result)],
-      );
+      await logScan(c, staff, input, hash(input.ticketToken), result, 'OUTSIDE_WINDOW');
       return result;
     }
 
@@ -115,10 +118,7 @@ export async function admit(staff: User, input: AdmitInput): Promise<AdmitResult
 
     if (!credential.rows[0]) {
       const result: AdmitResult = { result: 'UNKNOWN', reason: 'Credential not found or inactive.' };
-      await c.query(
-        'INSERT INTO scan_requests(id,actor_id,input_digest,result) VALUES($1,$2,$3,$4)',
-        [input.requestId, staff.id, tokenDigest, JSON.stringify(result)],
-      );
+      await logScan(c, staff, input, tokenDigest, result, 'UNKNOWN_CREDENTIAL');
       return result;
     }
 
@@ -135,10 +135,7 @@ export async function admit(staff: User, input: AdmitInput): Promise<AdmitResult
         result: 'DENIED',
         reason: `Ticket status: ${ticket.rows[0]?.status ?? 'not found'}.`,
       };
-      await c.query(
-        'INSERT INTO scan_requests(id,actor_id,input_digest,result) VALUES($1,$2,$3,$4)',
-        [input.requestId, staff.id, tokenDigest, JSON.stringify(result)],
-      );
+      await logScan(c, staff, input, tokenDigest, result, 'TICKET_INACTIVE', ticket_id);
       return result;
     }
 
@@ -153,10 +150,7 @@ export async function admit(staff: User, input: AdmitInput): Promise<AdmitResult
         result: 'DENIED',
         reason: 'No active entitlement for this show.',
       };
-      await c.query(
-        'INSERT INTO scan_requests(id,actor_id,input_digest,result) VALUES($1,$2,$3,$4)',
-        [input.requestId, staff.id, tokenDigest, JSON.stringify(result)],
-      );
+      await logScan(c, staff, input, tokenDigest, result, 'WRONG_SHOW', ticket_id);
       return result;
     }
 
@@ -183,10 +177,7 @@ export async function admit(staff: User, input: AdmitInput): Promise<AdmitResult
           result: 'DENIED',
           reason: 'Ticket already admitted for this show.',
         };
-        await c.query(
-          'INSERT INTO scan_requests(id,actor_id,input_digest,result) VALUES($1,$2,$3,$4)',
-          [input.requestId, staff.id, tokenDigest, JSON.stringify(result)],
-        );
+        await logScan(c, staff, input, tokenDigest, result, 'DUPLICATE', ticket_id);
         return result;
       }
       throw err;
@@ -200,10 +191,7 @@ export async function admit(staff: User, input: AdmitInput): Promise<AdmitResult
     });
 
     const result: AdmitResult = { result: 'ADMITTED', receiptId: admissionId };
-    await c.query(
-      'INSERT INTO scan_requests(id,actor_id,input_digest,result) VALUES($1,$2,$3,$4)',
-      [input.requestId, staff.id, tokenDigest, JSON.stringify(result)],
-    );
+    await logScan(c, staff, input, tokenDigest, result, 'ADMITTED', ticket_id);
     return result;
   });
 }

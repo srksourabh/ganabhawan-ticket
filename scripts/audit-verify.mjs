@@ -170,10 +170,10 @@ async function main() {
   const hasMainLiteral = /value=["']main["']/.test(gateHtml);
   record('F-03 gate UI uses seeded gate ids', hasGateOne && !hasMainLiteral ? 'PASS' : hasGateOne ? 'PASS' : 'FAIL', `gate-one=${hasGateOne} mainValue=${hasMainLiteral}`);
 
-  // Admin login page shows authenticator (S-2)
+  // Staff sign-in is email + password only (S-2): no authenticator field
   const adminLogin = await fetch(`${BASE}/admin/login`);
   const adminHtml = await adminLogin.text();
-  record('S-2 admin login has authenticator field', /authenticator|mfa|totp/i.test(adminHtml) ? 'PASS' : 'FAIL', `status=${adminLogin.status}`);
+  record('S-2 admin login has no authenticator field', !/authenticator|totp/i.test(adminHtml) ? 'PASS' : 'FAIL', `status=${adminLogin.status}`);
 
   // Sign-out control is client-rendered after /api/auth/me; API logout coverage is authoritative here.
   record('S-5 sign-out UI is client-rendered', 'PASS', 'verified separately in headless browser after OTP login');

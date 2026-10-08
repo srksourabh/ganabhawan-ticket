@@ -1,5 +1,5 @@
 /**
- * DB-backed staff MFA provisioning and login, session revocation, gate
+ * DB-backed staff login (email + password, two doors), session revocation, gate
  * authorisation, background-job recovery and notification delivery.
  */
 import test, { after, before, beforeEach } from 'node:test';
@@ -48,71 +48,86 @@ beforeEach(async () => {
   await resetDatabase();
 });
 
-async function currentCode(contact: string, offsetSteps = 0) {
-  const row = (await query<{ mfa_secret: string }>('SELECT mfa_secret FROM users WHERE contact=$1', [contact]))[0];
-  return security.totpCode(security.decrypt(row.mfa_secret), security.totpStepAt() + offsetSteps);
-}
-
-async function enrolledStaff(role: User['role']) {
+/** A staff account that can sign in (email + password; there is no second factor). */
+async function staffAccount(role: User['role']) {
   const contact = `${role}-${randomUUID().slice(0, 6)}@tickets.test`;
   await staff.upsertStaff({ contact, role, password: PASSWORD });
-  const { secret } = await staff.beginMfaEnrollment(contact);
-  await staff.confirmMfaEnrollment(contact, security.totpCode(secret, security.totpStepAt() - 1));
   return contact;
 }
 
-test('MFA enrolment: secret encrypted at rest, pending until a valid code, wrong code rejected', { skip }, async () => {
-  const contact = 'scanner-enrol@tickets.test';
-  await staff.upsertStaff({ contact, role: 'scanner', password: PASSWORD });
-  const { secret, uri } = await staff.beginMfaEnrollment(contact);
-  assert.ok(uri.startsWith('otpauth://totp/'));
-  const row = (await query('SELECT mfa_secret, mfa_pending_secret FROM users WHERE contact=$1', [contact]))[0];
-  assert.equal(row.mfa_secret, null, 'not active until confirmed');
-  assert.ok(!String(row.mfa_pending_secret).includes(secret), 'stored encrypted, never plain');
-  assert.equal(security.decrypt(row.mfa_pending_secret), secret);
-  await assert.rejects(() => staff.confirmMfaEnrollment(contact, '000000'), /not valid/);
-  await staff.confirmMfaEnrollment(contact, security.totpCode(secret, security.totpStepAt()));
-  const enabled = (await query('SELECT mfa_secret IS NOT NULL AS on, mfa_pending_secret FROM users WHERE contact=$1', [contact]))[0];
-  assert.deepEqual(enabled, { on: true, mfa_pending_secret: null });
-  await assert.rejects(() => staff.beginMfaEnrollment(contact), /already enabled/);
-  const customer = await makeUser();
-  await assert.rejects(() => staff.beginMfaEnrollment(customer.contact), /Only staff/);
-});
+const sessions = async (contact: string) =>
+  (await query<{ n: number }>('SELECT count(*)::int n FROM sessions s JOIN users u ON u.id=s.user_id WHERE u.contact=$1', [contact]))[0].n;
 
-test('live staff login: password alone fails, password+TOTP works, the same code cannot be replayed', { skip }, async () => {
-  const contact = await enrolledStaff('scanner');
-  await assert.rejects(() => auth.loginWithPassword(contact, PASSWORD, '', '10.0.0.1'), /authenticator code/);
-  const anyCode = await currentCode(contact);
-  await assert.rejects(() => auth.loginWithPassword(contact, 'wrong password here', anyCode, '10.0.0.1'), /Incorrect/);
-  const code = await currentCode(contact, 1);
-  const session = await auth.loginWithPassword(contact, PASSWORD, code, '10.0.0.1');
+test('staff login is email + password only: no authenticator, wrong password refused, password stored only as a hash', { skip }, async () => {
+  const contact = await staffAccount('scanner');
+  await assert.rejects(() => auth.loginStaff(contact, 'wrong password here', 'gate', '10.0.0.1'), /Incorrect/);
+  const session = await auth.loginStaff(contact, PASSWORD, 'gate', '10.0.0.1');
   assert.equal(session.user.role, 'scanner');
-  await assert.rejects(() => auth.loginWithPassword(contact, PASSWORD, code, '10.0.0.1'), /authenticator code/, 'replayed code refused');
-  assert.ok((await query("SELECT count(*)::int n FROM audit_events WHERE action='auth.mfa.failed'"))[0].n >= 2);
+  assert.ok(await auth.sessionUser(session.sessionToken!), 'a normal hashed-token session');
+  const row = (await query<{ password_hash: string }>('SELECT password_hash FROM users WHERE contact=$1', [contact]))[0];
+  assert.ok(row.password_hash.startsWith('scrypt$') || !row.password_hash.includes(PASSWORD), 'only a hash is stored');
+  assert.ok((await query("SELECT count(*)::int n FROM audit_events WHERE action='auth.password.failed'"))[0].n >= 1);
 });
 
-test('staff without enrolled MFA cannot sign in in live mode; Clerk/Google is refused for staff', { skip }, async () => {
-  const contact = 'owner-nomfa@tickets.test';
-  await staff.upsertStaff({ contact, role: 'owner', password: PASSWORD });
-  await assert.rejects(() => auth.loginWithPassword(contact, PASSWORD, '123456', '10.0.0.2'), /authenticator code/);
-  await assert.rejects(() => auth.ensureUserFromClerk('clerk_123', contact), /must sign in with a password/);
+test('two doors: admin roles only at /admin/login, gate roles only at /gate/login; the wrong door creates no session', { skip }, async () => {
+  const expect = { owner: 'admin', inventory: 'admin', finance: 'admin', desk: 'admin', scanner: 'gate', supervisor: 'gate' } as const;
+  for (const [role, door] of Object.entries(expect) as [User['role'], 'admin' | 'gate'][]) {
+    const contact = await staffAccount(role);
+    const wrong = door === 'admin' ? 'gate' : 'admin';
+    const refused = await auth.loginStaff(contact, PASSWORD, wrong, '10.0.1.1').catch((e) => e);
+    assert.equal(refused.code, 'WRONG_PORTAL', `${role} at ${wrong}`);
+    assert.equal(refused.status, 403);
+    assert.equal(await sessions(contact), 0, `${role}: no session from the wrong door`);
+    const ok = await auth.loginStaff(contact, PASSWORD, door, '10.0.1.1');
+    assert.equal(ok.user.role, role, `${role} at ${door}`);
+  }
+  const scanner = await staffAccount('scanner');
+  await assert.rejects(() => auth.loginStaff(scanner, PASSWORD, 'somewhere' as never, '10.0.1.1'), /admin or gate/);
 });
 
-test('MFA reset requires a reason, clears MFA and revokes every session', { skip }, async () => {
-  const contact = await enrolledStaff('supervisor');
-  const s1 = await auth.loginWithPassword(contact, PASSWORD, await currentCode(contact, 1), '10.0.0.3');
-  await assert.rejects(() => staff.resetMfa(contact, ''), /reason/);
-  await staff.resetMfa(contact, 'lost phone');
+test('customers never get staff access: no password login, no staff session, refused at both doors', { skip }, async () => {
+  const customer = await makeUser();
+  for (const door of ['admin', 'gate'] as const) {
+    await assert.rejects(() => auth.loginStaff(customer.contact, PASSWORD, door, '10.0.2.1'), /Incorrect email or password/);
+  }
+  // Even with a password hash, a customer account is refused.
+  const { hashPassword } = await import('../src/lib/security');
+  await query('UPDATE users SET password_hash=$1 WHERE id=$2', [hashPassword(PASSWORD), customer.id]);
+  await assert.rejects(() => auth.loginStaff(customer.contact, PASSWORD, 'admin', '10.0.2.1'), /not a staff account/);
+  assert.equal(await sessions(customer.contact), 0);
+});
+
+test('staff cannot sign in with a customer code (OTP) or with Clerk/Google; customers still can use their code', { skip }, async () => {
+  const contact = await staffAccount('owner');
+  const { keyedHash } = await import('../src/lib/security');
+  const challenge = (await query<{ id: string }>(
+    "INSERT INTO otp_challenges(contact,digest,expires_at) VALUES($1,$2,now()+interval '5 minutes') RETURNING id", [contact, keyedHash(contact + ':123456')]))[0];
+  await assert.rejects(() => auth.verifyOtp(challenge.id, '123456'), /Staff accounts sign in with email and password/);
+  assert.equal(await sessions(contact), 0, 'a customer code is never a password-less staff login');
+  await assert.rejects(() => auth.ensureUserFromClerk('clerk_123', contact), /must sign in with email and password/);
+  const customer = await makeUser();
+  const own = (await query<{ id: string }>(
+    "INSERT INTO otp_challenges(contact,digest,expires_at) VALUES($1,$2,now()+interval '5 minutes') RETURNING id", [customer.contact, keyedHash(customer.contact + ':654321')]))[0];
+  assert.equal((await auth.verifyOtp(own.id, '654321')).user.role, 'customer', 'customer sign-in by code is unchanged');
+});
+
+test('password reset requires 12+ characters, signs the account out everywhere; deactivation removes access', { skip }, async () => {
+  const contact = await staffAccount('supervisor');
+  const s1 = await auth.loginStaff(contact, PASSWORD, 'gate', '10.0.0.3');
+  await assert.rejects(() => staff.setStaffPassword(contact, 'short'), /12 characters/);
+  await staff.setStaffPassword(contact, 'a brand new long password');
   assert.equal(await auth.sessionUser(s1.sessionToken!), null);
-  await assert.rejects(() => auth.loginWithPassword(contact, PASSWORD, '123456', '10.0.0.3'), /authenticator code/);
+  await assert.rejects(() => auth.loginStaff(contact, PASSWORD, 'gate', '10.0.0.3'), /Incorrect/);
+  await auth.loginStaff(contact, 'a brand new long password', 'gate', '10.0.0.3');
+  await staff.revokeStaff(contact, 'season over');
+  await assert.rejects(() => auth.loginStaff(contact, 'a brand new long password', 'gate', '10.0.0.3'), /Incorrect/);
+  assert.equal(await sessions(contact), 0);
 });
 
 test('logout revokes the session server-side; other devices and expiry behave correctly', { skip }, async () => {
-  const contact = await enrolledStaff('finance');
-  const laptop = await auth.loginWithPassword(contact, PASSWORD, await currentCode(contact, 1), '10.0.0.4');
-  // A second device signs in on a later code (codes are single-use).
-  await query('UPDATE users SET mfa_last_step=mfa_last_step-2 WHERE contact=$1', [contact]);
-  const phone = await auth.loginWithPassword(contact, PASSWORD, await currentCode(contact, 0), '10.0.0.4');
+  const contact = await staffAccount('finance');
+  const laptop = await auth.loginStaff(contact, PASSWORD, 'admin', '10.0.0.4');
+  const phone = await auth.loginStaff(contact, PASSWORD, 'admin', '10.0.0.4');
   assert.ok(await auth.sessionUser(laptop.sessionToken!));
   await auth.revokeSession(laptop.sessionToken!);
   assert.equal(await auth.sessionUser(laptop.sessionToken!), null, 'old cookie/bearer is dead');
@@ -137,7 +152,7 @@ const scan = (who: User, showId: string, token: string, device = 'gate-one') =>
 test('gate: scoped scanner admits; re-entry, wrong show, unknown code, revoked device and unscoped staff are refused', { skip }, async () => {
   const tonight = await makeShow({ startsInMinutes: 30 });
   const other = await makeShow({ startsInMinutes: 40 });
-  const contact = await enrolledStaff('scanner');
+  const contact = await staffAccount('scanner');
   const scanner = (await query<User>('SELECT id,contact,name,role FROM users WHERE contact=$1', [contact]))[0];
   const ticket = await confirmedTicket(tonight.productId);
 
@@ -160,7 +175,7 @@ test('gate: scoped scanner admits; re-entry, wrong show, unknown code, revoked d
 
 test('gate: entry outside the window is refused (too early)', { skip }, async () => {
   const later = await makeShow({ startsInMinutes: 6 * 60 });
-  const contact = await enrolledStaff('scanner');
+  const contact = await staffAccount('scanner');
   const scanner = (await query<User>('SELECT id,contact,name,role FROM users WHERE contact=$1', [contact]))[0];
   const ticket = await confirmedTicket(later.productId);
   assert.match((await scan(scanner, later.showId, ticket.token)).reason ?? '', /time window/);
@@ -168,7 +183,7 @@ test('gate: entry outside the window is refused (too early)', { skip }, async ()
 
 test('shows created after a scanner was provisioned get that scanner scoped automatically', { skip }, async () => {
   await makeShow();
-  const contact = await enrolledStaff('scanner');
+  const contact = await staffAccount('scanner');
   const owner = await makeUser('owner');
   const created = await catalogue.upsertShow(owner, {
     title: 'New play', titleBn: 'নতুন', troupe: 'T', synopsis: 'S', synopsisBn: 'S',
@@ -232,4 +247,35 @@ test('holder name entered at checkout is attached to the booking for its owner o
   await linkAttempt(attempt.id, user.id, user.contact, h.id, 'HELD');
   assert.equal((await commerce.ownedBookings(user.id, h.id))[0].holder_name, 'Anita Roy');
   assert.deepEqual(await commerce.ownedBookings((await makeUser()).id, h.id), []);
+});
+
+test('mobile scanner app contract: gate sign-in with x-client mobile returns a bearer token that scans; office accounts and customer codes are refused', { skip }, async () => {
+  const { POST } = await import('../app/api/auth/password/route');
+  const signIn = (email: string, portal: string) => POST(new Request('https://staging.tickets.test/api/auth/password', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-client': 'mobile' }, body: JSON.stringify({ email, password: PASSWORD, portal }),
+  }));
+  // The show exists first: a scanner is scoped to upcoming shows when the account is created.
+  const show = await makeShow({ startsInMinutes: 30 });
+  const t = await confirmedTicket(show.productId);
+  const scannerContact = await staffAccount('scanner');
+  const res = await signIn(scannerContact, 'gate');
+  assert.equal(res.status, 200);
+  const body = (await res.json()) as { sessionToken?: string; user?: { role: string } };
+  assert.equal(body.user?.role, 'scanner');
+  assert.ok(body.sessionToken, 'the app receives a bearer token');
+  // The token is what the app sends as "Authorization: Bearer …"; it identifies the scanner…
+  const scanner = await auth.sessionUser(body.sessionToken!);
+  assert.equal(scanner?.role, 'scanner');
+  // …who admits a valid ticket through the unchanged gate checks (scopes on gate-one, as the app sends).
+  assert.equal((await scan(scanner!, show.showId, t.token)).result, 'ADMITTED');
+  assert.equal((await scan(scanner!, show.showId, t.token)).reason, 'Ticket already admitted for this show.');
+  // Office staff cannot use the gate door from the app; no portal at all is refused.
+  const office = await signIn(await staffAccount('finance'), 'gate');
+  assert.equal(office.status, 403);
+  assert.equal((await signIn(scannerContact, '')).status, 400);
+  // The customer-code path refuses staff (no password-less staff session).
+  const { keyedHash } = await import('../src/lib/security');
+  const challenge = (await query<{ id: string }>(
+    "INSERT INTO otp_challenges(contact,digest,expires_at) VALUES($1,$2,now()+interval '5 minutes') RETURNING id", [scannerContact, keyedHash(scannerContact + ':111222')]))[0];
+  await assert.rejects(() => auth.verifyOtp(challenge.id, '111222'), /Staff accounts sign in with email and password/);
 });
