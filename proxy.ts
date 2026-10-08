@@ -1,7 +1,7 @@
 import { clerkMiddleware } from '@clerk/nextjs/server';
 import { NextResponse, type NextFetchEvent, type NextRequest } from 'next/server';
 import { applySecurityHeaders } from '@/lib/security-headers';
-import { configurationProblems } from '@/lib/env';
+import { apiRefusal } from '@/lib/config-gate';
 
 const clerk = clerkMiddleware(() => {
   const response = NextResponse.next();
@@ -11,17 +11,16 @@ const clerk = clerkMiddleware(() => {
 });
 
 /**
- * Fail closed before anything else (including Clerk): if this runtime is
- * misconfigured (development adapters on a public host, missing payment,
- * webhook or session secrets…), every API call is refused with 503 before
- * any handler runs. /api/health (outside the matcher) reports the state.
+ * Fail closed before anything else (including Clerk). Broken core settings
+ * (session/encryption keys, database, public URL, development adapters on a
+ * public host…) refuse every API call; missing customer-sales settings
+ * (payments, SMS, email…) refuse every API except staff sign-in, admin and gate
+ * scanning (config-gate.ts). /api/health (outside the matcher) reports the state.
  */
 export default function proxy(request: NextRequest, event: NextFetchEvent) {
-  if (request.nextUrl.pathname.startsWith('/api/') && configurationProblems().length > 0) {
-    const refused = NextResponse.json(
-      { error: 'This service is not configured for sales yet. Please try again later.', code: 'CONFIG_INVALID' },
-      { status: 503 },
-    );
+  const refusal = apiRefusal(request.nextUrl.pathname);
+  if (refusal) {
+    const refused = NextResponse.json({ error: refusal, code: 'CONFIG_INVALID' }, { status: 503 });
     applySecurityHeaders(refused.headers);
     return refused;
   }

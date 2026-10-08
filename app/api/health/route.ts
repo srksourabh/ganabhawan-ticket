@@ -1,5 +1,5 @@
 import { query } from '@/lib/db';
-import { appMode, configurationProblems, deployEnv } from '@/lib/env';
+import { appMode, configurationProblems, coreConfigurationProblems, deployEnv } from '@/lib/env';
 import { jsonOk } from '@/lib/http';
 
 /**
@@ -19,6 +19,8 @@ export async function GET(): Promise<Response> {
     db = false;
   }
   const config = configurationProblems().length === 0;
+  // Staff sign-in, admin and gate scanning need only the core settings.
+  const staff = coreConfigurationProblems().length === 0;
   // The deploy workflow does not migrate: report a schema behind the code (e.g. 0007 not applied).
   let schema = false;
   if (db) {
@@ -29,5 +31,5 @@ export async function GET(): Promise<Response> {
     }
   }
   const ok = db && config && schema;
-  return jsonOk({ ok, db, config, schema, mode: appMode(), env: deployEnv() ?? 'local' }, ok ? 200 : 503);
+  return jsonOk({ ok, db, config, staff, schema, mode: appMode(), env: deployEnv() ?? 'local' }, ok ? 200 : 503);
 }

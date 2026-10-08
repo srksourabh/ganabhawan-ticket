@@ -2,7 +2,7 @@ import { randomInt } from 'node:crypto';
 import { cookies, headers } from 'next/headers';
 import { auth, currentUser as clerkCurrentUser } from '@clerk/nextjs/server';
 import { query, transaction, one } from './db';
-import { assertLiveConfiguration, developmentAdaptersAllowed } from './env';
+import { assertLiveConfiguration, assertStaffConfiguration, developmentAdaptersAllowed } from './env';
 import { keyedHash, normalizeContact, token, hash, safeEqual, hashPassword, verifyPassword } from './security';
 import type { Client } from './db';
 import { AppError, requireValue } from './errors';
@@ -163,7 +163,8 @@ export async function verifyOtp(challengeId: string, code: string) {
  * hashed-token session as every other login. No second factor.
  */
 export async function loginStaff(identifier: string, password: string, portal: StaffPortal, ip = '') {
-  assertLiveConfiguration();
+  // Staff access depends on core settings only, never on customer-sales readiness.
+  assertStaffConfiguration();
   requireValue(isStaffPortal(portal), 'Choose the admin or gate sign-in page.', 400);
   const raw = identifier.trim();
   requireValue(raw.length > 0 && password.length >= 8, 'Enter your email (or username) and password (min 8 characters).', 400);

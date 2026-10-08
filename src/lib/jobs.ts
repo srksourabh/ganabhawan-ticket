@@ -66,7 +66,6 @@ export interface TickSummary {
   failed: number;
   /** Steps that threw; the remaining steps still ran. */
   errors: string[];
-  /** Steps that threw; the remaining steps still ran. */
 }
 
 /**
@@ -90,14 +89,12 @@ export async function processJobs(limits: number | TickLimits = 20): Promise<Tic
     if (reclaimed.length) console.warn('[alert] reclaimed stale jobs', reclaimed.map((j) => `${j.kind}/${j.key}`).join(', '));
   } catch (err) {
     summary.errors.push('reclaim');
-    summary.errors.push('reclaim');
     console.error('[jobs] reclaim error', err);
   }
 
   try {
     for (const sql of PRUNE_SQL) await query(sql);
   } catch (err) {
-    summary.errors.push('prune');
     summary.errors.push('prune');
     console.error('[jobs] prune error', err);
   }
@@ -106,24 +103,19 @@ export async function processJobs(limits: number | TickLimits = 20): Promise<Tic
     summary.expired = await expireHolds();
   } catch (err) {
     summary.errors.push('expire');
-    summary.errors.push('expire');
     console.error('[jobs] expireHolds error', err);
   }
 
   try {
     summary.reconcile = await reconcileOpenRazorpayPayments(reconcileLimit);
-    summary.reconcile = await reconcileOpenRazorpayPayments(reconcileLimit);
   } catch (err) {
-    summary.errors.push('reconcile');
     summary.errors.push('reconcile');
     console.error('[jobs] reconcile payments error', err);
   }
 
   try {
     summary.refundsPolled = await pollProcessingRefunds(refundLimit);
-    summary.refundsPolled = await pollProcessingRefunds(refundLimit);
   } catch (err) {
-    summary.errors.push('refunds');
     summary.errors.push('refunds');
     console.error('[jobs] refund poll error', err);
   }

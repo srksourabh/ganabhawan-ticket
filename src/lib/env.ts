@@ -72,7 +72,12 @@ const long = (name: string, min: number) => (process.env[name]?.trim().length ??
  * Names (never values) of everything that makes this runtime unsafe to serve.
  * Empty list = safe. Used by the proxy, /api/health and every money/auth path.
  */
-export function configurationProblems(): string[] {
+/**
+ * Settings every live request needs, staff included: database, session and
+ * encryption keys, the public URL, the deploy environment and Clerk (pages
+ * cannot render without it), plus the development-mode safety rule.
+ */
+export function coreConfigurationProblems(): string[] {
   const problems: string[] = [];
   if (devMode()) {
     if (!developmentAdaptersAllowed()) {
@@ -80,17 +85,28 @@ export function configurationProblems(): string[] {
     }
     return problems;
   }
-
   if (!present('DATABASE_URL')) problems.push('DATABASE_URL');
   if (!long('SESSION_SECRET', 32)) problems.push('SESSION_SECRET (32+ chars)');
   if (!long('CREDENTIAL_KEY', 32)) problems.push('CREDENTIAL_KEY (32+ chars)');
-  if (!long('CRON_SECRET', 16)) problems.push('CRON_SECRET (16+ chars)');
-
   const appUrl = process.env.APP_URL?.trim() ?? '';
   if (!appUrl.startsWith('https://') || isLocalAppUrl(appUrl)) problems.push('APP_URL (public https URL)');
+  if (!deployEnv()) problems.push('DEPLOY_ENV (staging or production)');
+  // clerkMiddleware (proxy.ts) and ClerkProvider cannot render any page without both keys.
+  if (!present('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY')) problems.push('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY');
+  if (!present('CLERK_SECRET_KEY')) problems.push('CLERK_SECRET_KEY');
+  return problems;
+}
 
+/**
+ * Settings only CUSTOMER SALES need: payments, customer sign-in codes, SMS and
+ * email confirmations, and the background worker that settles payments.
+ * Missing ones block every customer purchase path, never staff administration.
+ */
+export function salesConfigurationProblems(): string[] {
+  const problems: string[] = [];
+  if (devMode()) return problems; // development mode is judged entirely by coreConfigurationProblems
+  if (!long('CRON_SECRET', 16)) problems.push('CRON_SECRET (16+ chars)');
   const env = deployEnv();
-  if (!env) problems.push('DEPLOY_ENV (staging or production)');
 
   if (process.env.PAYMENT_PROVIDER !== 'razorpay') problems.push('PAYMENT_PROVIDER=razorpay');
   for (const name of ['RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET']) {
@@ -113,14 +129,24 @@ export function configurationProblems(): string[] {
   const resend = present('RESEND_API_KEY') && present('EMAIL_FROM');
   const composio = present('COMPOSIO_API_KEY') && (present('COMPOSIO_CONNECTED_ACCOUNT_ID') || present('COMPOSIO_USER_ID'));
   if (!resend && !composio) problems.push('email delivery (RESEND_API_KEY+EMAIL_FROM or Composio)');
-
-  // clerkMiddleware (proxy.ts) and ClerkProvider cannot render any page without both keys.
-  if (!present('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY')) problems.push('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY');
-  if (!present('CLERK_SECRET_KEY')) problems.push('CLERK_SECRET_KEY');
   return problems;
 }
 
+/** Everything needed to open customer sales (core + sales). */
+export function configurationProblems(): string[] {
+  return [...coreConfigurationProblems(), ...salesConfigurationProblems()];
+}
+
 /** Fail closed: refuse the request with a generic 503; log names only. */
+/** Staff sign-in and administration: core settings only (never customer-sales settings). */
+export function assertStaffConfiguration() {
+  const problems = coreConfigurationProblems();
+  if (problems.length === 0) return;
+  console.error('[config] refusing staff access; missing or unsafe:', problems.join('; '));
+  throw new AppError(503, 'This service is not configured yet. Please try again later.', 'CONFIG_INVALID');
+}
+
+/** Customer sales (holds, checkouts, payment orders, customer codes): every setting. */
 export function assertLiveConfiguration() {
   const problems = configurationProblems();
   if (problems.length === 0) return;
