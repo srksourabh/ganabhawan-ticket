@@ -29,6 +29,19 @@ export default function CartPage() {
 
         {notice && <p role="alert" className="alert alert--error">{notice}</p>}
 
+        {cart.lastOrder && (
+          <div role="status" className={`banner ${cart.lastOrder.outcome === 'paid' ? 'banner--ok' : 'banner--err'}`} style={{ marginBottom: '1rem' }}>
+            <p style={{ margin: 0 }}>
+              {cart.lastOrder.outcome === 'paid'
+                ? t('cart.orderConfirmed', { ref: cart.lastOrder.reference })
+                : t('cart.orderRefunded', { ref: cart.lastOrder.reference })}
+            </p>
+            <p style={{ margin: '.5rem 0 0', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+              <Link href={`/receipts/${cart.lastOrder.checkoutId}`}>{t('receipt.viewReceipt')}</Link>
+              <Link href="/tickets">{t('receipt.viewTickets')}</Link>
+            </p>
+          </div>
+        )}
         {cart.items.length === 0 ? (
           <div className="card" style={{ textAlign: 'center', padding: '3.5rem 1.5rem' }}>
             <span style={{ fontSize: '3.5rem', display: 'block', marginBottom: '1rem' }} aria-hidden="true">🎭</span>

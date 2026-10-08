@@ -22,6 +22,32 @@ function backoffMinutes(attempts: number): number {
   return Math.pow(2, attempts);
 }
 
+export interface TickLimits {
+  /** Queued jobs claimed and run. */
+  jobs: number;
+  /** READY payment attempts checked at Razorpay (one provider call each). */
+  reconcile: number;
+  /** Stalled/processing refunds polled (one provider call each). */
+  refunds: number;
+}
+
+/**
+ * Limits for one tick run inside a Cloudflare Worker (cron trigger or
+ * /api/cron/worker). Every Neon HTTP query, transaction socket and provider
+ * call is a Worker subrequest, and one invocation may make at most 50 on the
+ * Workers Free plan (1000 on Paid). The defaults keep a worst-case tick under
+ * that (tests/integration-worker-budget.test.ts); on the Paid plan raise them
+ * with WORKER_JOB_BATCH / WORKER_RECONCILE_BATCH / WORKER_REFUND_BATCH.
+ * Leftover work is picked up by the next tick.
+ */
+export function workerTickLimits(): TickLimits {
+  const read = (name: string, fallback: number) => {
+    const value = Number(process.env[name]);
+    return Number.isInteger(value) && value > 0 ? value : fallback;
+  };
+  return { jobs: read('WORKER_JOB_BATCH', 3), reconcile: read('WORKER_RECONCILE_BATCH', 5), refunds: read('WORKER_REFUND_BATCH', 2) };
+}
+
 export interface TickSummary {
   reclaimed: number;
   expired: number;
@@ -29,6 +55,8 @@ export interface TickSummary {
   refundsPolled: number;
   processed: number;
   failed: number;
+  /** Steps that threw; the remaining steps still ran. */
+  errors: string[];
 }
 
 /**
@@ -37,8 +65,10 @@ export interface TickSummary {
  * serialised per refund and deduplicated at the provider, so a reclaimed or
  * concurrent duplicate run cannot pay twice.
  */
-export async function processJobs(limit = 20): Promise<TickSummary> {
-  const summary: TickSummary = { reclaimed: 0, expired: 0, reconcile: { checked: 0, settled: 0, failed: 0 }, refundsPolled: 0, processed: 0, failed: 0 };
+export async function processJobs(limits: number | TickLimits = 20): Promise<TickSummary> {
+  const { jobs: limit, reconcile: reconcileLimit, refunds: refundLimit } =
+    typeof limits === 'number' ? { jobs: limits, reconcile: 20, refunds: 20 } : limits;
+  const summary: TickSummary = { reclaimed: 0, expired: 0, reconcile: { checked: 0, settled: 0, failed: 0 }, refundsPolled: 0, processed: 0, failed: 0, errors: [] };
   try {
     const reclaimed = await query(
       `UPDATE jobs SET state='PENDING', locked_at=NULL
@@ -49,53 +79,57 @@ export async function processJobs(limit = 20): Promise<TickSummary> {
     summary.reclaimed = reclaimed.length;
     if (reclaimed.length) console.warn('[alert] reclaimed stale jobs', reclaimed.map((j) => `${j.kind}/${j.key}`).join(', '));
   } catch (err) {
+    summary.errors.push('reclaim');
     console.error('[jobs] reclaim error', err);
   }
 
   try {
     for (const sql of PRUNE_SQL) await query(sql);
   } catch (err) {
+    summary.errors.push('prune');
     console.error('[jobs] prune error', err);
   }
 
   try {
     summary.expired = await expireHolds();
   } catch (err) {
+    summary.errors.push('expire');
     console.error('[jobs] expireHolds error', err);
   }
 
   try {
-    summary.reconcile = await reconcileOpenRazorpayPayments();
+    summary.reconcile = await reconcileOpenRazorpayPayments(reconcileLimit);
   } catch (err) {
+    summary.errors.push('reconcile');
     console.error('[jobs] reconcile payments error', err);
   }
 
   try {
-    summary.refundsPolled = await pollProcessingRefunds();
+    summary.refundsPolled = await pollProcessingRefunds(refundLimit);
   } catch (err) {
+    summary.errors.push('refunds');
     console.error('[jobs] refund poll error', err);
   }
 
-  // Claim pending/runnable jobs
-  const jobs = await query<{
-    id: string;
-    kind: string;
-    key: string;
-    payload: Record<string, unknown>;
-    attempts: number;
-    state: string;
-  }>(
-    `UPDATE jobs SET state='RUNNING', locked_at=now(), attempts=attempts+1
-     WHERE id IN (
-       SELECT id FROM jobs
-       WHERE state='PENDING' AND run_at<=now()
-       ORDER BY run_at
-       LIMIT $1
-       FOR UPDATE SKIP LOCKED
-     )
-     RETURNING *`,
-    [limit],
-  );
+  // Claim pending/runnable jobs. A failed claim is reported like any other step.
+  let jobs: { id: string; kind: string; key: string; payload: Record<string, unknown>; attempts: number; state: string }[] = [];
+  try {
+    jobs = await query(
+      `UPDATE jobs SET state='RUNNING', locked_at=now(), attempts=attempts+1
+       WHERE id IN (
+         SELECT id FROM jobs
+         WHERE state='PENDING' AND run_at<=now()
+         ORDER BY run_at
+         LIMIT $1
+         FOR UPDATE SKIP LOCKED
+       )
+       RETURNING *`,
+      [limit],
+    );
+  } catch (err) {
+    summary.errors.push('claim');
+    console.error('[jobs] claim error', err);
+  }
 
   for (const job of jobs) {
     try {

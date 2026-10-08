@@ -8,13 +8,12 @@ import { jsonOk } from '@/lib/http';
  * configuration is unsafe (the proxy refuses API traffic in that state too).
  */
 export async function GET(): Promise<Response> {
+  // A hung connection must read as unhealthy, not hang the monitor: every query is bounded.
+  const bounded = <T,>(work: Promise<T>) =>
+    Promise.race([work, new Promise<never>((_, reject) => setTimeout(() => reject(new Error('db timeout')), 5000))]);
   let db = false;
   try {
-    // A hung connection must read as unhealthy, not hang the monitor.
-    await Promise.race([
-      query('SELECT 1'),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('db timeout')), 5000)),
-    ]);
+    await bounded(query('SELECT 1'));
     db = true;
   } catch {
     db = false;
@@ -24,7 +23,7 @@ export async function GET(): Promise<Response> {
   let schema = false;
   if (db) {
     try {
-      schema = (await query<{ ok: boolean }>("SELECT to_regclass('public.checkouts') IS NOT NULL AS ok"))[0]?.ok === true;
+      schema = (await bounded(query<{ ok: boolean }>("SELECT to_regclass('public.checkouts') IS NOT NULL AS ok")))[0]?.ok === true;
     } catch {
       schema = false;
     }

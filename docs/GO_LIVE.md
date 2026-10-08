@@ -98,7 +98,9 @@ npm run deploy:vinext
 
 ## 7. Scheduler and monitoring
 
-* GitHub Actions `cron-holds.yml` posts to `/api/cron/worker` every 2 minutes. Set the repository secrets `CRON_SECRET` and `APP_URL`. GitHub cron is best-effort; the external monitor below catches a stopped worker.
+* The Worker's Cron Trigger (`wrangler.jsonc` `triggers.crons`, handled in `worker/index.ts`) runs one tick every minute through `/api/cron/worker`. It needs the Worker secrets `CRON_SECRET` and `APP_URL`; failed ticks appear under the Worker's Cron Events / logs.
+* A tick stays under the Workers Free plan's 50 subrequests per invocation (`tests/integration-worker-budget.test.ts`): 3 jobs, 5 payment reconciliations and 2 refund polls per minute. On the Paid plan raise `WORKER_JOB_BATCH`, `WORKER_RECONCILE_BATCH`, `WORKER_REFUND_BATCH` (e.g. 20/20/10) for faster catch-up.
+* GitHub Actions `cron-holds.yml` posts to the same route as a fallback (repository secrets `CRON_SECRET` and `APP_URL`). GitHub's schedule is best-effort and in practice runs every few hours, so it is not the primary scheduler.
 * External uptime monitor (UptimeRobot, Better Stack…), alert on any non-200:
   * `GET https://<worker>/api/health` (public)
   * `GET https://<worker>/api/ops/status` with header `Authorization: Bearer <OPS_MONITOR_TOKEN>`. Returns 503 when money is unresolved (unmatched capture, failed/stalled refund) or the worker is stuck.

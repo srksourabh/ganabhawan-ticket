@@ -319,7 +319,8 @@ export async function checkoutReceipt(userId: string, checkoutId: string): Promi
 
 async function buildReceipt(co: Row): Promise<Receipt> {
   const bookings = await query<Row>(
-    'SELECT id, reference, quantity, unit_price, total, status, snapshot, holder_name FROM bookings WHERE checkout_id=$1 ORDER BY created_at, id',
+    // expires_at is required by checkoutStatus: without it every open checkout read as EXPIRED.
+    'SELECT id, reference, quantity, unit_price, total, status, expires_at, snapshot, holder_name FROM bookings WHERE checkout_id=$1 ORDER BY created_at, id',
     [co.id],
   );
   const user = (await query<Row>('SELECT name, contact FROM users WHERE id=$1', [co.user_id]))[0];
