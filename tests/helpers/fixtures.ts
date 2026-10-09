@@ -31,9 +31,12 @@ export function useLiveStagingEnv() {
     EMAIL_FROM: 'tickets@tickets.test',
     ALLOW_PUBLIC_SALES: 'true',
     // SMS goes to the fake MSG91 (tests/helpers/fake-razorpay.ts); nothing is really sent.
+    // Mobile features ON here so the existing SMS tests run; the flag-off journey is tested in integration-mobile-flag.test.ts.
+    MOBILE_PHONE_NUMBER_ENABLED: 'true',
     SMS_PROVIDER: 'msg91',
     MSG91_AUTH_KEY: 'test-auth-key',
     MSG91_TEMPLATE_ID: 'tmpl-confirm',
+    MSG91_OTP_TEMPLATE_ID: 'tmpl-otp',
     DB_POOL_MAX: '10',
     ...TEST_SECRETS,
   });

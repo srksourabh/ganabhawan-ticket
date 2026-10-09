@@ -50,7 +50,7 @@ export default function CheckoutPage() {
   const [lines, setLines] = useState<LineState[]>([]);
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(false);
-  const [me, setMe] = useState<{ contact?: string; name?: string; mobile?: string | null }>({});
+  const [me, setMe] = useState<{ contact?: string; name?: string; mobile?: string | null; mobileEnabled?: boolean }>({});
   const runningRef = useRef(false);
   /** One key per checkout attempt: a retried request reuses it; after a failure the next attempt gets a new one. */
   const checkoutKey = useRef(newCheckoutKey());
@@ -66,7 +66,7 @@ export default function CheckoutPage() {
         return res.json();
       })
       .then((body) => {
-        if (body?.contact) setMe({ contact: body.contact, name: body.name, mobile: body.mobile ?? null });
+        if (body?.contact) setMe({ contact: body.contact, name: body.name, mobile: body.mobile ?? null, mobileEnabled: body.mobileEnabled === true });
         setAuthChecked(true);
       })
       .catch(() => setAuthChecked(true));
@@ -261,9 +261,7 @@ export default function CheckoutPage() {
           </div>
 
           {/* No Pay button while a line cannot be sold: paying would only fail again. */}
-          {me.contact && !me.mobile ? (
-            <MobileVerify onVerified={(mobile) => setMe((current) => ({ ...current, mobile }))} />
-          ) : blocked ? (
+          {blocked ? (
             <Link href="/cart" className="btn btn--ghost btn--block">{t('checkout.editCart')}</Link>
           ) : (
             <button type="button" className="btn btn--primary btn--block" disabled={running} onClick={runCheckout}>
@@ -272,6 +270,11 @@ export default function CheckoutPage() {
           )}
 
           <p className="muted" style={{ margin: 0 }}>{t('checkout.noRefunds')}</p>
+
+          {/* Email-only accounts may buy; a verified mobile only adds the SMS confirmation (offered only while the server has mobile features on). */}
+          {me.mobileEnabled && me.contact?.includes('@') && !me.mobile && !running && (
+            <MobileVerify onVerified={(mobile) => setMe((current) => ({ ...current, mobile }))} />
+          )}
 
           {done && lines.some((l) => l.status === 'error') && (
             <p className="muted">{t('checkout.retryHint')}</p>

@@ -4,8 +4,9 @@ import { useState } from 'react';
 import { useLocale } from '@/components/LocaleProvider';
 
 /**
- * A verified mobile is required to buy (email is optional). The customer proves the
- * number with a code sent to it; the server stores it only after that (account-contacts.ts).
+ * Optional for an email account: add a mobile to also get the confirmation by SMS. The
+ * customer proves the number with a code sent to it; the server stores it only after that
+ * (account-contacts.ts). Buying never depends on it.
  */
 export default function MobileVerify({ onVerified }: { onVerified: (mobile: string) => void }) {
   const { t } = useLocale();
@@ -32,7 +33,7 @@ export default function MobileVerify({ onVerified }: { onVerified: (mobile: stri
 
   return (
     <div className="card stack stack--sm">
-      <p style={{ margin: 0, fontWeight: 700 }}>{t('mobile.required')}</p>
+      <p style={{ margin: 0, fontWeight: 700 }}>{t('mobile.optional')}</p>
       {!challengeId ? (
         <form className="stack stack--sm" onSubmit={async (e) => { e.preventDefault(); const r = await call('POST', { mobile }); if (r?.challengeId) setChallengeId(r.challengeId); }}>
           <label className="field" htmlFor="verify-mobile">

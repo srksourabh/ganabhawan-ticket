@@ -2,13 +2,14 @@ import { randomInt } from 'node:crypto';
 import { cookies, headers } from 'next/headers';
 import { auth, currentUser as clerkCurrentUser } from '@clerk/nextjs/server';
 import { query, transaction, one } from './db';
-import { assertLiveConfiguration, assertStaffConfiguration, developmentAdaptersAllowed } from './env';
+import { assertLiveConfiguration, assertStaffConfiguration, developmentAdaptersAllowed, mobileConfigurationProblems, mobileFeaturesEnabled } from './env';
 import { keyedHash, normalizeContact, token, hash, safeEqual, hashPassword, verifyPassword } from './security';
 import type { Client } from './db';
 import { AppError, requireValue } from './errors';
 import type { User, Role } from './types';
 import { audit } from './audit';
-import { httpsmsEnabled, otpProvider, sendHttpsmsMessage } from './httpsms';
+import { otpProvider } from './httpsms';
+import { SmsDisabledError, otpSmsConfigured, sendFreeTextSms, sendOtpSms, smsProvider } from './sms';
 import { composioGmailConfigured, sendComposioGmail } from './composio-gmail';
 
 export async function rateLimit(key: string, limit: number, seconds: number) {
@@ -47,31 +48,32 @@ export async function sendEmail(to: string, subject: string, message: string, id
   requireValue(response.ok, 'Email delivery is temporarily unavailable.', 503);
 }
 
+/**
+ * A free-text message: email to an address. A mobile gets free text only through a
+ * local development gateway: MSG91 (live) sends approved templates only, so sign-in
+ * codes, confirmations and notices go through sms.ts (sendOtpSms / sendSms / sendNoticeSms).
+ */
 export async function sendMessage(contact: string, subject: string, message: string, requestId?: string) {
   const phone = !contact.includes('@');
-  const viaHttpsms = phone && httpsmsEnabled();
   const viaComposio = !phone && composioGmailConfigured();
   // Silent no-op delivery exists only for local development; live mode must really send.
-  if (developmentAdaptersAllowed() && otpProvider() === 'development' && !viaHttpsms && !viaComposio) return;
+  if (phone && !mobileFeaturesEnabled()) throw new SmsDisabledError(); // no SMS gateway at all while mobile is off
+  if (developmentAdaptersAllowed() && otpProvider() === 'development' && !viaComposio && (!phone || smsProvider() === 'none')) return;
 
   if (!phone) {
     await sendEmail(contact, subject, message);
     return;
   }
+  requireValue(smsProvider() !== 'msg91', 'Free-text SMS is not available: MSG91 sends approved templates only.', 503);
+  await sendFreeTextSms(contact, message, requestId);
+}
 
-  if (viaHttpsms) {
-    await sendHttpsmsMessage(contact, message, requestId);
-    return;
-  }
-
-  requireValue(process.env.SMS_API_URL && process.env.SMS_API_TOKEN, 'SMS delivery is not configured. Please use email.', 503);
-  const response = await fetch(process.env.SMS_API_URL!, {
-    method: 'POST',
-    headers: { Authorization: 'Bearer ' + process.env.SMS_API_TOKEN, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ to: contact, message }),
-    signal: AbortSignal.timeout(10000),
-  });
-  requireValue(response.ok, 'SMS delivery is temporarily unavailable.', 503);
+/** The sign-in code: email to an address; the MSG91 OTP template to a mobile. */
+async function sendCode(contact: string, code: string, subject: string, text: string, requestId: string) {
+  if (contact.includes('@')) return sendMessage(contact, subject, text, requestId);
+  // Local development without an SMS gateway: the code is shown on the page instead.
+  if (developmentAdaptersAllowed() && otpProvider() === 'development' && !otpSmsConfigured()) return;
+  await sendOtpSms(contact, code, text, requestId);
 }
 
 /**
@@ -100,6 +102,16 @@ export function verifiedClerkEmail(clerkUser: {
   return clerkUser.emailAddresses.find((entry) => entry.verification?.status === 'verified')?.emailAddress ?? null;
 }
 
+export const MOBILE_UNAVAILABLE = 'Sign-in with a mobile number is not available yet. Please use your email address.';
+
+/** Refuses every customer mobile flow while mobile features are off (env.ts mobileFeaturesEnabled). */
+export function assertMobileAvailable() {
+  if (mobileFeaturesEnabled()) return;
+  const problems = mobileConfigurationProblems();
+  if (problems.length) console.error('[config] mobile features switched on but unusable; missing or invalid:', problems.join('; '));
+  throw new AppError(400, MOBILE_UNAVAILABLE, 'MOBILE_DISABLED');
+}
+
 export async function requestOtp(raw: string, ip: string) {
   assertLiveConfiguration();
   let contact: string;
@@ -108,6 +120,9 @@ export async function requestOtp(raw: string, ip: string) {
   } catch (error) {
     throw new AppError(400, (error as Error).message);
   }
+  // Mobile sign-in only while MOBILE_PHONE_NUMBER_ENABLED is on and MSG91 is configured.
+  // Same answer for every number (no account enumeration); nothing stored, nothing sent.
+  if (!contact.includes('@')) assertMobileAvailable();
   await rateLimit('otp-ip:' + hash(ip), 30, 3600);
   await rateLimit('otp-contact:' + keyedHash(contact), 5, 3600);
   const code = String(randomInt(100000, 1000000));
@@ -122,7 +137,7 @@ export async function requestOtp(raw: string, ip: string) {
   const body = sms
     ? `Samatat Sanskriti code: ${code}. Valid 5 min. Do not share.`
     : `Your code is ${code}. It expires in 5 minutes. Do not share it.`;
-  await sendMessage(contact, 'Your Samatat Sanskriti sign-in code', body, challenge.id);
+  await sendCode(contact, code, 'Your Samatat Sanskriti sign-in code', body, challenge.id);
   return {
     challengeId: challenge.id,
     message: sms ? 'If the number can receive SMS, your code is on its way.' : 'If delivery is available, your code is on its way.',
@@ -136,9 +151,13 @@ export async function verifyOtp(challengeId: string, code: string) {
     if (!challenge || challenge.used || new Date(challenge.expires_at).getTime() < Date.now() || challenge.attempts >= 5) {
       return { error: 'This code has expired or is no longer valid.' };
     }
+    // A mobile code issued before mobile features were switched off cannot sign anyone in.
+    if (!String(challenge.contact).includes('@') && !mobileFeaturesEnabled()) return { error: MOBILE_UNAVAILABLE };
     await c.query('UPDATE otp_challenges SET attempts=attempts+1 WHERE id=$1', [challengeId]);
     if (!safeEqual(challenge.digest, keyedHash(challenge.contact + ':' + code))) return { error: 'The code is incorrect. Please try again.' };
-    let user = await one<User>(c, 'SELECT * FROM users WHERE contact=$1 FOR UPDATE', [challenge.contact]);
+    // A mobile already verified on an email account signs in to THAT account (no duplicate
+    // account). verified_mobile is unique and stored only after its own code was proven.
+    let user = await one<User>(c, 'SELECT * FROM users WHERE contact=$1 OR verified_mobile=$1 ORDER BY (contact=$1) DESC LIMIT 1 FOR UPDATE', [challenge.contact]);
     // Staff accounts sign in with their password at /admin/login or /gate/login only:
     // a customer code must never become a password-less staff login.
     if (user && user.role !== 'customer') {

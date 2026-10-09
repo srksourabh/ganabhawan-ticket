@@ -1,6 +1,6 @@
 /**
  * "Sales readiness controls CUSTOMER SALES, not INTERNAL ADMINISTRATION."
- * With customer-sales settings missing (here: SMS/MSG91, then Razorpay), staff
+ * With customer-sales settings missing (here: email delivery, then Razorpay), staff
  * still sign in, administer and scan; every customer purchase path stays
  * blocked; and once sales are configured the purchase flow works as before.
  * Real staff login, real purchase functions and the real proxy decision
@@ -25,7 +25,8 @@ let gate: typeof import('../src/lib/config-gate');
 let env: typeof import('../src/lib/env');
 let query: typeof import('../src/lib/db').query;
 
-const SMS = ['SMS_PROVIDER', 'MSG91_AUTH_KEY', 'MSG91_TEMPLATE_ID'] as const;
+// MSG91 is no longer a sales setting (MOBILE_PHONE_NUMBER_ENABLED); email delivery is.
+const EMAIL = ['RESEND_API_KEY', 'EMAIL_FROM'] as const;
 const RAZORPAY = ['RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET'] as const;
 function without<T>(names: readonly string[], run: () => Promise<T>): Promise<T> {
   const saved = Object.fromEntries(names.map((n) => [n, process.env[n]]));
@@ -63,7 +64,7 @@ async function account(role: 'owner' | 'scanner' | 'supervisor' | 'inventory') {
   return contact;
 }
 
-for (const [label, missing] of [['MSG91/SMS not configured', SMS], ['Razorpay not configured', RAZORPAY]] as const) {
+for (const [label, missing] of [['email delivery not configured', EMAIL], ['Razorpay not configured', RAZORPAY]] as const) {
   test(`sales not ready (${label}): owner signs in at /admin/login and scanner/supervisor at /gate/login`, { skip }, async () => {
     const show = await makeShow({ startsInMinutes: 30 }); // before staff, so scanners are scoped to it
     const owner = await account('owner');
@@ -123,7 +124,7 @@ test('sales not ready: unauthorised users still cannot reach admin or gate areas
   const scanner = await account('scanner');
   const inventory = await account('inventory');
   const customer = await makeUser();
-  await without(SMS, async () => {
+  await without(EMAIL, async () => {
     for (const [contact, door] of [[scanner, 'admin'], [inventory, 'gate']] as const) {
       const refused = await auth.loginStaff(contact, PASSWORD, door, '10.9.0.3').catch((e) => e);
       assert.equal(refused.code, 'WRONG_PORTAL');

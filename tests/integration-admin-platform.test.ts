@@ -288,7 +288,7 @@ test('staff: owner creates a scanner (hashed password, all upcoming shows on eve
   assert.throws(() => auth.assertRole({ ...owner, role: 'scanner' }, ['owner', 'inventory']), /permission/, 'a scanner cannot use admin functions');
 });
 
-// ---- NOTIFICATION MATRIX (verified contacts; mobile is required to buy) -----------------------------
+// ---- NOTIFICATION MATRIX (verified contacts; at least one is required to buy) -------------------------
 
 async function paidCart(user: User) {
   const a = await makeShow({ price: 50000 });
@@ -328,26 +328,27 @@ test('notify matrix: email + mobile → exactly one consolidated email AND one S
   assert.equal(smsTo('+919800000002'), 1);
   const mail = fake.emails[0];
   assert.equal(mail.idempotencyKey, `checkout:${co.id}`, 'provider idempotency key = job key');
-  for (const expected of ['Please collect your physical tickets before the show.', 'Zone: Premier', 'Quantity: 2', '/tickets', `/receipts/${co.id}`, co.reference]) {
+  for (const expected of ['Your booking is confirmed! View your QR tickets using the secure link below. Please collect your physical cards before the show.', 'Zone: Premier', 'Quantity: 2', '/tickets', `/receipts/${co.id}`, co.reference]) {
     assert.ok(mail.text.includes(expected), `email mentions ${expected}`);
   }
   const keys = (await query<{ key: string; channel: string }>('SELECT key, channel FROM notification_deliveries ORDER BY channel')).map((r) => [r.channel, r.key]);
   assert.deepEqual(keys, [['email', `checkout:${co.id}`], ['sms', `sms:checkout:${co.id}`]], 'each delivery recorded once');
 });
 
-test('notify matrix: email only and no verified contact → purchase blocked before any hold or payment order', { skip }, async () => {
+test('notify matrix: no verified contact → purchase blocked before any hold or payment order', { skip }, async () => {
   const show = await makeShow();
-  const emailOnly = await makeUser('customer', undefined, { mobile: null });
+  // A legacy account whose contact is neither an email nor a mobile number.
+  const neither = (await query<User>("INSERT INTO users(contact,name) VALUES('legacy-username','') RETURNING id,contact,name,role"))[0];
   for (const attempt of [
-    () => checkout.createCheckout(emailOnly, [{ productId: show.productId, quantity: 1, version: 1 }], randomUUID()),
-    () => commerce.reserve(emailOnly, { productId: show.productId, quantity: 1, version: 1 }, randomUUID()),
+    () => checkout.createCheckout(neither, [{ productId: show.productId, quantity: 1, version: 1 }], randomUUID()),
+    () => commerce.reserve(neither, { productId: show.productId, quantity: 1, version: 1 }, randomUUID()),
   ]) {
     const error = await attempt().catch((e) => e);
-    assert.equal(error.code, 'MOBILE_REQUIRED');
+    assert.equal(error.code, 'CONTACT_REQUIRED');
     assert.equal(error.status, 409);
   }
   const { assertCanPurchase } = await import('../src/lib/account-contacts');
-  await assert.rejects(assertCanPurchase(randomUUID()), /verify your mobile/, 'no account/contact at all is blocked too');
+  await assert.rejects(assertCanPurchase(randomUUID()), /verified email address or mobile number/, 'no account/contact at all is blocked too');
   assert.equal((await query('SELECT count(*)::int n FROM bookings'))[0].n, 0);
   assert.equal((await query('SELECT count(*)::int n FROM checkouts'))[0].n, 0);
   assert.equal(fake.count('POST /orders'), 0);

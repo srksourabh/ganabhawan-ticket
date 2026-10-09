@@ -8,7 +8,7 @@ Mandatory before production. Automated tests simulate Razorpay's HTTP API; only 
 * `GET /api/ops/status` **without** credentials must return **401**. A **404** means the deployed build predates the endpoint: rebuild and redeploy before continuing.
 * `GET /api/health` must report `"mode":"live","env":"staging"`.
 * `npx wrangler deployments list --name <staging worker name>` must show a deployment created after the commit you are testing. `wrangler.jsonc` names a single Worker (`ganabhawan-festival`); deploy staging under a **different** Worker name so a staging deploy can never replace production.
-* Mobile OTP uses httpSMS, which relays through an Android gateway phone. Staging needs `OTP_PROVIDER=httpsms` (or both httpSMS keys), `HTTPSMS_API_KEY`, and `HTTPSMS_FROM` set to **the gateway phone's own number in +91… form**. The gateway phone must be online with the httpSMS app running and SMS credit. Worker logs show `httpsms accepted { id, status }` for each send; look that id up in the httpSMS dashboard if the SMS does not arrive.
+* Mobile OTP and ticket SMS are OFF unless `MOBILE_PHONE_NUMBER_ENABLED=true`; then they use MSG91 only (httpSMS is never used in live mode). To drill mobile, staging needs `MOBILE_PHONE_NUMBER_ENABLED=true`, `SMS_PROVIDER=msg91`, `MSG91_AUTH_KEY`, `MSG91_OTP_TEMPLATE_ID` and `MSG91_TEMPLATE_ID` (DLT-approved templates; see docs/HANDOVER.md sections 7–8). Worker logs show `msg91 otp send failed` / `msg91 confirmation send failed` with the HTTP status (never the number or code) when MSG91 refuses a message.
 
 Test cards and UPI are listed at https://razorpay.com/docs/payments/payments/test-card-upi-details/ (success card, failure card, `success@razorpay` / `failure@razorpay` UPI).
 

@@ -2,9 +2,12 @@ import { query } from './db';
 import { expireHolds } from './commerce';
 import { reconcileOpenRazorpayPayments } from './payments';
 import { executeRefund, pollProcessingRefunds } from './refunds';
-import { sendMessage } from './auth';
+import { sendEmail, sendMessage } from './auth';
 import { deliverConfirmation, sendSmsConfirmation, type ConfirmationTarget } from './notify';
 import { pruneExpiredCartLines, removePurchasedFromCart } from './account-cart';
+import { SmsDisabledError, sendNoticeSms, smsProvider } from './sms';
+import { mobileFeaturesEnabled } from './env';
+import { appBaseUrl } from './confirmation';
 
 /** A RUNNING job whose lease (locked_at) is older than this is reclaimed. */
 export const STALE_JOB_MINUTES = 15;
@@ -20,6 +23,8 @@ export const PRUNE_SQL = [
 ];
 
 export const MAX_ATTEMPTS = 5;
+/** last_error of an SMS job parked because MOBILE_PHONE_NUMBER_ENABLED is off (not sent, not delivered). */
+export const SMS_DISABLED_MARKER = 'SMS_DISABLED: not sent (MOBILE_PHONE_NUMBER_ENABLED is off)';
 
 function backoffMinutes(attempts: number): number {
   // Exponential backoff after attempt n: 2, 4, 8, 16 minutes, then FAILED.
@@ -154,6 +159,14 @@ export async function processJobs(limits: number | TickLimits = 20): Promise<Tic
       await query("UPDATE jobs SET state='DONE', last_error=NULL WHERE id=$1", [job.id]);
       summary.processed++;
     } catch (err) {
+      if (err instanceof SmsDisabledError) {
+        // Mobile features are off: park the SMS without retrying and without recording a delivery.
+        // It stays FAILED with this marker; switching mobile on later does not resend it by itself
+        // (an operator may requeue it: UPDATE jobs SET state='PENDING', run_at=now() WHERE key=...).
+        console.warn(`[jobs] ${job.kind}/${job.key} not sent: customer SMS is switched off`);
+        await query("UPDATE jobs SET state='FAILED', last_error=$1, locked_at=NULL WHERE id=$2", [SMS_DISABLED_MARKER, job.id]);
+        continue;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[jobs] ${job.kind}/${job.key} attempt ${job.attempts} failed:`, msg);
 
@@ -219,7 +232,18 @@ async function handleJob(kind: string, key: string, payload: Record<string, unkn
         )
       )[0];
       if (!row) return;
-      await sendMessage(row.contact, `Booking update ${row.reference}`, message);
+      const subject = `Booking update ${row.reference}`;
+      // A mobile gets the approved MSG91 booking-update template (link to the booking page, which shows the change).
+      if (row.contact.includes('@')) {
+        // The job key is Resend's Idempotency-Key: a retry after a send whose DONE update was lost is not a second email.
+        await sendEmail(row.contact, subject, message, key);
+      } else if (!mobileFeaturesEnabled()) {
+        throw new SmsDisabledError();
+      } else if (smsProvider() !== 'none') {
+        await sendNoticeSms(row.contact, { REFERENCE: row.reference, LINK: `${appBaseUrl()}/tickets/${bookingId}` }, `${subject}: ${message}`, key);
+      } else {
+        await sendMessage(row.contact, subject, message); // local development gateway / no-op
+      }
       break;
     }
 

@@ -5,8 +5,7 @@
  *       cannot change any amount.
  *  D/E  repeated payment cancellation and retry (across hold expiry) never
  *       poison the cart; inventory is released and re-held correctly.
- *  F    mobile OTP through httpSMS (stubbed): payload, persistence, provider
- *       failure surfaced (never silent), and verification.
+ *  F    provider-text redaction (mobile OTP via MSG91: integration-msg91-contacts.test.ts).
  * The checkout UI's per-line loop is reproduced exactly: one hold + one order per
  * cart line, a fresh checkout key per attempt (app/cart/checkout/page.tsx).
  */
@@ -21,7 +20,6 @@ const skip = !DB_AVAILABLE;
 const fake = new FakeRazorpay();
 let commerce: typeof import('../src/lib/commerce');
 let payments: typeof import('../src/lib/payments');
-let auth: typeof import('../src/lib/auth');
 let query: typeof import('../src/lib/db').query;
 
 before(async () => {
@@ -30,7 +28,6 @@ before(async () => {
   fake.install();
   commerce = await import('../src/lib/commerce');
   payments = await import('../src/lib/payments');
-  auth = await import('../src/lib/auth');
   ({ query } = await import('../src/lib/db'));
 });
 after(async () => {
@@ -149,70 +146,7 @@ test('E: retries spanning hold expiry release the old hold and create a valid ne
   assert.equal((await query("SELECT count(*)::int n FROM refunds"))[0].n, 1);
 });
 
-/* ---------- F: mobile OTP via httpSMS (provider stubbed, no real credentials) ---------- */
-
-function withHttpsms(respond: (body: Record<string, unknown>) => Response) {
-  const previous = { OTP_PROVIDER: process.env.OTP_PROVIDER, HTTPSMS_API_KEY: process.env.HTTPSMS_API_KEY, HTTPSMS_FROM: process.env.HTTPSMS_FROM };
-  Object.assign(process.env, { OTP_PROVIDER: 'httpsms', HTTPSMS_API_KEY: 'stub-key', HTTPSMS_FROM: '+91 91112 22333' });
-  const sent: Record<string, unknown>[] = [];
-  const underlying = globalThis.fetch;
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input instanceof Request ? input.url : input);
-    if (url === 'https://api.httpsms.com/v1/messages/send') {
-      const body = JSON.parse(String(init?.body));
-      assert.equal((init?.headers as Record<string, string>)['x-api-key'], 'stub-key');
-      sent.push(body);
-      return respond(body);
-    }
-    return underlying(input, init);
-  }) as typeof fetch;
-  return {
-    sent,
-    restore() {
-      globalThis.fetch = underlying;
-      for (const [k, v] of Object.entries(previous)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
-    },
-  };
-}
-
-test('F: mobile OTP is sent through httpSMS, stored hashed, and verifies', { skip }, async () => {
-  const sms = withHttpsms(() => new Response(JSON.stringify({ status: 'success', data: { id: 'msg_1', status: 'pending' } }), { status: 200 }));
-  try {
-    const res = await auth.requestOtp('98765 43210', '10.1.1.1');
-    assert.equal(sms.sent.length, 1);
-    assert.deepEqual({ from: sms.sent[0].from, to: sms.sent[0].to }, { from: '+919111222333', to: '+919876543210' });
-    assert.equal('developmentCode' in res, false, 'live mode never returns the code');
-    const row = (await query<{ contact: string; digest: string }>('SELECT contact, digest FROM otp_challenges WHERE id=$1', [res.challengeId]))[0];
-    const code = /code: (\d{6})/.exec(String(sms.sent[0].content))![1];
-    assert.equal(row.contact, '+919876543210');
-    assert.ok(!row.digest.includes(code), 'stored as a keyed hash, not the code');
-    await assert.rejects(() => auth.verifyOtp(res.challengeId, code === '000000' ? '111111' : '000000'), /incorrect/i);
-    const session = await auth.verifyOtp(res.challengeId, code);
-    assert.equal(session.user.contact, '+919876543210');
-  } finally {
-    sms.restore();
-  }
-});
-
-test('F: an httpSMS rejection is reported to the user, never a silent "code sent"', { skip }, async () => {
-  // The provider echoes the recipient and the message text back in its error.
-  const sms = withHttpsms((body) => new Response(JSON.stringify({ status: 'error', message: `cannot deliver to ${body.to}: ${body.content}` }), { status: 400 }));
-  const logged: string[] = [];
-  const originalError = console.error;
-  console.error = (...parts: unknown[]) => { logged.push(parts.map(String).join(' ')); };
-  try {
-    await assert.rejects(() => auth.requestOtp('+919876543211', '10.1.1.2'), /SMS delivery is temporarily unavailable/);
-  } finally {
-    console.error = originalError;
-    sms.restore();
-  }
-  const line = logged.find((l) => l.startsWith('httpsms send failed'));
-  assert.ok(line, 'provider failure is logged for diagnosis');
-  assert.ok(!/9876543211/.test(line!), 'no phone number in logs');
-  const code = /code: (\d{6})/.exec(String(sms.sent[0].content))![1];
-  assert.ok(!line!.includes(code), 'no OTP in logs');
-  assert.ok(line!.includes('[redacted]'));
-});
+/* ---------- F: mobile OTP now goes through MSG91: tests/integration-msg91-contacts.test.ts ---------- */
 
 test('provider text is redacted before logging (phone numbers in any spacing, OTP codes)', async () => {
   const { redactDigits } = await import('../src/lib/httpsms');
@@ -220,15 +154,4 @@ test('provider text is redacted before logging (phone numbers in any spacing, OT
   assert.equal(redactDigits('to=+919876543210 code 123456'), 'to=[redacted] code [redacted]');
   assert.doesNotMatch(redactDigits('(033) 2345-6789'), /\d/, 'no digit of a landline survives');
   assert.equal(redactDigits('rate limit 429, retry in 30s'), 'rate limit 429, retry in 30s', 'short numbers stay for diagnosis');
-});
-
-test('F: email OTP is unaffected by the SMS configuration', { skip }, async () => {
-  const sms = withHttpsms(() => new Response('{}', { status: 200 }));
-  try {
-    await auth.requestOtp('buyer@tickets.test', '10.1.1.3');
-    assert.equal(sms.sent.length, 0, 'email never goes to the SMS gateway');
-    assert.ok(fake.emails.some((e) => e.to === 'buyer@tickets.test'));
-  } finally {
-    sms.restore();
-  }
 });
