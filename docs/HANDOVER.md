@@ -86,44 +86,56 @@ Until then the line stays and shows its live state. Note the existing sales rule
 
 | Account | Can buy? |
 |---|---|
-| Mobile only (signs in with mobile) | Yes |
+| Mobile only (signs in with an MSG91 SMS code) | Only while mobile features are on (section 7); otherwise `CONTACT_REQUIRED` |
+| Email only (email code or Google) | Yes |
 | Email + verified mobile | Yes |
-| Email only | **No**: "Add and verify your mobile number" (HTTP 409, code `MOBILE_REQUIRED`) |
-| No verified contact | No |
+| No verified contact | **No**: HTTP 409, code `CONTACT_REQUIRED` |
 
-The rule is enforced server-side before anything is held (`createCheckout`, `reserve`, and both payment-order routes). An email account adds a mobile at checkout: a code is sent to the number (the existing OTP challenge mechanism) and only after the code is proven is it stored as `users.verified_mobile` (`POST/PUT /api/account/mobile`). A number already used by another account is refused. A mobile-only account cannot add an email yet (optional; not built).
+**`MOBILE_PHONE_NUMBER_ENABLED` (default `false`, the current production setting):** customers sign in, buy and are confirmed by email only. A mobile sign-in or "add mobile" attempt gets `MOBILE_DISABLED` ("Sign-in with a mobile number is not available yet. Please use your email address."), the same answer for every number; nothing is stored or sent and no SMS gateway is called. An account whose only contact is a mobile cannot buy (`CONTACT_REQUIRED`) and cannot sign in until the switch is on; its account, bookings and tickets are kept unchanged. Verified mobiles on email accounts are kept but not used.
+
+The rule is enforced server-side before anything is held (`createCheckout`, `reserve`, and both payment-order routes). Every customer account's sign-in contact is verified (code or Google), so in practice only a broken/missing account hits `CONTACT_REQUIRED`. An email account may optionally add a mobile at checkout (for the SMS confirmation): a code is sent to the number (the existing OTP challenge mechanism) and only after the code is proven is it stored as `users.verified_mobile` (`POST/PUT /api/account/mobile`). A number already used by another account is refused. Signing in later with that verified mobile opens the same email account (no duplicate account). A mobile-only account cannot add an email yet (optional; not built).
 
 ## 6. Notification matrix
 
 | Account | After server-confirmed payment |
 |---|---|
-| Mobile only | 1 SMS |
-| Email + mobile | 1 email + 1 SMS |
-| Email only | not possible (purchase blocked) |
+| Mobile only | 1 SMS (MSG91), only while mobile features are on |
+| Email only | 1 email |
+| Email + mobile | 1 email + 1 SMS (email only while mobile features are off) |
+
+Both carry the secure ticket link (the booking's QR page, or the ticket list when the order has several bookings) and "Please collect your physical cards before the show." The ticket pages open only for the signed-in owner of the booking (UUID ids, ownership checked on the server); the link holds no token and is not a login credential. The customer signs in with the email or mobile they booked with (a mobile verified on an email account opens that account).
 
 * Sent only after the server confirms the payment (callback signature + provider fetch, webhook or reconciliation); one DELIVERY job per checkout (unique key), so callback + webhook + reconciliation announce once.
-* The email (consolidated, every line, with the physical-ticket instruction) is sent by the DELIVERY job; the SMS is its own NOTIFY job.
+* The email (consolidated, every line, with the physical-card instruction) is sent by the DELIVERY job; the SMS is its own NOTIFY job.
 * Every send the provider accepted is recorded in `notification_deliveries` (key = job key) and checked before sending: a retried job never repeats a delivered message. Resend also gets the job key as `Idempotency-Key`.
+* Mobile features off: no SMS job is created. An SMS job queued earlier is parked on its first run (`state='FAILED'`, `last_error` = `SMS_DISABLED: not sent (MOBILE_PHONE_NUMBER_ENABLED is off)`), never recorded as delivered, never retried, and NOT resent automatically when the switch is turned on. To send one deliberately afterwards: `UPDATE jobs SET state='PENDING', run_at=now() WHERE key='sms:checkout:<id>'`.
 * Residual risk: if the provider accepts a message and the database write right after it fails, a retry may send once more (MSG91 has no idempotency key).
 
 ## 7. MSG91 environment variables (names only; values are secrets)
 
 | Variable | Meaning |
 |---|---|
-| `SMS_PROVIDER` | `msg91` (or `httpsms` / `generic`) |
+| `SMS_PROVIDER` | `msg91` (the only provider in live mode; httpSMS/generic are local-development only) |
 | `MSG91_AUTH_KEY` | MSG91 API auth key (server-only; in the bundle secret scan) |
-| `MSG91_TEMPLATE_ID` | MSG91 **flow** template id |
+| `MSG91_OTP_TEMPLATE_ID` | MSG91 flow template id for sign-in / mobile-verification codes (DLT OTP template) |
+| `MSG91_OTP_VARIABLE` | The code variable's name in that template (default `OTP`) |
+| `MSG91_TEMPLATE_ID` | MSG91 **flow** template id for the ticket confirmation |
 | `MSG91_SENDER_ID` | Sender/header (optional if set on the flow) |
 | `MSG91_TEMPLATE_VARIABLES` | Template variable names → our values, e.g. `var1=REFERENCE,var2=SHOW,var3=LINK` |
-| `SMS_CONFIRMATION_TEXT` | Exact text for free-text providers (httpSMS/generic), placeholders `{REFERENCE} {SHOW} {LINK} {NAME}` |
+| `MSG91_NOTICE_TEMPLATE_ID` | Optional: booking-update template (show cancelled) with `MSG91_NOTICE_TEMPLATE_VARIABLES` (default `REFERENCE=REFERENCE,LINK=LINK`). Without it, a cancellation notice to a mobile-only account fails visibly (job FAILED + `[alert]` log) |
+| `SMS_CONFIRMATION_TEXT` | Exact text for local free-text gateways, placeholders `{REFERENCE} {SHOW} {LINK} {NAME}` |
 
-Live mode refuses to start sales without a working SMS provider (mobile-only customers would otherwise get nothing). Sign-in codes (OTP) keep their existing path (`OTP_PROVIDER`, httpSMS for mobiles).
+| `MOBILE_PHONE_NUMBER_ENABLED` | `true` / `false` (unset = `false`; anything else = off). The operator's explicit switch; never turned on by the MSG91 settings alone |
+
+Mobile features are on only when `MOBILE_PHONE_NUMBER_ENABLED=true` AND `SMS_PROVIDER=msg91`, `MSG91_AUTH_KEY`, `MSG91_OTP_TEMPLATE_ID` and `MSG91_TEMPLATE_ID` are all set; otherwise they stay off (fail closed) and `/api/health` shows `mobile:false`. MSG91 is NOT a customer-sales requirement: email-only sales need only the existing sales settings (Razorpay, email delivery, `OTP_PROVIDER` neither `development` nor `httpsms`, cron secret). Staff sign-in and the gate never depend on any of this.
+
+**Where to set it when activating:** as a Worker variable/secret of the `ganabhawan-festival` Worker (Cloudflare dashboard → Workers → Settings → Variables, or `npm run deploy:secrets` with the env file, which now includes `MOBILE_PHONE_NUMBER_ENABLED` and the MSG91 names). `.env.example` and `wrangler.jsonc` do NOT configure the deployed Worker, and no GitHub workflow sets it. Activate only after the DLT templates are approved and a test SMS has been verified (section 8). Sign-in codes are generated, hashed (keyed), limited (5 min, 5 attempts, single use, 5 per hour per contact, 30 s apart) and verified by the app; MSG91 only delivers them. MSG91's own OTP verification API is not used, so there is one verification system.
 
 ## 8. MSG91 / DLT setup **[HUMAN]**
 
-1. Register the sender/header and the transactional template with DLT (TRAI) through the operator/MSG91. Suggested text: "Your Ganabhawan ticket booking {#var#} is confirmed for {#var#}. View your tickets: {#var#}".
+1. Register the sender/header and the transactional template with DLT (TRAI) through the operator/MSG91. Two templates are needed: (a) OTP, e.g. "Samatat Sanskriti code: {#var#}. Valid 5 min. Do not share."; (b) confirmation, e.g. "Your booking for {#var#} is confirmed. View your QR tickets: {#var#}. Please collect your physical cards before the show. Booking: {#var#}". The physical-card sentence must be fixed text in the approved template (DLT sends the template's text; the app only fills variables). The link variable must allow a URL of about 70 characters (APP_URL + `/tickets/` + a UUID); keep `short_url` off unless MSG91 short links are whitelisted in the template. (c) Optional booking-update template for show cancellations.
 2. In MSG91, create a Flow template from the approved DLT template (this links the DLT template id and header); note the flow template id and its variable names.
-3. Set `SMS_PROVIDER=msg91`, `MSG91_AUTH_KEY`, `MSG91_TEMPLATE_ID`, `MSG91_SENDER_ID`, `MSG91_TEMPLATE_VARIABLES` as Worker secrets (`npm run deploy:secrets` with the staging env file). Never in git or `.env.example`.
+3. Set `MOBILE_PHONE_NUMBER_ENABLED=true` (last, after the rest), `SMS_PROVIDER=msg91`, `MSG91_AUTH_KEY`, `MSG91_OTP_TEMPLATE_ID`, `MSG91_OTP_VARIABLE`, `MSG91_TEMPLATE_ID`, `MSG91_SENDER_ID`, `MSG91_TEMPLATE_VARIABLES` (and optionally the notice template) as Worker secrets (`npm run deploy:secrets` with the staging env file). Never in git or `.env.example`.
 4. Send one test SMS from staging to a controlled number (section 14).
 
 The DLT template id is attached to the flow template inside MSG91; the app sends the flow template id. Confirm with MSG91 that the account's flow API needs nothing more.
