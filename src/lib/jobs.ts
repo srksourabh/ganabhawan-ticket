@@ -2,7 +2,7 @@ import { query } from './db';
 import { expireHolds } from './commerce';
 import { reconcileOpenRazorpayPayments } from './payments';
 import { executeRefund, pollProcessingRefunds } from './refunds';
-import { sendMessage } from './auth';
+import { sendEmail, sendMessage } from './auth';
 import { deliverConfirmation, sendSmsConfirmation, type ConfirmationTarget } from './notify';
 import { pruneExpiredCartLines, removePurchasedFromCart } from './account-cart';
 import { SmsDisabledError, sendNoticeSms, smsProvider } from './sms';
@@ -234,11 +234,15 @@ async function handleJob(kind: string, key: string, payload: Record<string, unkn
       if (!row) return;
       const subject = `Booking update ${row.reference}`;
       // A mobile gets the approved MSG91 booking-update template (link to the booking page, which shows the change).
-      if (!row.contact.includes('@') && !mobileFeaturesEnabled()) throw new SmsDisabledError();
-      if (!row.contact.includes('@') && smsProvider() !== 'none') {
+      if (row.contact.includes('@')) {
+        // The job key is Resend's Idempotency-Key: a retry after a send whose DONE update was lost is not a second email.
+        await sendEmail(row.contact, subject, message, key);
+      } else if (!mobileFeaturesEnabled()) {
+        throw new SmsDisabledError();
+      } else if (smsProvider() !== 'none') {
         await sendNoticeSms(row.contact, { REFERENCE: row.reference, LINK: `${appBaseUrl()}/tickets/${bookingId}` }, `${subject}: ${message}`, key);
       } else {
-        await sendMessage(row.contact, subject, message);
+        await sendMessage(row.contact, subject, message); // local development gateway / no-op
       }
       break;
     }
