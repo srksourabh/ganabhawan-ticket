@@ -1,10 +1,11 @@
 import { query } from '@/lib/db';
-import { appMode, configurationProblems, coreConfigurationProblems, deployEnv, mobileFeaturesEnabled } from '@/lib/env';
+import { appMode, configurationProblems, coreConfigurationProblems, deployEnv, developmentAdaptersAllowed, mobileFeaturesEnabled } from '@/lib/env';
 import { jsonOk } from '@/lib/http';
 
 /**
  * Public liveness/readiness. Reports mode and booleans only, never names of
- * missing secrets or any value. 503 when the database is unreachable or the
+ * missing secrets or any value: staff = core settings, config = customer-sales
+ * settings, publicSales = config + the ALLOW_PUBLIC_SALES switch, mobile = mobile features. 503 when the database is unreachable or the
  * configuration is unsafe (the proxy refuses API traffic in that state too).
  */
 export async function GET(): Promise<Response> {
@@ -19,6 +20,9 @@ export async function GET(): Promise<Response> {
     db = false;
   }
   const config = configurationProblems().length === 0;
+  // Customer sales are open only when the settings are valid AND the operator's switch is on
+  // (the same ALLOW_PUBLIC_SALES rule as catalogue.ts/commerce.ts). Festival status is per festival, not here.
+  const publicSales = config && (developmentAdaptersAllowed() || process.env.ALLOW_PUBLIC_SALES === 'true');
   // Staff sign-in, admin and gate scanning need only the core settings.
   const staff = coreConfigurationProblems().length === 0;
   // Customer mobile sign-in + SMS (MOBILE_PHONE_NUMBER_ENABLED and MSG91 complete). Not part of `ok`.
@@ -33,5 +37,5 @@ export async function GET(): Promise<Response> {
     }
   }
   const ok = db && config && schema;
-  return jsonOk({ ok, db, config, staff, mobile, schema, mode: appMode(), env: deployEnv() ?? 'local' }, ok ? 200 : 503);
+  return jsonOk({ ok, db, config, publicSales, staff, mobile, schema, mode: appMode(), env: deployEnv() ?? 'local' }, ok ? 200 : 503);
 }
