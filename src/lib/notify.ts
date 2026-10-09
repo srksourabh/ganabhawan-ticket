@@ -1,11 +1,12 @@
 import { query, transaction } from './db';
 import { job } from './audit';
-import { developmentAdaptersAllowed } from './env';
+import { developmentAdaptersAllowed, mobileFeaturesEnabled } from './env';
 import { sendEmail } from './auth';
-import { renderSms, sendSms, smsConfigured } from './sms';
+import { SmsDisabledError, renderSms, sendSms, smsConfigured } from './sms';
 import { checkoutConfirmation, checkoutStatus } from './checkout';
 import { bookingConfirmation } from './tickets';
-import { appBaseUrl, smsShowLabel, type ConfirmationMessage, type SmsValues } from './confirmation';
+import { contactsOf } from './account-contacts';
+import { appBaseUrl, smsShowLabel, ticketsLink, type ConfirmationMessage, type SmsValues } from './confirmation';
 
 /**
  * Post-payment notifications. A DELIVERY job exists only because a payment was
@@ -15,7 +16,7 @@ import { appBaseUrl, smsShowLabel, type ConfirmationMessage, type SmsValues } fr
  * announce the same payment twice.
  *
  * Channels follow the customer's VERIFIED contacts: an email for a verified email,
- * an SMS for the verified mobile (mobile is required to buy), both when both exist.
+ * an SMS (MSG91) for a verified mobile, both when both exist (at least one is required to buy).
  * The email is sent by the DELIVERY job; the SMS is its own NOTIFY job, so a failure
  * on one channel retries only that channel. Every send that the provider accepted
  * is recorded in notification_deliveries (key = job key) and checked before sending,
@@ -42,7 +43,8 @@ export async function deliverConfirmation(target: ConfirmationTarget, jobKey: st
   const message = await confirmationFor(target);
   if (!message?.confirmed) return;
   // Locally without an SMS gateway nothing is queued; in live mode SMS must be configured (env.ts).
-  if (message.mobile && (smsConfigured() || !developmentAdaptersAllowed())) {
+  // No SMS job at all while mobile features are off (MOBILE_PHONE_NUMBER_ENABLED): the email goes alone.
+  if (message.mobile && mobileFeaturesEnabled() && (smsConfigured() || !developmentAdaptersAllowed())) {
     await transaction((c) => job(c, 'NOTIFY', `sms:${jobKey}`, { channel: 'sms', ...target }));
   }
   if (message.email && !(await alreadyDelivered(jobKey))) {
@@ -60,12 +62,12 @@ export async function smsConfirmationFor(target: ConfirmationTarget): Promise<{ 
   const byCheckout = 'checkoutId' in target;
   const row = (await query<{
     reference: string; contact: string; verified_mobile: string | null; name: string | null; paid: boolean;
-    lines: { status: string; expires_at: string; title: string; tickets: number }[];
+    lines: { id: string; status: string; expires_at: string; title: string; tickets: number }[];
   }>(
     `SELECT x.reference, u.contact, u.verified_mobile,
        COALESCE((SELECT b.holder_name FROM bookings b WHERE ${byCheckout ? 'b.checkout_id' : 'b.id'}=x.id AND b.holder_name IS NOT NULL LIMIT 1), NULLIF(u.name,'')) name,
        EXISTS (SELECT 1 FROM payments p WHERE ${byCheckout ? 'p.checkout_id' : 'p.booking_id'}=x.id AND p.state='CAPTURED') paid,
-       (SELECT COALESCE(json_agg(json_build_object('status',b.status,'expires_at',b.expires_at,
+       (SELECT COALESCE(json_agg(json_build_object('id',b.id,'status',b.status,'expires_at',b.expires_at,
           'title',COALESCE(b.snapshot->'coverage'->0->>'title', b.snapshot->>'name'),
           'tickets',(SELECT count(*) FROM tickets t WHERE t.booking_id=b.id AND t.status='ACTIVE')) ORDER BY b.created_at, b.id),'[]'::json)
         FROM bookings b WHERE ${byCheckout ? 'b.checkout_id' : 'b.id'}=x.id) lines
@@ -78,11 +80,11 @@ export async function smsConfirmationFor(target: ConfirmationTarget): Promise<{ 
   const base = appBaseUrl();
   return {
     confirmed: row.paid && issued && (status === 'CONFIRMED' || status === 'PARTIALLY_CANCELLED'),
-    mobile: row.contact.includes('@') ? row.verified_mobile : row.contact,
+    mobile: contactsOf(row.contact, row.verified_mobile).mobile,
     values: {
       REFERENCE: row.reference,
       SHOW: smsShowLabel(row.lines.filter((l) => l.status === 'CONFIRMED').map((l) => l.title)),
-      LINK: byCheckout ? `${base}/tickets` : `${base}/tickets/${target.bookingId}`,
+      LINK: ticketsLink(base, byCheckout ? row.lines.filter((l) => l.status === 'CONFIRMED').map((l) => l.id) : [target.bookingId]),
       NAME: row.name || 'Guest',
     },
   };
@@ -90,6 +92,8 @@ export async function smsConfirmationFor(target: ConfirmationTarget): Promise<{ 
 
 /** NOTIFY job (SMS to the verified mobile). */
 export async function sendSmsConfirmation(target: ConfirmationTarget, jobKey: string) {
+  // A job queued before mobile features were switched off: never sent, never recorded as delivered.
+  if (!mobileFeaturesEnabled()) throw new SmsDisabledError();
   const message = await smsConfirmationFor(target);
   if (!message?.confirmed || !message.mobile) return;
   if (developmentAdaptersAllowed() && !smsConfigured()) return; // local development: no SMS gateway

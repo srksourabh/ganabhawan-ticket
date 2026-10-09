@@ -59,7 +59,7 @@ export async function placeHold(c:Client,user:User,input:HoldInput,product:Booki
 export async function reserve(user:User,input:HoldInput,key:string) {
  requireValue(key.length>=8 && key.length<=128,'A valid idempotency key is required.',400);
  assertLiveConfiguration();
- await assertCanPurchase(user.id); // a verified mobile is required to buy
+ await assertCanPurchase(user.id); // a verified email or mobile is required to buy
  return transaction(async c=>{
   const scope='hold:'+user.id; const digest=hash(JSON.stringify(input));
   const previous=await one(c,'SELECT * FROM idempotency WHERE scope=$1 AND key=$2',[scope,key]);

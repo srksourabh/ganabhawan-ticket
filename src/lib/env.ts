@@ -1,5 +1,4 @@
 import { AppError } from './errors';
-import { smsConfigured } from './sms';
 
 /**
  * Two runtime modes. Anything other than an explicit APP_MODE=development is
@@ -118,18 +117,49 @@ export function salesConfigurationProblems(): string[] {
 
   const otp = (process.env.OTP_PROVIDER || 'development').trim().toLowerCase();
   if (otp === 'development') problems.push('OTP_PROVIDER (real provider)');
-  if (otp === 'httpsms' && !(present('HTTPSMS_API_KEY') && present('HTTPSMS_FROM'))) problems.push('HTTPSMS_API_KEY/HTTPSMS_FROM');
-  // A verified mobile is required to buy, and mobile-only customers are confirmed by SMS:
-  // live sales need a working SMS provider (msg91, httpsms or the generic webhook).
-  if (!smsConfigured()) problems.push('SMS delivery (SMS_PROVIDER=msg91 with MSG91_AUTH_KEY+MSG91_TEMPLATE_ID, or httpSMS, or SMS_API_URL+SMS_API_TOKEN)');
-  const sms = (process.env.SMS_PROVIDER || '').trim().toLowerCase();
-  if (sms === 'msg91' && !(present('MSG91_AUTH_KEY') && present('MSG91_TEMPLATE_ID'))) problems.push('MSG91_AUTH_KEY/MSG91_TEMPLATE_ID (SMS_PROVIDER=msg91)');
-  if (sms && !['msg91', 'httpsms', 'generic'].includes(sms)) problems.push('SMS_PROVIDER (msg91, httpsms or generic)');
+  if (otp === 'httpsms') problems.push('OTP_PROVIDER (httpSMS is not used in live mode; mobile codes go through MSG91)');
+  // MSG91 is NOT a sales requirement: with MOBILE_PHONE_NUMBER_ENABLED off (the default) customers
+  // sign in, buy and are confirmed by email only. Mobile settings: mobileConfigurationProblems.
 
   const resend = present('RESEND_API_KEY') && present('EMAIL_FROM');
   const composio = present('COMPOSIO_API_KEY') && (present('COMPOSIO_CONNECTED_ACCOUNT_ID') || present('COMPOSIO_USER_ID'));
   if (!resend && !composio) problems.push('email delivery (RESEND_API_KEY+EMAIL_FROM or Composio)');
   return problems;
+}
+
+/**
+ * MOBILE_PHONE_NUMBER_ENABLED, the operator's switch for customer mobile features
+ * (mobile sign-in codes, mobile verification, every customer SMS). Server-side only:
+ * nothing from a request can change it. "true" or "false"; unset = false; any other
+ * value is malformed and counts as false.
+ */
+export function mobileFlag(): { on: boolean; malformed: boolean } {
+  const value = (process.env.MOBILE_PHONE_NUMBER_ENABLED ?? '').trim().toLowerCase();
+  if (value === '' || value === 'false') return { on: false, malformed: false };
+  if (value === 'true') return { on: true, malformed: false };
+  return { on: false, malformed: true };
+}
+
+/**
+ * Why mobile features are off although the operator switched them on (names only).
+ * Live mode needs MSG91 as the only SMS provider with its sign-in-code and
+ * confirmation templates; local development may use its free-text gateways.
+ */
+export function mobileConfigurationProblems(): string[] {
+  const flag = mobileFlag();
+  if (flag.malformed) return ['MOBILE_PHONE_NUMBER_ENABLED (must be "true" or "false")'];
+  if (!flag.on || developmentAdaptersAllowed()) return [];
+  const problems: string[] = [];
+  if ((process.env.SMS_PROVIDER || '').trim().toLowerCase() !== 'msg91') problems.push('SMS_PROVIDER=msg91');
+  for (const name of ['MSG91_AUTH_KEY', 'MSG91_OTP_TEMPLATE_ID', 'MSG91_TEMPLATE_ID']) {
+    if (!present(name)) problems.push(name);
+  }
+  return problems;
+}
+
+/** Mobile sign-in, mobile verification and SMS: switched on AND completely configured (fail closed). */
+export function mobileFeaturesEnabled(): boolean {
+  return mobileFlag().on && mobileConfigurationProblems().length === 0;
 }
 
 /** Everything needed to open customer sales (core + sales). */

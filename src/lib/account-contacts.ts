@@ -2,19 +2,22 @@ import { one, query, transaction } from './db';
 import { AppError, requireValue } from './errors';
 import { audit } from './audit';
 import { keyedHash, normalizeContact, safeEqual } from './security';
-import { requestOtp } from './auth';
+import { assertMobileAvailable, requestOtp } from './auth';
+import { mobileFeaturesEnabled } from './env';
 
 /**
- * Verified contacts of an account. Purchase rule: a verified MOBILE is required;
- * email is optional. Both are verified by a code sent to them (the existing OTP
- * challenges): the sign-in contact by signing in, a mobile added to an email
- * account by verifyMobile below. Nothing unverified is ever stored here.
+ * Verified contacts of an account. Purchase rule: at least ONE verified contact
+ * (email only, mobile only, or both). Each is verified by a code sent to it (the
+ * existing OTP challenges) or by Google: the sign-in contact by signing in, an
+ * optional mobile added to an email account by verifyMobile below. Nothing
+ * unverified is ever stored here. Confirmations go to every verified contact.
  */
 export interface VerifiedContacts { email: string | null; mobile: string | null }
 
 /** From users.contact (the sign-in contact) and users.verified_mobile. */
 export function contactsOf(contact: string, verifiedMobile: string | null): VerifiedContacts {
-  return contact.includes('@') ? { email: contact, mobile: verifiedMobile } : { email: null, mobile: contact };
+  if (contact.includes('@')) return { email: contact, mobile: verifiedMobile };
+  return { email: null, mobile: /^\+[1-9]\d{7,14}$/.test(contact) ? contact : null }; // anything else is no usable contact
 }
 
 export async function verifiedContacts(userId: string): Promise<VerifiedContacts> {
@@ -22,14 +25,22 @@ export async function verifiedContacts(userId: string): Promise<VerifiedContacts
   return row ? contactsOf(row.contact, row.verified_mobile) : { email: null, mobile: null };
 }
 
-/** Mobile only or email + mobile may buy; email only (or nothing) may not. Checked on the server before any hold. */
+/**
+ * Email only, mobile only or both may buy; an account with neither may not. While mobile
+ * features are off (MOBILE_PHONE_NUMBER_ENABLED) a mobile cannot carry the confirmation,
+ * so a verified email is required. Checked on the server before any hold.
+ */
 export async function assertCanPurchase(userId: string) {
-  const { mobile } = await verifiedContacts(userId);
-  if (!mobile) throw new AppError(409, 'Add and verify your mobile number before buying tickets.', 'MOBILE_REQUIRED');
+  const { email, mobile } = await verifiedContacts(userId);
+  if (email || (mobile && mobileFeaturesEnabled())) return;
+  throw new AppError(409, mobileFeaturesEnabled()
+    ? 'A verified email address or mobile number is required to buy tickets.'
+    : 'A verified email address is required to buy tickets.', 'CONTACT_REQUIRED');
 }
 
 /** Step 1: send a code to the mobile the signed-in customer wants to add. */
 export async function requestMobileVerification(userId: string, raw: string, ip: string) {
+  assertMobileAvailable();
   let mobile: string;
   try { mobile = normalizeContact(raw); } catch { throw new AppError(400, 'Enter a valid mobile number with country code, for example +91.'); }
   requireValue(!mobile.includes('@'), 'Enter a mobile number, not an email.', 400);
@@ -45,6 +56,7 @@ async function assertMobileFree(userId: string, mobile: string) {
 
 /** Step 2: the code proves the number; only then is it stored as the account's verified mobile. */
 export async function verifyMobile(userId: string, challengeId: string, code: string) {
+  assertMobileAvailable();
   const result = await transaction(async (c) => {
     const challenge = await one<{ id: string; contact: string; digest: string; used: boolean; expires_at: string; attempts: number }>(
       c, 'SELECT * FROM otp_challenges WHERE id::text=$1 FOR UPDATE', [challengeId]);
