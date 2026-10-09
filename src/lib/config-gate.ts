@@ -13,6 +13,7 @@ export const STAFF_API_PREFIXES = [
   '/api/admission/', // gate scanning
   '/api/ops/',
   '/api/posters/', // admin-uploaded images
+  '/api/cron/', // background worker tick (hold expiry, jobs) — secret-gated
 ] as const;
 
 export function isStaffApi(pathname: string) {
