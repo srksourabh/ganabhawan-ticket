@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import GoogleSignInButton from '@/components/GoogleSignInButton';
@@ -38,6 +38,11 @@ function LoginForm() {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // Display only: the server refuses mobile numbers itself while MOBILE_PHONE_NUMBER_ENABLED is off.
+  const [mobileEnabled, setMobileEnabled] = useState(false);
+  useEffect(() => {
+    fetch('/api/auth/otp/request').then((r) => (r.ok ? r.json() : null)).then((b) => setMobileEnabled(b?.mobile === true)).catch(() => {});
+  }, []);
 
   async function requestCode(e: React.FormEvent) {
     e.preventDefault();
@@ -96,8 +101,8 @@ function LoginForm() {
           </p>
           <div style={styles.divider}><span style={styles.rule} /><span>{t('login.orOtp')}</span><span style={styles.rule} /></div>
           <form onSubmit={requestCode} noValidate>
-            <label htmlFor="contact" style={styles.label}>{t('login.contact')}</label>
-            <input id="contact" type="text" autoComplete="username" value={contact} onChange={e => setContact(e.target.value)} placeholder={t('login.contactPlaceholder')} style={styles.input} disabled={loading} />
+            <label htmlFor="contact" style={styles.label}>{t(mobileEnabled ? 'login.contact' : 'login.email')}</label>
+            <input id="contact" type="text" autoComplete="username" value={contact} onChange={e => setContact(e.target.value)} placeholder={t(mobileEnabled ? 'login.contactPlaceholder' : 'login.emailPlaceholder')} style={styles.input} disabled={loading} />
             {error && <p role="alert" style={styles.error}>{error}</p>}
             <button type="submit" style={{ ...styles.btn, ...(loading || !contact.trim() ? styles.btnDisabled : {}) }} disabled={loading || !contact.trim()}>
               {loading ? t('login.sending') : t('login.send')}
