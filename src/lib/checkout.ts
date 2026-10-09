@@ -23,7 +23,7 @@ import {
 import { ensureProviderOrder } from './provider-order';
 import { razorpayKeyId } from './razorpay';
 import type { User } from './types';
-import { PICKUP_INSTRUCTION, appBaseUrl, smsShowLabel, type ConfirmationMessage } from './confirmation';
+import { CONFIRMED_LEAD, LINK_SIGN_IN_NOTE, appBaseUrl, smsShowLabel, ticketsLink, type ConfirmationMessage } from './confirmation';
 import { assertCanPurchase, contactsOf } from './account-contacts';
 
 export const MAX_CHECKOUT_LINES = 10;
@@ -102,7 +102,7 @@ async function checkoutView(db: Queryable, checkoutId: string, userId: string) {
 export async function createCheckout(user: User, rawLines: unknown, key: string) {
   requireValue(key.length >= 8 && key.length <= 128, 'A valid idempotency key is required.', 400);
   assertLiveConfiguration();
-  await assertCanPurchase(user.id); // a verified mobile is required to buy (before anything is held)
+  await assertCanPurchase(user.id); // a verified email or mobile is required to buy (before anything is held)
   const lines = normaliseCheckoutLines(rawLines);
   const result = await transaction(async (c) => {
     const scope = 'checkout:' + user.id;
@@ -171,7 +171,7 @@ function lineError(error: unknown, label: string, productId: string) {
  */
 export async function createCheckoutPaymentOrder(user: User, checkoutId: string) {
   assertLiveConfiguration();
-  await assertCanPurchase(user.id); // a verified mobile is required to buy
+  await assertCanPurchase(user.id); // a verified email or mobile is required to buy
   requireValue(UUID.test(checkoutId), 'Checkout not found.', 404);
   const prepared = await transaction(async (c) => {
     const co = await one<Row>(c, 'SELECT * FROM checkouts WHERE id=$1 AND user_id=$2 FOR UPDATE', [checkoutId, user.id]);
@@ -385,8 +385,13 @@ export function receiptText(r: Receipt, appUrl: string) {
     `   Quantity: ${l.quantity} × ${rupees(l.unitPrice)} = ${rupees(l.lineTotal)}`,
     `   Tickets and QR codes (booking ${l.bookingReference}): ${base}/tickets/${l.bookingId}`,
   ].join('\n'));
+  const confirmed = r.lines.filter((l) => l.status === 'CONFIRMED').map((l) => l.bookingId);
   return [
     r.customer.name ? `Dear ${r.customer.name},` : '',
+    '',
+    CONFIRMED_LEAD,
+    `Your QR tickets: ${ticketsLink(base, confirmed)}`,
+    LINK_SIGN_IN_NOTE,
     '',
     `Order ${r.reference} is confirmed.`,
     r.payment ? `Payment ${r.payment.reference} on ${ist(r.payment.paidAt)}` : '',
@@ -397,7 +402,6 @@ export function receiptText(r: Receipt, appUrl: string) {
     `Total paid: ${rupees(r.total)}`,
     ...r.refunds.map((x) => `Refund: ${rupees(x.amount)} (${x.reason}) — ${x.state.toLowerCase()}`),
     '',
-    PICKUP_INSTRUCTION,
     'Each ticket has its QR code on its booking page. Show it at the venue entrance.',
     '',
     `My tickets: ${base}/tickets`,
@@ -429,7 +433,7 @@ export async function checkoutConfirmation(checkoutId: string): Promise<Confirma
     sms: {
       REFERENCE: receipt.reference,
       SHOW: smsShowLabel(confirmedLines.map((l) => l.performances[0]?.title ?? l.product)),
-      LINK: `${base}/tickets`,
+      LINK: ticketsLink(base, confirmedLines.map((l) => l.bookingId)),
       NAME: receipt.customer.name || 'Guest',
     },
   };

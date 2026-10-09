@@ -4,8 +4,9 @@ import { query } from './db';
 import { requireValue } from './errors';
 import { decrypt } from './security';
 import { sendEmail, sendMessage } from './auth';
+import { renderSms, sendSms } from './sms';
 import { DEFAULT_VENUE, ORGANISATION } from './brand';
-import { PICKUP_INSTRUCTION, appBaseUrl, smsShowLabel, type ConfirmationMessage } from './confirmation';
+import { CONFIRMED_LEAD, LINK_SIGN_IN_NOTE, appBaseUrl, smsShowLabel, ticketsLink, type ConfirmationMessage } from './confirmation';
 import { verifiedContacts } from './account-contacts';
 import type { User } from './types';
 
@@ -231,7 +232,11 @@ export async function bookingConfirmation(bookingId: string): Promise<Confirmati
   const emailText = [
     name ? `Dear ${name},` : '',
     '',
-    `Your booking ${booking.reference} is confirmed.`,
+    CONFIRMED_LEAD,
+    `Your QR tickets: ${ticketsLink(base, [bookingId])}`,
+    LINK_SIGN_IN_NOTE,
+    '',
+    `Booking ${booking.reference}`,
     booking.payment_reference && booking.paid_at ? `Payment ${booking.payment_reference} on ${istTime(booking.paid_at)}` : '',
     '',
     `${s.name ?? 'Tickets'}`,
@@ -242,7 +247,6 @@ export async function bookingConfirmation(bookingId: string): Promise<Confirmati
     'Open your tickets and QR codes:',
     confirmationLinks(base, bookingId, tickets.map((t) => t.reference)),
     '',
-    PICKUP_INSTRUCTION,
     'Each play has its own QR code on the page. Open it on your phone and show it at the venue entrance. You can keep the page on your Home Screen for offline viewing.',
     '',
     `My tickets: ${base}/tickets`,
@@ -254,7 +258,7 @@ export async function bookingConfirmation(bookingId: string): Promise<Confirmati
     mobile,
     subject: `Your ${ORGANISATION} tickets - ${booking.reference}`,
     emailText,
-    sms: { REFERENCE: booking.reference, SHOW: smsShowLabel([s.coverage?.[0]?.title ?? s.name ?? '']), LINK: `${base}/tickets/${bookingId}`, NAME: name || 'Guest' },
+    sms: { REFERENCE: booking.reference, SHOW: smsShowLabel([s.coverage?.[0]?.title ?? s.name ?? '']), LINK: ticketsLink(base, [bookingId]), NAME: name || 'Guest' },
   };
 }
 
@@ -263,7 +267,7 @@ export async function deliverBooking(bookingId: string): Promise<void> {
   const message = await bookingConfirmation(bookingId);
   if (!message?.confirmed) return;
   if (message.email) await sendEmail(message.email, message.subject, message.emailText);
-  else if (message.mobile) await sendMessage(message.mobile, message.subject, message.emailText);
+  else if (message.mobile) await sendSms(message.mobile, renderSms(message.sms)); // the approved confirmation template
 }
 
 // Re-export for convenience
