@@ -76,6 +76,7 @@ export class FakeRazorpay {
     if (url === 'https://control.msg91.com/api/v5/flow') {
       this.calls.push(`${method} msg91`);
       if (this.failSms) return json({ type: 'error', message: 'gateway down' }, 503);
+      if (!(init?.headers as Record<string, string> | undefined)?.authkey) return json({ type: 'error', message: 'Authentication failure' }, 401);
       const body = JSON.parse(String(init?.body ?? '{}'));
       const { mobiles, ...variables } = body.recipients?.[0] ?? {};
       this.sms.push({ to: mobiles, templateId: body.template_id, variables });

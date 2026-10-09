@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AppError } from '../src/lib/errors';
-import { assertLiveConfiguration, configurationProblems, developmentAdaptersAllowed, isLocalAppUrl } from '../src/lib/env';
+import { assertLiveConfiguration, configurationProblems, developmentAdaptersAllowed, isLocalAppUrl, mobileConfigurationProblems, mobileFeaturesEnabled } from '../src/lib/env';
 import { safeNextPath } from '../src/lib/redirect';
 import { gateScanTarget } from '../src/lib/gates';
 import { entryAllowed } from '../src/lib/admission';
@@ -48,6 +48,7 @@ const LIVE_STAGING = {
   SMS_PROVIDER: 'msg91',
   MSG91_AUTH_KEY: 'test-auth-key',
   MSG91_TEMPLATE_ID: 'test-template',
+  MSG91_OTP_TEMPLATE_ID: 'test-otp-template',
   RESEND_API_KEY: 're_x',
   EMAIL_FROM: 'tickets@example.org',
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk',
@@ -126,8 +127,21 @@ test('live mode lists every missing production requirement by name only', () => 
   withEnv({ ...LIVE_STAGING, RAZORPAY_KEY_ID: 'rzp_live_abc' }, () => assert.ok(configurationProblems().some((p) => /test key/.test(p))));
   withEnv({ ...LIVE_STAGING, RESEND_API_KEY: undefined }, () => assert.ok(configurationProblems().some((p) => p.startsWith('email'))));
   withEnv({ ...LIVE_STAGING, CLERK_SECRET_KEY: undefined }, () => assert.ok(configurationProblems().includes('CLERK_SECRET_KEY')));
-  withEnv({ ...LIVE_STAGING, SMS_PROVIDER: undefined, MSG91_AUTH_KEY: undefined, MSG91_TEMPLATE_ID: undefined }, () => assert.ok(configurationProblems().some((p) => p.startsWith('SMS delivery'))));
-  withEnv({ ...LIVE_STAGING, MSG91_TEMPLATE_ID: undefined }, () => assert.ok(configurationProblems().some((p) => p.startsWith('MSG91_AUTH_KEY/MSG91_TEMPLATE_ID'))));
+  withEnv({ ...LIVE_STAGING, OTP_PROVIDER: 'httpsms' }, () => assert.ok(configurationProblems().some((p) => p.startsWith('OTP_PROVIDER'))));
+  // MSG91 is not a sales requirement (email-only sales); with mobile switched on it is the only
+  // provider and each template is required, else mobile features stay off (fail closed).
+  withEnv({ ...LIVE_STAGING, SMS_PROVIDER: undefined, MSG91_AUTH_KEY: undefined }, () => assert.deepEqual(configurationProblems(), []));
+  withEnv({ ...LIVE_STAGING, MOBILE_PHONE_NUMBER_ENABLED: 'true', SMS_PROVIDER: 'httpsms', HTTPSMS_API_KEY: 'k', HTTPSMS_FROM: '+919111222333' }, () => {
+    assert.ok(mobileConfigurationProblems().includes('SMS_PROVIDER=msg91'), 'httpSMS is not a live provider');
+    assert.equal(mobileFeaturesEnabled(), false);
+  });
+  for (const name of ['MSG91_AUTH_KEY', 'MSG91_OTP_TEMPLATE_ID', 'MSG91_TEMPLATE_ID']) {
+    withEnv({ ...LIVE_STAGING, MOBILE_PHONE_NUMBER_ENABLED: 'true', [name]: undefined }, () => {
+      assert.ok(mobileConfigurationProblems().includes(name), name);
+      assert.equal(mobileFeaturesEnabled(), false, name);
+    });
+  }
+  withEnv({ ...LIVE_STAGING, MOBILE_PHONE_NUMBER_ENABLED: 'true' }, () => assert.equal(mobileFeaturesEnabled(), true));
   withEnv({ ...LIVE_STAGING, SESSION_SECRET: 'short' }, () => assert.ok(configurationProblems().some((p) => p.startsWith('SESSION_SECRET'))));
   // Problems name settings, never their values.
   withEnv({ ...LIVE_STAGING, SESSION_SECRET: 'short-secret-value' }, () => assert.ok(!configurationProblems().join(' ').includes('short-secret-value')));
