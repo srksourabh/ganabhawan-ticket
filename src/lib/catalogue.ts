@@ -6,6 +6,7 @@ import { developmentAdaptersAllowed } from './env';
 import { assertShowCancellable, cancelShowSales } from './commerce';
 import { sellState, type CoveredPerformance } from './availability';
 import { zoneTemplate } from './inventory-admin';
+import { ADMIN_POLICY } from './admin-policy';
 export async function catalogue() {
  const festival=(await query<Festival>('SELECT * FROM festivals ORDER BY created_at LIMIT 1'))[0];
  if(!festival) return {festival:null,shows:[],products:[],development:developmentAdaptersAllowed()};
@@ -216,6 +217,53 @@ export async function assertShowTransition(c:Client, user:User, show:Show, next:
       WHERE cap.show_id=$1 AND h.state='HELD') AS n`,[show.id]);
   requireValue(Number(sold?.n??0)===0,'Tickets or checkouts exist for this performance. Cancel it (with refunds) instead of unpublishing.',409);
  }
+}
+/**
+ * Deletes a programme (performance) permanently, but only one that never had any
+ * history: no booking or hold (any status), purchase attempt, ticket, inventory
+ * ledger entry (movements are append-only), scan, and not part of a season ticket.
+ * Anything else is refused with the reason and the existing alternative (unpublish
+ * to Draft, or cancel with refunds); bookings, payments, tickets, the ledger and the
+ * audit log are never deleted. The covering products are locked first: a hold takes
+ * the same lock (commerce.reserve), so no sale can start while this runs.
+ */
+export async function deleteShow(user:User, id:string) {
+ // The route checks this too; repeated here so no other caller can skip it (owner always passes).
+ requireValue(user.role==='owner' || (ADMIN_POLICY.catalogue as readonly string[]).includes(user.role),'You do not have permission for this action.',403);
+ requireValue(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id),'Programme not found.',404);
+ return transaction(async c=>{
+  const show=await one<Show>(c,'SELECT * FROM shows WHERE id=$1 FOR UPDATE',[id]);
+  requireValue(show,'Programme not found.',404);
+  const products=(await c.query<{id:string;kind:string}>(
+   `SELECT id,kind FROM products WHERE show_id=$1 OR id IN (SELECT product_id FROM product_coverage WHERE show_id=$1) ORDER BY id FOR UPDATE`,[id])).rows;
+  if(products.some(p=>p.kind==='SEASON')) {
+   throw new AppError(409,'This programme is part of a season ticket, so it cannot be deleted. Unpublish it (Draft) or cancel it instead.','PROGRAMME_IN_SEASON');
+  }
+  const ids=products.map(p=>p.id);
+  const used=(await one<{sales:number;history:number}>(c,`SELECT
+    (SELECT count(*) FROM bookings WHERE product_id=ANY($2::uuid[]))
+    + (SELECT count(*) FROM entitlements WHERE show_id=$1)
+    + (SELECT count(*) FROM hold_allocations h JOIN pools p ON p.id=h.pool_id JOIN capacities cap ON cap.id=p.capacity_id WHERE cap.show_id=$1) AS sales,
+    (SELECT count(*) FROM booking_attempts WHERE product_id=ANY($2::uuid[]))
+    + (SELECT count(*) FROM movements m JOIN pools p ON p.id=m.pool_id JOIN capacities cap ON cap.id=p.capacity_id WHERE cap.show_id=$1)
+    + (SELECT count(*) FROM scan_requests WHERE show_id=$1)
+    + (SELECT count(*) FROM admissions WHERE show_id=$1) AS history`,[id,ids]))!;
+  if(Number(used.sales)>0) {
+   throw new AppError(409,'Tickets have been sold or reserved for this programme, so it cannot be deleted. Cancel it instead (every buyer is refunded); its bookings and tickets are kept.','PROGRAMME_HAS_BOOKINGS');
+  }
+  if(Number(used.history)>0) {
+   throw new AppError(409,'This programme has inventory or purchase history, so it cannot be permanently deleted. Unpublish it (Draft) to remove it from the public site.','PROGRAMME_HAS_HISTORY');
+  }
+  // Unsold, unscanned saved carts for its products go with the products (ON DELETE CASCADE).
+  await c.query('DELETE FROM product_coverage WHERE show_id=$1',[id]);
+  if(ids.length) await c.query('DELETE FROM products WHERE id=ANY($1::uuid[])',[ids]);
+  await c.query('DELETE FROM staff_scopes WHERE show_id=$1',[id]);
+  await c.query('DELETE FROM pools WHERE capacity_id IN (SELECT id FROM capacities WHERE show_id=$1)',[id]);
+  await c.query('DELETE FROM capacities WHERE show_id=$1',[id]);
+  await c.query('DELETE FROM shows WHERE id=$1',[id]);
+  await audit(c,user.id,'show.delete',id,{title:show!.title,startsAt:show!.starts_at,status:show!.status,products:ids});
+  return {deleted:true,id};
+ },true);
 }
 export async function updateShow(user:User, id:string, input:Record<string,unknown>) {
  return transaction(async c=>{
