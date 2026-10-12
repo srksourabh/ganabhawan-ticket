@@ -10,7 +10,7 @@ export default function SignInPage() {
             card: 'shadow-none border border-[#e0d5c8]',
           },
         }}
-        forceRedirectUrl="/catalogue"
+        fallbackRedirectUrl="/catalogue"
         signUpUrl="/sign-up"
       />
     </main>
