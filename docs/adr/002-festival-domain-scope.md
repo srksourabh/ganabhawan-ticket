@@ -4,7 +4,7 @@ Status: implemented with the admin configuration work (October 2026). Recorded s
 
 The application sells one festival. Its model is `festival → shows → (per show) capacities per zone → DAILY and SEASON pools`, with products selling from pools through `product_coverage`.
 
-**Programme = performance.** A programme (a drama on a date and time) is a `shows` row. There is no separate programme entity: nothing in the business groups several performances under one programme for sale, pricing or entry. Admins create, edit, publish, unpublish and cancel performances. Add a programme table only if the organiser starts selling one drama across several dates as one item.
+**Programme = performance.** A programme (a drama on a date and time) is a `shows` row. There is no separate programme entity: nothing in the business groups several performances under one programme for sale, pricing or entry. Admins create, edit, publish, unpublish and cancel performances, and may delete one that has no history at all (no booking, hold, purchase attempt, inventory-ledger entry, scan or season coverage; the ledger is append-only). A performance with history is never deleted: unpublish or cancel it instead. Add a programme table only if the organiser starts selling one drama across several dates as one item.
 
 **Zones are the venue's three physical zones**: Premier, Superior and Balcony (a database CHECK). Admins configure each zone's capacity, daily and season allocations, online season allocation, prices and on-sale state, but cannot invent zones. Arbitrary zones need a seating-plan requirement first.
 

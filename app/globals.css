@@ -286,6 +286,19 @@ button {
   box-shadow: 0 6px 20px rgba(196, 147, 26, 0.36);
 }
 
+/* Destructive Button (admin delete) */
+.btn--danger {
+  background: #ffffff;
+  color: var(--danger);
+  border: 1.5px solid var(--danger-border);
+  box-shadow: var(--shadow-sm);
+}
+.btn--danger:hover:not(:disabled) {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+}
+.admin__confirm { border-color: var(--danger-border); }
+
 /* Ghost / Secondary Button */
 .btn--ghost, .btn-ghost {
   background: #ffffff;

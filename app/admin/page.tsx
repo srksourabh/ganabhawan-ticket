@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AUDITORIUM_PHOTO } from '@/lib/brand';
 import InventoryPanel from '@/components/admin/InventoryPanel';
 import StaffPanel from '@/components/admin/StaffPanel';
@@ -106,6 +106,9 @@ export default function AdminPage() {
   const [editingShow, setEditingShow] = useState<Show | null>(null);
   const [creating, setCreating] = useState(false);
   const [posterPreview, setPosterPreview] = useState('');
+  const [deletingShow, setDeletingShow] = useState<Show | null>(null);
+  /** One delete request at a time: state updates are not visible to a second click in the same tick. */
+  const deleteInFlight = useRef(false);
 
   const load = useCallback(async () => {
     setError('');
@@ -259,6 +262,30 @@ export default function AdminPage() {
     setEditingShow(null);
     setPosterPreview('');
     await load();
+  }
+
+  /** The server decides: only a programme with no sales, holds, tickets, ledger or scans is deleted (catalogue.ts deleteShow). */
+  async function deleteShow(show: Show) {
+    if (deleteInFlight.current) return;
+    deleteInFlight.current = true;
+    setBusy(true);
+    setMessage('');
+    setError('');
+    const res = await fetch(`/api/admin/shows/${show.id}`, { method: 'DELETE' }).catch(() => null);
+    const data = res ? await res.json().catch(() => ({})) : {};
+    setDeletingShow(null);
+    if (!res || !res.ok) {
+      setBusy(false);
+      deleteInFlight.current = false;
+      setError(data.error || 'Could not delete the programme. Nothing was changed.');
+      return;
+    }
+    if (editingShow?.id === show.id) setEditingShow(null);
+    setShows((current) => current.filter((s) => s.id !== show.id));
+    setMessage(`Programme "${show.title}" deleted.`);
+    await load().catch(() => undefined);
+    setBusy(false);
+    deleteInFlight.current = false;
   }
 
   async function saveProduct(product: Product, priceRupees: number, enabled: boolean, name: string) {
@@ -539,6 +566,26 @@ export default function AdminPage() {
                 >
                   Edit
                 </button>
+                <button type="button" className="btn btn--danger" disabled={busy} onClick={() => setDeletingShow(show)}>
+                  Delete
+                </button>
+                {deletingShow?.id === show.id && (
+                  <div className="card stack stack--sm admin__confirm" role="alertdialog" aria-labelledby={`delete-${show.id}`}>
+                    <h4 id={`delete-${show.id}`} className="h3">Delete this programme?</h4>
+                    <p>Programme: <strong>{show.title}</strong></p>
+                    <p className="muted">
+                      Only a programme that has never been sold, reserved or scanned can be deleted, and then it is removed permanently.
+                      A programme with bookings or tickets is never deleted: its bookings, payments and tickets are kept, and you will be told
+                      to unpublish it (Draft) or cancel it instead.
+                    </p>
+                    <div className="admin__row">
+                      <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => setDeletingShow(null)}>Cancel</button>
+                      <button type="button" className="btn btn--danger" disabled={busy} onClick={() => { void deleteShow(show); }}>
+                        {busy ? 'Deleting…' : 'Delete programme'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </article>
             ))}
           </div>

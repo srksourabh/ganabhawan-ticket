@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Show, SignInButton, UserButton, useClerk } from '@clerk/nextjs';
+import { Show, UserButton, useAuth, useClerk } from '@clerk/nextjs';
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { BRAND_LOGO, FESTIVAL, FESTIVAL_BN } from '@/lib/brand';
@@ -20,6 +20,8 @@ export default function SiteHeader() {
   const pathname = usePathname();
   const router = useRouter();
   const clerk = useClerk();
+  const { isSignedIn } = useAuth();
+  const clerkSignedIn = isSignedIn === true;
   const { count, signedOut } = useCart();
   const { locale, t } = useLocale();
   const [open, setOpen] = useState(false);
@@ -136,18 +138,20 @@ export default function SiteHeader() {
               {t('nav.signOut')}
             </button>
           )}
-          <Show when="signed-out">
-            {user ? (
+          {/* Not inside Clerk's <Show>: if Clerk's script is slow or unavailable the sign-in entry must still appear. */}
+          {!clerkSignedIn && (user ? (
               <span className="site-header__link" aria-label={t('nav.signedIn')}>{user.name || user.contact}</span>
             ) : (
-              <>
-                <SignInButton mode="modal" forceRedirectUrl={pathname || '/'}>
-                  <button type="button" className="site-header__link site-header__link--pill">{t('nav.signInClerk')}</button>
-                </SignInButton>
-                <Link href="/login" className="site-header__link" onClick={() => setOpen(false)}>{t('nav.otp')}</Link>
-              </>
-            )}
-          </Show>
+              // One entry point: /login offers every customer sign-in method (Google via Clerk, or a
+              // one-time code) and returns here afterwards. Signing in creates the account if needed.
+              <Link
+                href={pathname && pathname !== '/' && !pathname.startsWith('/login') ? `/login?next=${encodeURIComponent(pathname)}` : '/login'}
+                className="site-header__link site-header__link--pill"
+                onClick={() => setOpen(false)}
+              >
+                {t('nav.signIn')}
+              </Link>
+            ))}
         </nav>
       </div>
 

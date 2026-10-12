@@ -97,14 +97,21 @@ test('customers never get staff access: no password login, no staff session, ref
   assert.equal(await sessions(customer.contact), 0);
 });
 
-test('staff cannot sign in with a customer code (OTP) or with Clerk/Google; customers still can use their code', { skip }, async () => {
+test('staff never get staff powers from a customer code (OTP) or Clerk/Google; Clerk opens their own account as a buyer only', { skip }, async () => {
   const contact = await staffAccount('owner');
   const { keyedHash } = await import('../src/lib/security');
   const challenge = (await query<{ id: string }>(
     "INSERT INTO otp_challenges(contact,digest,expires_at) VALUES($1,$2,now()+interval '5 minutes') RETURNING id", [contact, keyedHash(contact + ':123456')]))[0];
   await assert.rejects(() => auth.verifyOtp(challenge.id, '123456'), /Staff accounts sign in with email and password/);
   assert.equal(await sessions(contact), 0, 'a customer code is never a password-less staff login');
-  await assert.rejects(() => auth.ensureUserFromClerk('clerk_123', contact), /must sign in with email and password/);
+  const viaClerk = await auth.ensureUserFromClerk('clerk_123', contact);
+  const row = (await query<{ id: string; role: string }>('SELECT id, role FROM users WHERE contact=$1', [contact]))[0];
+  assert.equal(viaClerk.id, row.id, 'the same account, no duplicate');
+  assert.equal(row.role, 'owner', 'the stored role is untouched');
+  assert.equal(viaClerk.role, 'customer', 'a Clerk session is a buyer session');
+  assert.throws(() => auth.assertRole(viaClerk, ['owner', 'inventory']), /permission/, 'no admin powers through Clerk');
+  assert.equal((await auth.ensureUserFromClerk('clerk_123', contact)).role, 'customer', 'also on later sign-ins (linked by Clerk id)');
+  assert.equal(await sessions(contact), 0);
   const customer = await makeUser();
   const own = (await query<{ id: string }>(
     "INSERT INTO otp_challenges(contact,digest,expires_at) VALUES($1,$2,now()+interval '5 minutes') RETURNING id", [customer.contact, keyedHash(customer.contact + ':654321')]))[0];

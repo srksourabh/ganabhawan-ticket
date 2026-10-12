@@ -31,7 +31,7 @@ Nothing in this document has been verified in an isolated staging environment or
 | MSG91 | SMS provider, used only when mobile features are on |
 | Cloudflare cron | Runs the background tick every minute |
 
-Staff accounts never sign in with customer codes or Google; they use email/username + password at their door (section 11).
+Staff use email/username + password at their door for staff work (section 11). A staff member who signs in with Google (Clerk) gets their own account as a **buyer only** (role treated as customer for that session): they can buy and see their tickets, but no staff or admin function opens. Customer codes never sign in a staff account.
 
 ## 3. Configuration and feature switches
 
@@ -73,7 +73,7 @@ Pages are Next.js routes under `app/`.
 1. **Browse** – `/` (home) links to `/catalogue`, which lists published shows, daily tickets per zone (Premier, Superior, Balcony) and season tickets, with live availability (`GET /api/catalogue`). Reviewed.
 2. **Choose tickets** – add lines to the cart (`/cart`). A signed-out visitor's cart lives in the browser; a signed-in customer's cart is stored on the server (`GET/PUT /api/cart`). A single item can also be bought directly from `/book/[productId]`. Carts never reserve inventory. Automated test (cart suites).
 3. **Checkout** – `/cart/checkout`. If not signed in, the page sends the customer to `/login?next=/cart/checkout`. Reviewed.
-4. **Sign in** – `/login` offers "Continue with Google" (Clerk; only a verified Google email is accepted) or a sign-in code. With mobile off the field asks for an email address. `POST /api/auth/otp/request` emails a 6-digit code ("Your code is … It expires in 5 minutes"). `POST /api/auth/otp/verify` checks it and creates a session (HttpOnly `festival_session` cookie, 12 hours). A new email creates the account; a known email signs in to the existing account. Automated test.
+4. **Sign in** – the header has one "Sign in" link (it carries the current page as `next`). `/login` offers "Continue with Google" (Clerk; only a verified Google email is accepted) or a sign-in code. With mobile off the field asks for an email address. `POST /api/auth/otp/request` emails a 6-digit code ("Your code is … It expires in 5 minutes"). `POST /api/auth/otp/verify` checks it and creates a session (HttpOnly `festival_session` cookie, 12 hours). A new email creates the account; a known email signs in to the existing account. Automated test.
 5. **Cart merge** – after sign-in the browser cart merges once into the account cart (`POST /api/cart/merge`). Automated test.
 6. **Hold** – "Pay" creates one checkout for the whole cart (`POST /api/checkouts`): server-side price, contact rule (a verified email is required while mobile is off; `CONTACT_REQUIRED` otherwise), availability, then an inventory hold for each line. The hold expires after the festival's hold time (default 10 minutes, 1–30). Automated test.
 7. **Payment order** – `POST /api/payments/order` creates one Razorpay order for the checkout total computed on the server. Automated test (fake Razorpay).
@@ -185,6 +185,8 @@ Operational recovery: find jobs with `state='FAILED'` (ops status or SQL), fix t
 
 * Admin door `/admin/login` (owner, inventory, finance, desk) and gate door `/gate/login` (scanner, supervisor): email or username + password (`POST /api/auth/password`), rate-limited, 12-hour session. The wrong door is refused with `WRONG_PORTAL`. Automated test.
 * Dashboard `/admin`: catalogue and shows (owner, inventory), inventory (owner, inventory), staff accounts (owner), metrics (owner, inventory, finance), reconciliation cases (finance). Enforced on the server for every admin API. Automated test.
+* Staff can buy tickets like any customer, at the normal price through the normal checkout, either with their password session (role kept) or via Google (buyer only). Automated test.
+* Delete programme (owner, inventory): `DELETE /api/admin/shows/[id]`. Only a programme with no history is deleted permanently, in one transaction, and audited (`show.delete`). A programme with any booking or hold (`PROGRAMME_HAS_BOOKINGS`), inventory or purchase history (`PROGRAMME_HAS_HISTORY`), or season coverage (`PROGRAMME_IN_SEASON`) is refused with HTTP 409 and the alternative. Automated test and local browser check.
 * Staff access depends only on core settings and roles: it works while customer sales are not configured or paused, and with mobile features off. Automated test.
 * The Expo app in `mobile/` has a gate staff sign-in using the same API (contract test only; not run on a device).
 

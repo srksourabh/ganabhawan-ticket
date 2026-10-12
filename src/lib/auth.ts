@@ -241,21 +241,29 @@ export async function upsertStaffPassword(contact: string, password: string, nam
   });
 }
 
+/**
+ * Google/Clerk proves the email but is not a staff login: a staff account reached this
+ * way is the same account acting as a BUYER only (role 'customer' for this session).
+ * It can browse, buy and see its own tickets; every staff and admin function still needs
+ * the password door (/admin/login, /gate/login), whose session carries the real role.
+ */
+export function asBuyer(user: User): User {
+  return user.role === 'customer' ? user : { ...user, role: 'customer' };
+}
+
 export async function ensureUserFromClerk(clerkId: string, email: string, name = ''): Promise<User> {
   const contact = normalizeContact(email);
   return transaction(async (c) => {
     let user = await one<User>(c, 'SELECT id, contact, name, role FROM users WHERE clerk_id=$1', [clerkId]);
     if (user) {
-      if (user.role !== 'customer') throw new AppError(403, 'Staff accounts must sign in with email and password.');
       if (name && !user.name) await c.query('UPDATE users SET name=$1 WHERE id=$2', [name, user.id]);
-      return (await one<User>(c, 'SELECT id, contact, name, role FROM users WHERE id=$1', [user.id]))!;
+      return asBuyer((await one<User>(c, 'SELECT id, contact, name, role FROM users WHERE id=$1', [user.id]))!);
     }
     user = await one<User>(c, 'SELECT id, contact, name, role FROM users WHERE contact=$1 FOR UPDATE', [contact]);
     if (user) {
-      if (user.role !== 'customer') throw new AppError(403, 'Staff accounts must sign in with email and password.');
       await c.query("UPDATE users SET clerk_id=$1, name=CASE WHEN name='' AND $2<>'' THEN $2 ELSE name END WHERE id=$3", [clerkId, name, user.id]);
-      await audit(c, user.id, 'auth.clerk.link', user.id, { clerkId });
-      return (await one<User>(c, 'SELECT id, contact, name, role FROM users WHERE id=$1', [user.id]))!;
+      await audit(c, user.id, 'auth.clerk.link', user.id, { clerkId, ...(user.role !== 'customer' ? { staffAsBuyer: user.role } : {}) });
+      return asBuyer((await one<User>(c, 'SELECT id, contact, name, role FROM users WHERE id=$1', [user.id]))!);
     }
     user = (await one<User>(c, 'INSERT INTO users(contact, name, clerk_id) VALUES($1,$2,$3) RETURNING id, contact, name, role', [contact, name, clerkId]))!;
     await audit(c, user.id, 'auth.clerk.create', user.id, { clerkId });

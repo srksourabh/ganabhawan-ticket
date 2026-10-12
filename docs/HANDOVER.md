@@ -28,7 +28,7 @@ One Next.js app (vinext) on one Cloudflare Worker, Neon Postgres, Razorpay check
 | supervisor | ✘ | ✔ → `/gate` | ✘ | ✔ (same as scanner) |
 | customer | ✘ | ✘ | ✘ | ✘ |
 
-* Staff can no longer sign in through the customer code (OTP) page or Google; customer sign-in is unchanged.
+* Staff cannot get staff access through the customer code (OTP) page or Google. Google (Clerk) opens a staff member's own account as a buyer only, so staff can buy tickets; staff work needs the password door. Customer sign-in is unchanged.
 * **Staff management** (owner, dashboard Staff tab): create scanner/supervisor/inventory/finance/desk with a 12+ character password, reset password (signs out everywhere), deactivate (role → customer, password, scopes and sessions removed), reactivate by adding again. Owners: operator CLI (`npm run db:staff -- add <email> owner`).
 * **Gate scopes**: automatic. A scanner/supervisor is scoped to every not-ended, not-cancelled show on every active device when created, and to every show created later. Devices are the two fixed gates (`gate-one` Main entrance, `gate-two` Balcony entrance); no UI for devices or manual scopes (CLI `db:staff -- scopes`).
 

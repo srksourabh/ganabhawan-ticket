@@ -95,10 +95,8 @@ function LoginForm() {
         <div style={styles.card}>
           <p style={styles.eyebrow} lang={locale === 'bn' ? 'bn' : undefined}>{brand}</p>
           <h1 style={styles.heading}>{t('login.title')}</h1>
+          <p style={{ ...styles.muted, marginTop: '-1rem', marginBottom: '1.25rem', textAlign: 'left' }}>{t('login.newHere')}</p>
           <GoogleSignInButton redirectUrl={next} />
-          <p style={{ ...styles.muted, marginTop: '.75rem' }}>
-            {t('login.orClerk')} <Link href={`/sign-in?redirect_url=${encodeURIComponent(next)}`}>/sign-in</Link>
-          </p>
           <div style={styles.divider}><span style={styles.rule} /><span>{t('login.orOtp')}</span><span style={styles.rule} /></div>
           <form onSubmit={requestCode} noValidate>
             <label htmlFor="contact" style={styles.label}>{t(mobileEnabled ? 'login.contact' : 'login.email')}</label>
@@ -108,6 +106,8 @@ function LoginForm() {
               {loading ? t('login.sending') : t('login.send')}
             </button>
           </form>
+          {/* Any other method enabled in the Clerk dashboard stays reachable through Clerk's own form. */}
+          <p style={styles.muted}><Link href={`/sign-in?redirect_url=${encodeURIComponent(next)}`}>{t('login.moreOptions')}</Link></p>
           <p style={styles.muted}>{t('login.staffHint')}</p>
         </div>
       </div>
