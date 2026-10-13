@@ -1,11 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import { transaction, one, query, type Client } from './db';
-import { requireValue } from './errors';
+import { AppError, requireValue } from './errors';
 import { token, hash, encrypt } from './security';
 import { audit, job } from './audit';
 import { markAttemptsConfirmed } from './attempts';
 import { developmentAdaptersAllowed, assertLiveConfiguration } from './env';
-import { salesOpen } from './availability';
+import { SEASON_SALES_OPEN_SQL, salesOpen, seasonSaleBlocked } from './availability';
 import { assertCanPurchase } from './account-contacts';
 import type { User } from './types';
 export async function movement(c:Client,poolId:string,operation:string,held:number,committed:number,reason:string) {
@@ -25,11 +25,24 @@ export async function expireHolds() { return transaction(c=>expireIn(c),true); }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- SQL rows are loosely typed in this module
 type BookingRow = Record<string, any>;
 export type HoldInput = {productId:string;quantity:number;version:number};
+export const SEASON_SALES_CLOSED='Season-ticket sales are currently closed.';
+/**
+ * Payment-order boundary for held bookings: a hold made while season sales were open gets
+ * no NEW payment order once they are closed (the hold simply expires). A payment the
+ * customer already completed is still honoured by fulfil(); nothing is cancelled or refunded.
+ */
+export async function assertSeasonSalesOpenFor(c:Client,bookingIds:string[]) {
+  const blocked=await one<{n:number}>(c,`SELECT count(*)::int n FROM bookings b JOIN products p ON p.id=b.product_id JOIN festivals f ON f.id=p.festival_id
+   WHERE b.id=ANY($1::uuid[]) AND p.kind='SEASON' AND NOT ${SEASON_SALES_OPEN_SQL}`,[bookingIds]);
+  if((blocked?.n??0)>0) throw new AppError(409,SEASON_SALES_CLOSED,'SEASON_SALES_CLOSED');
+}
 /** Loads and validates a product for a hold (locks the product row). */
 export async function loadProductForHold(c:Client,input:HoldInput) {
-  const product=await one(c,'SELECT p.*,f.status festival_status,f.hold_minutes,f.max_quantity,f.terms,f.physical_required FROM products p JOIN festivals f ON f.id=p.festival_id WHERE p.id=$1 FOR UPDATE OF p',[input.productId]);
+  const product=await one(c,`SELECT p.*,f.status festival_status,f.hold_minutes,f.max_quantity,f.terms,f.physical_required,${SEASON_SALES_OPEN_SQL} season_sales_open FROM products p JOIN festivals f ON f.id=p.festival_id WHERE p.id=$1 FOR UPDATE OF p`,[input.productId]);
   requireValue(product && product.enabled,'This ticket option is not available.',404);
   requireValue(product.festival_status==='PUBLISHED' && (developmentAdaptersAllowed() || process.env.ALLOW_PUBLIC_SALES==='true'),'Ticket sales are paused.');
+  // The season switch never opens anything the global switch above keeps closed.
+  if(seasonSaleBlocked(product.kind,product.season_sales_open)) throw new AppError(409,SEASON_SALES_CLOSED,'SEASON_SALES_CLOSED');
   requireValue(product.version===input.version,'This price has changed. Please refresh your selection.');
   requireValue(Number.isInteger(input.quantity)&&input.quantity>=1&&input.quantity<=product.max_quantity,'Choose a valid ticket quantity.',400);
   return product;

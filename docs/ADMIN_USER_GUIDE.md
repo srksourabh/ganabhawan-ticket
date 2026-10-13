@@ -41,7 +41,7 @@ The buttons along the top depend on your role. Each section is also protected by
 | **Check tickets** (button) | Owner (and gate staff from their own login) | Opens the gate scanner |
 | **Festival & theatre** | Owner, Inventory | Festival name (English and Bengali), venue, address, contact email, **Publication status** (Draft / Published / Paused / Closed), **Hold minutes** (how long a customer's tickets are kept while they pay), **Max tickets per checkout**, auditorium photo, terms |
 | **Dramas** | Owner, Inventory | Create and edit performances: title (English and Bengali), troupe, **date & time (IST)**, runtime, genre, language, synopsis, poster, and **Status** (Draft / Published / Cancelled). Only the owner can cancel a performance; cancelling is final, voids its tickets and starts refunds automatically. **Delete** (owner, inventory) removes a performance permanently, but only one that never had a booking or hold, purchase attempt, inventory change, scan, or season-ticket coverage; otherwise the dashboard explains why and suggests unpublishing (Draft) or cancelling. Bookings, payments and tickets are never deleted |
-| **Ticket prices** | Owner, Inventory | For each ticket type (daily ticket per performance and zone, season ticket per zone): display name, **Price (₹)** and **On sale** on/off |
+| **Ticket prices** | Owner, Inventory | **Season-ticket sales** Open/Closed for all season tickets (see below), then for each ticket type (daily ticket per performance and zone, season ticket per zone): display name, **Price (₹)** and **On sale** on/off |
 | **Inventory** | Owner, Inventory | Seats per performance and zone: total capacity, season allocation, daily tickets sold online, season tickets sold online; set the season allocation for a zone across all upcoming performances; create a season ticket; add a performance to a season ticket |
 | **Auditorium zones** | Owner, Inventory | Reference picture of the hall (Premier, Superior, Balcony) as customers see it |
 | **Staff** | Owner only | Create staff, reset passwords, deactivate staff (section 3) |
@@ -53,6 +53,15 @@ Important rules the system enforces:
 
 - A new performance does **not** join an existing season ticket automatically. Add it under Inventory → "Add a performance to a season ticket". This is possible only before any season ticket of that zone is sold.
 - Allocations can never be set below what is already sold or held, and daily + season allocation can never exceed a zone's capacity.
+
+### Season-ticket sales
+
+Dashboard → **Ticket prices** → **Season-ticket sales** shows **Open** or **Closed** and one button to change it (owners and inventory only; it starts **Closed**).
+
+* **Closed**: new season-ticket purchases are refused everywhere (add to checkout, single purchase, and paying for a season ticket held earlier). The catalogue and carts show season tickets as closed. Daily tickets keep selling.
+* **Open**: season tickets sell as before, but only while public sales are open (the operator's `ALLOW_PUBLIC_SALES`) and the zone's season ticket is **On sale**. This switch never opens sales on its own.
+* Either way, season tickets already bought stay valid: their bookings, tickets, QR codes, gate admission and payments are not changed. A customer who had already paid when sales closed keeps the ticket.
+* The page shows the setting the server stored. If a change fails, it says so and shows the current setting again. If it says database migration 0010 is missing, ask the operator to run it.
 
 ---
 

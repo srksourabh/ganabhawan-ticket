@@ -68,6 +68,8 @@ Customers sign in with Google only while `CUSTOMER_OTP_ENABLED` is unset; no set
 
 ## 2. Database: migrate (non-destructive)
 
+Migration **0010** adds `festivals.season_sales_open` (the admin's season-ticket switch). It is additive and has a default of `false`, so season-ticket sales start **closed** until an admin opens them in the dashboard. Until 0010 is applied, `/api/health` reports `schema: false` and season tickets cannot be bought; daily tickets are unaffected. Reverse it with `db/rollback/0010_down.sql`.
+
 ```powershell
 # 1. Backup first (production): Neon console → Branches → create branch "pre-<version>" from main (instant, restorable).
 $env:DIRECT_DATABASE_URL="<direct url>"; npm run db:migrate -- --dry-run             # shows target host + pending files
