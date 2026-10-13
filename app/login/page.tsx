@@ -37,10 +37,15 @@ function LoginForm() {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  // Display only: the server refuses mobile numbers itself while MOBILE_PHONE_NUMBER_ENABLED is off.
+  // Display only: the server refuses code sign-in itself while CUSTOMER_OTP_ENABLED is off, and
+  // mobile numbers while MOBILE_PHONE_NUMBER_ENABLED is off. Hidden until the server says otherwise.
+  const [codeSignIn, setCodeSignIn] = useState(false);
   const [mobileEnabled, setMobileEnabled] = useState(false);
   useEffect(() => {
-    fetch('/api/auth/otp/request').then((r) => (r.ok ? r.json() : null)).then((b) => setMobileEnabled(b?.mobile === true)).catch(() => {});
+    fetch('/api/auth/otp/request').then((r) => (r.ok ? r.json() : null)).then((b) => {
+      setCodeSignIn(b?.codeSignIn === true);
+      setMobileEnabled(b?.mobile === true);
+    }).catch(() => {});
   }, []);
 
   async function requestCode(e: React.FormEvent) {
@@ -96,15 +101,20 @@ function LoginForm() {
           <h1 style={styles.heading}>{t('login.title')}</h1>
           <p style={{ ...styles.muted, marginTop: '-1rem', marginBottom: '1.25rem', textAlign: 'left' }}>{t('login.newHere')}</p>
           <GoogleSignInButton redirectUrl={next} />
-          <div style={styles.divider}><span style={styles.rule} /><span>{t('login.orOtp')}</span><span style={styles.rule} /></div>
-          <form onSubmit={requestCode} noValidate>
-            <label htmlFor="contact" style={styles.label}>{t(mobileEnabled ? 'login.contact' : 'login.email')}</label>
-            <input id="contact" type="text" autoComplete="username" value={contact} onChange={e => setContact(e.target.value)} placeholder={t(mobileEnabled ? 'login.contactPlaceholder' : 'login.emailPlaceholder')} style={styles.input} disabled={loading} />
-            {error && <p role="alert" style={styles.error}>{error}</p>}
-            <button type="submit" style={{ ...styles.btn, ...(loading || !contact.trim() ? styles.btnDisabled : {}) }} disabled={loading || !contact.trim()}>
-              {loading ? t('login.sending') : t('login.send')}
-            </button>
-          </form>
+          {!codeSignIn && <p style={styles.muted}>{t('login.googleOnly')}</p>}
+          {codeSignIn && (
+            <>
+              <div style={styles.divider}><span style={styles.rule} /><span>{t('login.orOtp')}</span><span style={styles.rule} /></div>
+              <form onSubmit={requestCode} noValidate>
+                <label htmlFor="contact" style={styles.label}>{t(mobileEnabled ? 'login.contact' : 'login.email')}</label>
+                <input id="contact" type="text" autoComplete="username" value={contact} onChange={e => setContact(e.target.value)} placeholder={t(mobileEnabled ? 'login.contactPlaceholder' : 'login.emailPlaceholder')} style={styles.input} disabled={loading} />
+                {error && <p role="alert" style={styles.error}>{error}</p>}
+                <button type="submit" style={{ ...styles.btn, ...(loading || !contact.trim() ? styles.btnDisabled : {}) }} disabled={loading || !contact.trim()}>
+                  {loading ? t('login.sending') : t('login.send')}
+                </button>
+              </form>
+            </>
+          )}
           <p style={styles.muted}>{t('login.staffHint')}</p>
         </div>
       </div>

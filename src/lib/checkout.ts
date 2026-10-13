@@ -17,7 +17,7 @@ import { assertLiveConfiguration, developmentAdaptersAllowed, usingDevelopmentPa
 import { audit, job } from './audit';
 import { hash } from './security';
 import {
-  assessBooking, commitBooking, expireIn, loadProductForHold, placeHold, refundCase, releaseLiveHold,
+  assertSeasonSalesOpenFor, assessBooking, commitBooking, expireIn, loadProductForHold, placeHold, refundCase, releaseLiveHold,
   supersedeBooking, supersedeCheckout, type CapturedPayment, type HoldInput,
 } from './commerce';
 import { ensureProviderOrder } from './provider-order';
@@ -182,6 +182,8 @@ export async function createCheckoutPaymentOrder(user: User, checkoutId: string)
     requireValue(bookings.length > 0 && bookings.every(liveBooking), 'Your hold on these tickets has expired. Your cart is unchanged; check out again to reserve them.', 409);
     const sum = bookings.reduce((s, b) => s + Number(b.total), 0);
     requireValue(sum === Number(co!.total), 'Checkout total does not match its tickets.', 409);
+    // No new payment order for a cart with a season ticket once season sales are closed (the holds expire).
+    await assertSeasonSalesOpenFor(c, bookings.map((b) => String(b.id)));
     await c.query("UPDATE bookings SET status='PAYMENT_PENDING' WHERE checkout_id=$1 AND status='HELD'", [checkoutId]);
 
     if (usingDevelopmentPayments()) {

@@ -195,6 +195,9 @@ test('customer sign-in page: Google and the one-time code only — no "More sign
   assert.ok(page.includes('<GoogleSignInButton redirectUrl={next} />'), 'Google sign-in stays, with the return path');
   assert.ok(page.includes("fetch('/api/auth/otp/request'") && page.includes("fetch('/api/auth/otp/verify'"), 'one-time code request and verification stay');
   assert.ok(page.includes("t('login.staffHint')"), 'staff instructions stay');
+  // The code form renders only when the server reports code sign-in on (CUSTOMER_OTP_ENABLED); otherwise a Google-only note.
+  assert.ok(page.includes("setCodeSignIn(b?.codeSignIn === true)") && page.includes("{codeSignIn && (") && page.includes("{!codeSignIn && <p style={styles.muted}>{t('login.googleOnly')}</p>}"));
+  assert.ok(page.includes('const [codeSignIn, setCodeSignIn] = useState(false);'), 'hidden until the server says otherwise');
   for (const route of ['../app/sign-in/[[...sign-in]]/page.tsx', '../app/sso-callback/page.tsx', '../app/admin/login/page.tsx', '../app/gate/login/page.tsx']) {
     assert.ok(existsSync(new URL(route, import.meta.url)), `${route} still exists (Clerk callback, staff doors)`);
   }

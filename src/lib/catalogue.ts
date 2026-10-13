@@ -4,7 +4,7 @@ import { AppError, requireValue } from './errors';
 import { audit } from './audit';
 import { developmentAdaptersAllowed } from './env';
 import { assertShowCancellable, cancelShowSales } from './commerce';
-import { sellState, type CoveredPerformance } from './availability';
+import { SEASON_SALES_OPEN_SQL, seasonSaleBlocked, sellState, type CoveredPerformance } from './availability';
 import { zoneTemplate } from './inventory-admin';
 import { ADMIN_POLICY } from './admin-policy';
 export async function catalogue() {
@@ -26,8 +26,9 @@ type CoverageRow = Record<string, unknown> & CoveredPerformance & { product_id: 
  */
 export async function publicProducts(festivalId: string, nowMs = Date.now()) {
  const rows=await query<CoverageRow>(`SELECT p.*, p.id product_id, pc.show_id, s.title, s.title_bn, s.starts_at, s.ends_at, s.status, i.allocation, i.held, i.committed,
-  (SELECT COALESCE(sum(quantity),0)::int FROM bookings b WHERE b.product_id=p.id AND b.status IN ('HELD','PAYMENT_PENDING','CONFIRMED')) cap_used
-  FROM products p JOIN product_coverage pc ON pc.product_id=p.id JOIN pools i ON i.id=pc.pool_id JOIN shows s ON s.id=pc.show_id
+  (SELECT COALESCE(sum(quantity),0)::int FROM bookings b WHERE b.product_id=p.id AND b.status IN ('HELD','PAYMENT_PENDING','CONFIRMED')) cap_used,
+  ${SEASON_SALES_OPEN_SQL} season_sales_open
+  FROM products p JOIN festivals f ON f.id=p.festival_id JOIN product_coverage pc ON pc.product_id=p.id JOIN pools i ON i.id=pc.pool_id JOIN shows s ON s.id=pc.show_id
   WHERE p.festival_id=$1 AND p.enabled=true ORDER BY p.price, p.id, s.starts_at`,[festivalId]);
  const byProduct=new Map<string,CoverageRow[]>();
  for(const row of rows) byProduct.set(row.product_id,[...(byProduct.get(row.product_id)??[]),row]);
@@ -36,10 +37,13 @@ export async function publicProducts(festivalId: string, nowMs = Date.now()) {
   const visible=coverage.filter(s=>s.status==='PUBLISHED'&&new Date(s.ends_at).getTime()>nowMs);
   if(visible.length===0) continue;
   const first=coverage[0];
-  const {state,available}=sellState(coverage,first.cap===null?null:Number(first.cap),Number(first.cap_used),nowMs);
+  // Season tickets while the admin's season switch is off: listed, but closed (same rule as the hold).
+  const {state,available}=seasonSaleBlocked(String(first.kind),first.season_sales_open)
+   ? {state:'CLOSED' as const,available:0}
+   : sellState(coverage,first.cap===null?null:Number(first.cap),Number(first.cap_used),nowMs);
   const product:Record<string,unknown>={};
   for(const [key,value] of Object.entries(first)) {
-   if(!['product_id','show_id','title','title_bn','starts_at','ends_at','status','allocation','held','committed','cap_used'].includes(key)) product[key]=value;
+   if(!['product_id','show_id','title','title_bn','starts_at','ends_at','status','allocation','held','committed','cap_used','season_sales_open'].includes(key)) product[key]=value;
   }
   products.push({...(product as unknown as Product),available,state,
    coverage:visible.map(s=>({id:s.show_id,title:s.title,title_bn:s.title_bn,starts_at:new Date(s.starts_at).toISOString(),status:s.status}) as unknown as Show)});
@@ -119,6 +123,37 @@ export async function updateProduct(user:User,id:string,input:{price:number;enab
   await c.query('UPDATE products SET price=$1,enabled=$2,name=$3,name_bn=$4,version=version+1 WHERE id=$5',[input.price,enabled,name,nameBn,id]);
   await audit(c,user.id,'product.update',id,{before:{price:p.price,enabled:p.enabled,name:p.name,nameBn:p.name_bn},after:input}); return {ok:true};
  },true);
+}
+/**
+ * The admin's switch for NEW season-ticket sales (festivals.season_sales_open, migration 0010).
+ * Independent of the operator's global ALLOW_PUBLIC_SALES, which it can never override:
+ * a season hold needs both (commerce.ts loadProductForHold). Existing season bookings,
+ * tickets, payments and admission are never touched by it.
+ */
+export async function seasonSalesState(user:User) {
+ assertCatalogueRole(user);
+ const row=(await query<{open:boolean;migrated:boolean}>(`SELECT ${SEASON_SALES_OPEN_SQL} open, (to_jsonb(f) ? 'season_sales_open') migrated FROM festivals f ORDER BY created_at LIMIT 1`))[0];
+ requireValue(row,'Create the festival first.',404);
+ return {open:row!.open,migrated:row!.migrated};
+}
+export async function setSeasonSales(user:User,input:Record<string,unknown>) {
+ assertCatalogueRole(user);
+ requireValue(typeof input?.open==='boolean','Send {"open": true} or {"open": false}.',400);
+ const open=input.open as boolean; // exactly true or false: no strings, numbers or nulls
+ return transaction(async c=>{
+  // One festival row, locked: concurrent switches apply one after the other; the answer is what is stored.
+  const f=await one<Record<string,unknown>>(c,'SELECT to_jsonb(festivals) row FROM festivals ORDER BY created_at LIMIT 1 FOR UPDATE');
+  requireValue(f,'Create the festival first.',404);
+  const row=f!.row as Record<string,unknown>;
+  requireValue('season_sales_open' in row,'Season-ticket sales cannot be switched until database migration 0010 is applied.',503);
+  const before=row.season_sales_open===true;
+  const stored=(await one<{season_sales_open:boolean}>(c,'UPDATE festivals SET season_sales_open=$1 WHERE id=$2 RETURNING season_sales_open',[open,row.id]))!;
+  if(before!==stored.season_sales_open) await audit(c,user.id,'festival.season_sales',String(row.id),{before,after:stored.season_sales_open});
+  return {open:stored.season_sales_open,migrated:true};
+ },true);
+}
+function assertCatalogueRole(user:User) {
+ requireValue(user.role==='owner' || (ADMIN_POLICY.catalogue as readonly string[]).includes(user.role),'You do not have permission for this action.',403);
 }
 export async function updateFestival(user:User,input:Record<string,unknown>) {
  return transaction(async c=>{

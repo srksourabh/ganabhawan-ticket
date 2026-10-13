@@ -27,11 +27,14 @@ export async function GET(): Promise<Response> {
   const staff = coreConfigurationProblems().length === 0;
   // Customer mobile sign-in + SMS (MOBILE_PHONE_NUMBER_ENABLED and MSG91 complete). Not part of `ok`.
   const mobile = mobileFeaturesEnabled();
-  // The deploy workflow does not migrate: report a schema behind the code (e.g. 0007 not applied).
+  // The deploy workflow does not migrate: report a schema behind the code (0007 checkouts, 0010 season-sales switch).
   let schema = false;
   if (db) {
     try {
-      schema = (await bounded(query<{ ok: boolean }>("SELECT to_regclass('public.checkouts') IS NOT NULL AS ok")))[0]?.ok === true;
+      schema = (await bounded(query<{ ok: boolean }>(
+        `SELECT to_regclass('public.checkouts') IS NOT NULL
+           AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='festivals' AND column_name='season_sales_open') AS ok`,
+      )))[0]?.ok === true;
     } catch {
       schema = false;
     }

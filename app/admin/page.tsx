@@ -109,6 +109,10 @@ export default function AdminPage() {
   const [deletingShow, setDeletingShow] = useState<Show | null>(null);
   /** One delete request at a time: state updates are not visible to a second click in the same tick. */
   const deleteInFlight = useRef(false);
+  /** Season-ticket sales switch: the stored state (null = could not be read). One change at a time. */
+  const [seasonSales, setSeasonSales] = useState<{ open: boolean; migrated: boolean } | null>(null);
+  const [seasonBusy, setSeasonBusy] = useState(false);
+  const seasonInFlight = useRef(false);
 
   const load = useCallback(async () => {
     setError('');
@@ -140,11 +144,13 @@ export default function AdminPage() {
       if (first) setTab(first.id);
       return;
     }
-    const [fRes, sRes, pRes] = await Promise.all([
+    const [fRes, sRes, pRes, ssRes] = await Promise.all([
       fetch('/api/admin/festival'),
       fetch('/api/admin/shows'),
       fetch('/api/admin/products'),
+      fetch('/api/admin/festival/season-sales').catch(() => null),
     ]);
+    setSeasonSales(ssRes?.ok ? await ssRes.json() : null);
     if (!fRes.ok || !sRes.ok || !pRes.ok) {
       setError('Could not load admin catalogue.');
       return;
@@ -286,6 +292,32 @@ export default function AdminPage() {
     await load().catch(() => undefined);
     setBusy(false);
     deleteInFlight.current = false;
+  }
+
+  /** The server stores the switch and answers with the stored state; on any failure the page re-reads it. */
+  async function switchSeasonSales(open: boolean) {
+    if (seasonInFlight.current) return;
+    seasonInFlight.current = true;
+    setSeasonBusy(true);
+    setMessage('');
+    setError('');
+    const res = await fetch('/api/admin/festival/season-sales', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ open }),
+    }).catch(() => null);
+    const data = res ? await res.json().catch(() => ({})) : {};
+    if (res?.ok) {
+      setSeasonSales(data);
+      setMessage(data.open ? 'Season-ticket sales are now open.' : 'Season-ticket sales are now closed.');
+      await load().catch(() => undefined);
+    } else {
+      setError(data.error || 'Could not change season-ticket sales. The current setting is shown below.');
+      const current = await fetch('/api/admin/festival/season-sales').catch(() => null);
+      setSeasonSales(current?.ok ? await current.json() : null);
+    }
+    setSeasonBusy(false);
+    seasonInFlight.current = false;
   }
 
   async function saveProduct(product: Product, priceRupees: number, enabled: boolean, name: string) {
@@ -595,6 +627,34 @@ export default function AdminPage() {
       {tab === 'prices' && (
         <div className="stack admin__panel">
           <h2 className="h3">Ticket prices by zone</h2>
+          <section className="card stack stack--sm" aria-labelledby="season-sales-heading">
+            <h3 id="season-sales-heading" className="h3">Season-ticket sales</h3>
+            {seasonSales === null ? (
+              <p className="muted" role="status">Could not read the current setting. Refresh the page.</p>
+            ) : !seasonSales.migrated ? (
+              <p className="muted" role="status">Not available yet: database migration 0010 has not been applied. Season tickets cannot be bought until it is.</p>
+            ) : (
+              <>
+                <p role="status" style={{ margin: 0 }}>
+                  <strong>{seasonSales.open ? 'Open' : 'Closed'}</strong>
+                  {seasonSales.open ? ': customers can buy season tickets.' : ': new season-ticket purchases are refused.'}
+                </p>
+                <p className="muted" style={{ margin: 0 }}>
+                  Daily tickets are not affected. Season tickets already bought stay valid. Customers can buy only while public sales are also open; each zone still needs &quot;On sale&quot; below.
+                </p>
+                <div>
+                  <button
+                    type="button"
+                    className={seasonSales.open ? 'btn btn--danger' : 'btn btn--primary'}
+                    disabled={seasonBusy}
+                    onClick={() => switchSeasonSales(!seasonSales.open)}
+                  >
+                    {seasonBusy ? 'Saving…' : seasonSales.open ? 'Close season-ticket sales' : 'Open season-ticket sales'}
+                  </button>
+                </div>
+              </>
+            )}
+          </section>
           <p className="muted">View from the stage. Ground floor: Premier in front, Superior at the back under the balcony. First floor: Balcony. Season passes cover the festival; Daily covers one show.</p>
           <div className="grid">
             {products.map((product) => (

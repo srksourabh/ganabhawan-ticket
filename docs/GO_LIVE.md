@@ -62,7 +62,13 @@ The customer sign-in code is generated and emailed by the app (`src/lib/auth.ts`
 
 To send codes from otp@samatat.org through Resend: verify samatat.org in Resend, then set the Worker secrets `RESEND_API_KEY` and `OTP_FROM_EMAIL=Samatat Natyamela <otp@samatat.org>`. Set `EMAIL_FROM` to a samatat.org address too, because Resend needs it for confirmations. Then remove the three `COMPOSIO_*` Worker secrets so Resend is used, and check `/api/health` shows `config: true`. These are runtime settings, so no rebuild is needed, and none of them is a GitHub secret. A malformed `OTP_FROM_EMAIL` closes customer sales (`config: false`) but not staff access.
 
+### Customer code sign-in (temporarily off)
+
+Customers sign in with Google only while `CUSTOMER_OTP_ENABLED` is unset; no setting is needed for that. To offer the one-time code again, first confirm code delivery works (see the sender section above). Then set the Worker secret `CUSTOMER_OTP_ENABLED=true`; no rebuild or migration is needed. Check that `/login` shows the code form, and request a code to your own address. To turn it off again, delete the secret or set it to `false`.
+
 ## 2. Database: migrate (non-destructive)
+
+Migration **0010** adds `festivals.season_sales_open` (the admin's season-ticket switch). It is additive and has a default of `false`, so season-ticket sales start **closed** until an admin opens them in the dashboard. Until 0010 is applied, `/api/health` reports `schema: false` and season tickets cannot be bought; daily tickets are unaffected. Reverse it with `db/rollback/0010_down.sql`.
 
 ```powershell
 # 1. Backup first (production): Neon console → Branches → create branch "pre-<version>" from main (instant, restorable).

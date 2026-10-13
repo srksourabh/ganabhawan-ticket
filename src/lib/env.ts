@@ -158,6 +158,17 @@ export function clerkInstanceProblems(env = deployEnv(), publishableKey = proces
 }
 
 /**
+ * CUSTOMER_OTP_ENABLED, the operator's switch for customer sign-in with a one-time code
+ * (email, and mobile when mobile features are on). Temporarily OFF: customers sign in with
+ * Google (Clerk). Server-side only, nothing from a request can change it; exactly "true"
+ * (any case) turns it on, anything else (unset included) is off. Adding a mobile number to
+ * an account (account-contacts.ts) is not sign-in and follows mobileFeaturesEnabled only.
+ */
+export function customerOtpEnabled(): boolean {
+  return (process.env.CUSTOMER_OTP_ENABLED ?? '').trim().toLowerCase() === 'true';
+}
+
+/**
  * MOBILE_PHONE_NUMBER_ENABLED, the operator's switch for customer mobile features
  * (mobile sign-in codes, mobile verification, every customer SMS). Server-side only:
  * nothing from a request can change it. "true" or "false"; unset = false; any other
