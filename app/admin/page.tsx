@@ -5,14 +5,16 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AUDITORIUM_PHOTO } from '@/lib/brand';
 import InventoryPanel from '@/components/admin/InventoryPanel';
+import SeasonsPanel from '@/components/admin/SeasonsPanel';
 import StaffPanel from '@/components/admin/StaffPanel';
 import MetricsPanel from '@/components/admin/MetricsPanel';
 
-type Tab = 'festival' | 'shows' | 'prices' | 'zones' | 'inventory' | 'staff' | 'metrics';
+type Tab = 'festival' | 'shows' | 'seasons' | 'prices' | 'zones' | 'inventory' | 'staff' | 'metrics';
 /** What each role can open. The UI only mirrors this: every admin API checks the role itself. */
 const TABS: { id: Tab; label: string; roles: string[] }[] = [
   { id: 'festival', label: 'Festival & theatre', roles: ['owner', 'inventory'] },
   { id: 'shows', label: 'Dramas', roles: ['owner', 'inventory'] },
+  { id: 'seasons', label: 'Seasons', roles: ['owner', 'inventory'] },
   { id: 'prices', label: 'Ticket prices', roles: ['owner', 'inventory'] },
   { id: 'inventory', label: 'Inventory', roles: ['owner', 'inventory'] },
   { id: 'zones', label: 'Auditorium zones', roles: ['owner', 'inventory'] },
@@ -610,7 +612,7 @@ export default function AdminPage() {
                   {seasonSales.open ? ': customers can buy season tickets.' : ': new season-ticket purchases are refused.'}
                 </p>
                 <p className="muted" style={{ margin: 0 }}>
-                  Set by the operator in the server configuration (<code>{seasonSales.setting}</code>), not from this page. Daily tickets are not affected. Season tickets already bought stay valid. Customers can buy only while public sales are also open; each zone still needs &quot;On sale&quot; below.
+                  Set by the operator in the server configuration (<code>{seasonSales.setting}</code>), not from this page. Daily tickets are not affected. Season tickets already bought stay valid. Customers can buy only while public sales are also open; each zone still needs &quot;On sale&quot; below. Create, edit and delete season tickets under <strong>Seasons</strong>.
                 </p>
               </>
             )}
@@ -653,6 +655,7 @@ export default function AdminPage() {
         </div>
       )}
 
+      {tab === 'seasons' && <SeasonsPanel onChanged={() => { void load(); }} />}
       {tab === 'inventory' && <InventoryPanel onChanged={() => { void load(); }} />}
       {tab === 'staff' && profile?.role === 'owner' && <StaffPanel />}
       {tab === 'metrics' && <MetricsPanel shows={shows} />}

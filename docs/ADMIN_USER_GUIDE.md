@@ -41,6 +41,7 @@ The buttons along the top depend on your role. Each section is also protected by
 | **Check tickets** (button) | Owner (and gate staff from their own login) | Opens the gate scanner |
 | **Festival & theatre** | Owner, Inventory | Festival name (English and Bengali), venue, address, contact email, **Publication status** (Draft / Published / Paused / Closed), **Hold minutes** (how long a customer's tickets are kept while they pay), **Max tickets per checkout**, auditorium photo, terms |
 | **Dramas** | Owner, Inventory | Create and edit performances: title (English and Bengali), troupe, **date & time (IST)**, runtime, genre, language, synopsis, poster, and **Status** (Draft / Published / Cancelled). Only the owner can cancel a performance; cancelling is final, voids its tickets and starts refunds automatically. **Delete** (owner, inventory) removes a performance permanently, but only one that never had a booking or hold, purchase attempt, inventory change, scan, or season-ticket coverage; otherwise the dashboard explains why and suggests unpublishing (Draft) or cancelling. Bookings, payments and tickets are never deleted |
+| **Seasons** | Owner, Inventory | Season tickets (one per zone): list with performances, sales state and why it is closed; create, edit (names, price, On sale, performances before any sale) and delete (only if never booked). Shows whether season-ticket sales are switched on (read-only) |
 | **Ticket prices** | Owner, Inventory | Whether **season-ticket sales** are Open or Closed (read-only; see below), then for each ticket type (daily ticket per performance and zone, season ticket per zone): display name, **Price (₹)** and **On sale** on/off |
 | **Inventory** | Owner, Inventory | Seats per performance and zone: total capacity, season allocation, daily tickets sold online, season tickets sold online; set the season allocation for a zone across all upcoming performances; create a season ticket; add a performance to a season ticket |
 | **Auditorium zones** | Owner, Inventory | Reference picture of the hall (Premier, Superior, Balcony) as customers see it |
@@ -54,9 +55,19 @@ Important rules the system enforces:
 - A new performance does **not** join an existing season ticket automatically. Add it under Inventory → "Add a performance to a season ticket". This is possible only before any season ticket of that zone is sold.
 - Allocations can never be set below what is already sold or held, and daily + season allocation can never exceed a zone's capacity.
 
+### Seasons (season tickets)
+
+There is no separate "season" record: a **season ticket** is sold per zone (Premier, Superior, Balcony) and admits to every performance it covers. Dashboard → **Seasons**:
+
+* **List**: each season ticket with its zone, price, On sale, performances (cancelled ones marked), bookings, and either "Customers can buy it" or the exact reasons it is closed.
+* **Create**: zone (one season ticket per zone), name, Bengali name, price. It covers every published performance that has not started.
+* **Edit**: name, Bengali name, price (new purchases only) and **On sale**. The zone cannot change. If someone else saved in the meantime, you are asked to refresh. Performances can be added or removed only until the first booking or purchase attempt, so what customers bought never changes; the last performance cannot be removed.
+* **Delete**: only a season ticket that was never booked or attempted; it is removed with its list of performances (performances and seats are not touched). Otherwise it is kept with its bookings, tickets and payments, and you are told to turn **On sale** off instead.
+* **Cancelled performances** are left out of new season sales: customers buy the remaining performances at the season price (edit the price if it should change). Sales still close when the first remaining performance starts, or if one is not published.
+
 ### Season-ticket sales
 
-Dashboard → **Ticket prices** → **Season-ticket sales** shows **Open** or **Closed** (owners and inventory). The dashboard cannot change it: the operator sets `SEASON_TICKET_SALES_ENABLED` in the server configuration (Cloudflare Worker variable; `true` = open, otherwise closed, the default). Ask the operator to open or close season sales.
+Dashboard → **Seasons** (and **Ticket prices**) → **Season-ticket sales** shows **Open** or **Closed** (owners and inventory). The dashboard cannot change it: the operator sets `SEASON_TICKET_SALES_ENABLED` in the server configuration (Cloudflare Worker variable; `true` = open, otherwise closed, the default). Ask the operator to open or close season sales.
 
 * **Closed**: new season-ticket purchases are refused everywhere (add to checkout, single purchase, and paying for a season ticket held earlier). The catalogue and carts show season tickets as closed. Daily tickets keep selling.
 * **Open**: season tickets sell as before, but only while public sales are open (the operator's `ALLOW_PUBLIC_SALES`) and the zone's season ticket is **On sale**. This switch never opens sales on its own.
