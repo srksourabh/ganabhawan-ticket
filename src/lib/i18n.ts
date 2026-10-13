@@ -75,7 +75,6 @@ const en: Dict = {
 
   'login.title': 'Sign in',
   'login.newHere': 'New here? Signing in creates your account.',
-  'login.moreOptions': 'More sign-in options',
   'login.orOtp': 'or get a one-time sign-in code',
   'login.contact': 'Email or mobile',
   'login.contactPlaceholder': 'you@example.com or 98765 43210',
@@ -344,7 +343,6 @@ const bn: Dict = {
 
   'login.title': 'সাইন ইন',
   'login.newHere': 'নতুন? সাইন ইন করলেই আপনার অ্যাকাউন্ট তৈরি হবে।',
-  'login.moreOptions': 'সাইন ইনের অন্যান্য উপায়',
   'login.orOtp': 'অথবা এককালীন সাইন-ইন কোড নিন',
   'login.contact': 'ইমেল বা মোবাইল',
   'login.contactPlaceholder': 'you@example.com বা ৯৮৭৬৫ ৪৩২১০',

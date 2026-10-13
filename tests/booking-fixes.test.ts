@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
 import { AppError } from '../src/lib/errors';
 import { assertLiveConfiguration, configurationProblems, developmentAdaptersAllowed, isLocalAppUrl, mobileConfigurationProblems, mobileFeaturesEnabled } from '../src/lib/env';
 import { safeNextPath } from '../src/lib/redirect';
@@ -145,6 +146,18 @@ test('live mode lists every missing production requirement by name only', () => 
   withEnv({ ...LIVE_STAGING, SESSION_SECRET: 'short' }, () => assert.ok(configurationProblems().some((p) => p.startsWith('SESSION_SECRET'))));
   // Problems name settings, never their values.
   withEnv({ ...LIVE_STAGING, SESSION_SECRET: 'short-secret-value' }, () => assert.ok(!configurationProblems().join(' ').includes('short-secret-value')));
+});
+
+test('customer sign-in page: Google and the one-time code only — no "More sign-in options" link to Clerk\'s form', () => {
+  const page = readFileSync(new URL('../app/login/page.tsx', import.meta.url), 'utf8');
+  assert.ok(!page.includes('/sign-in'), 'no link to the Clerk sign-in form');
+  assert.ok(!page.includes('login.moreOptions'));
+  assert.ok(page.includes('<GoogleSignInButton redirectUrl={next} />'), 'Google sign-in stays, with the return path');
+  assert.ok(page.includes("fetch('/api/auth/otp/request'") && page.includes("fetch('/api/auth/otp/verify'"), 'one-time code request and verification stay');
+  assert.ok(page.includes("t('login.staffHint')"), 'staff instructions stay');
+  for (const route of ['../app/sign-in/[[...sign-in]]/page.tsx', '../app/sso-callback/page.tsx', '../app/admin/login/page.tsx', '../app/gate/login/page.tsx']) {
+    assert.ok(existsSync(new URL(route, import.meta.url)), `${route} still exists (Clerk callback, staff doors)`);
+  }
 });
 
 test('development adapters are refused on Cloudflare Workers even with a localhost APP_URL', () => {

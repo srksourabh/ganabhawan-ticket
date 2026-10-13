@@ -1,7 +1,6 @@
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import GoogleSignInButton from '@/components/GoogleSignInButton';
 import { useLocale } from '@/components/LocaleProvider';
@@ -106,8 +105,6 @@ function LoginForm() {
               {loading ? t('login.sending') : t('login.send')}
             </button>
           </form>
-          {/* Any other method enabled in the Clerk dashboard stays reachable through Clerk's own form. */}
-          <p style={styles.muted}><Link href={`/sign-in?redirect_url=${encodeURIComponent(next)}`}>{t('login.moreOptions')}</Link></p>
           <p style={styles.muted}>{t('login.staffHint')}</p>
         </div>
       </div>
