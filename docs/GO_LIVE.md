@@ -89,7 +89,11 @@ Customers sign in with Google only while `CUSTOMER_OTP_ENABLED` is unset. To off
 
 ## 2. Database: migrate (non-destructive)
 
-Migration **0010** adds `festivals.season_sales_open` (the admin's season-ticket switch). It is additive and has a default of `false`, so season-ticket sales start **closed** until an admin opens them in the dashboard. Until 0010 is applied, `/api/health` reports `schema: false` and season tickets cannot be bought; daily tickets are unaffected. Reverse it with `db/rollback/0010_down.sql`.
+The current code needs migrations up to **0009** and nothing later; `/api/health` `schema` checks for what it uses (0007 checkouts, 0008 season allocations, 0009 account carts). There is no migration 0010: the season-ticket switch is the runtime setting below, not a database column.
+
+### Season-ticket sales (runtime setting)
+
+New season-ticket sales are controlled by the Worker variable `SEASON_TICKET_SALES_ENABLED`. Exactly `true` opens them; unset or anything else keeps them **closed** (the default). Change it in Cloudflare (Worker → Settings → Variables and Secrets); the admin dashboard only shows it. No rebuild, deploy or migration is needed. It never overrides `ALLOW_PUBLIC_SALES`: season tickets sell only when both are `true` and the zone's season ticket is **On sale**. `/api/health` reports `seasonSales`. Closing it refuses new season holds, checkouts and payment orders; existing season bookings, tickets, QR codes, admission and completed payments are not affected.
 
 ```powershell
 # 1. Backup first (production): Neon console → Branches → create branch "pre-<version>" from main (instant, restorable).

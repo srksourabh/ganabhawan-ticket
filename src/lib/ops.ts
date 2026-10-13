@@ -1,6 +1,6 @@
 import { query } from './db';
 import { STALE_JOB_MINUTES } from './jobs';
-import { clerkDevelopmentInstanceAllowed, coreConfigurationProblems, customerOtpEnabled, mobileFeaturesEnabled, salesConfigurationProblems } from './env';
+import { clerkDevelopmentInstanceAllowed, coreConfigurationProblems, customerOtpEnabled, mobileFeaturesEnabled, salesConfigurationProblems, seasonTicketSalesEnabled } from './env';
 import { publicSalesOpen } from './commerce';
 
 /**
@@ -25,6 +25,8 @@ export interface OpsStatus {
     salesProblems: string[];
     publicSalesSwitch: boolean;
     publicSales: boolean;
+    /** SEASON_TICKET_SALES_ENABLED (new season-ticket sales also need publicSales). */
+    seasonTicketSales: boolean;
     clerkDevelopmentInstanceAllowed: boolean;
     customerEmailOtp: boolean;
     mobile: boolean;
@@ -88,6 +90,7 @@ function configurationStatus(): OpsStatus['configuration'] {
     publicSalesSwitch,
     // The same rule as /api/health publicSales and the purchase gates.
     publicSales: coreProblems.length === 0 && salesProblems.length === 0 && publicSalesSwitch,
+    seasonTicketSales: seasonTicketSalesEnabled(),
     clerkDevelopmentInstanceAllowed: clerkDevelopmentInstanceAllowed(),
     customerEmailOtp: customerOtpEnabled(),
     mobile: mobileFeaturesEnabled(),

@@ -188,6 +188,17 @@ export function clerkDevelopmentInstanceAllowed(): boolean {
 }
 
 /**
+ * SEASON_TICKET_SALES_ENABLED, the operator's switch for NEW season-ticket sales, separate
+ * from ALLOW_PUBLIC_SALES (which it never overrides: a season sale needs both) and from each
+ * product's "On sale". A runtime setting (Cloudflare Worker variable), not a database value:
+ * exactly "true" (any case) opens season sales; unset or anything else keeps them CLOSED.
+ * Existing season bookings, tickets, QR codes, admission and payments never depend on it.
+ */
+export function seasonTicketSalesEnabled(): boolean {
+  return (process.env.SEASON_TICKET_SALES_ENABLED ?? '').trim().toLowerCase() === 'true';
+}
+
+/**
  * CUSTOMER_OTP_ENABLED, the operator's switch for customer sign-in with a one-time code
  * (email, and mobile when mobile features are on). Temporarily OFF: customers sign in with
  * Google (Clerk). Server-side only, nothing from a request can change it; exactly "true"

@@ -1,3 +1,5 @@
+import { seasonTicketSalesEnabled } from './env';
+
 /**
  * The one definition of "can this product be sold right now", used by both the
  * hold (placeHold, authoritative, under the commerce lock) and the public
@@ -21,21 +23,13 @@ export function salesOpen(coverage: Pick<CoveredPerformance, 'status' | 'starts_
 }
 
 /**
- * The admin's season-ticket switch (festivals.season_sales_open, migration 0010) applies to
- * NEW season sales only, on top of every other rule (global sales switch, product "On sale",
- * sales window, stock). Anything but an explicit true (unset, or the column not migrated
- * yet) counts as closed. Daily tickets never depend on it.
+ * The operator's season-ticket switch (SEASON_TICKET_SALES_ENABLED, env.ts) applies to NEW
+ * season sales only, on top of every other rule (global sales switch, product "On sale",
+ * sales window, stock). Closed unless explicitly enabled. Daily tickets never depend on it.
  */
-export function seasonSaleBlocked(kind: string, seasonSalesOpen: unknown) {
+export function seasonSaleBlocked(kind: string, seasonSalesOpen = seasonTicketSalesEnabled()) {
   return kind === 'SEASON' && seasonSalesOpen !== true;
 }
-
-/**
- * SQL for a festivals row aliased `f`: true only when the switch is on. Read through to_jsonb
- * so a database without migration 0010 yields false (season closed) instead of failing
- * every daily-ticket query that joins festivals.
- */
-export const SEASON_SALES_OPEN_SQL = "((to_jsonb(f)->>'season_sales_open') IS NOT DISTINCT FROM 'true')";
 
 /** Tickets that can still be held: the scarcest covered pool, bounded by the product cap. */
 export function remainingTickets(coverage: CoveredPerformance[], cap: number | null, capUsed: number) {
