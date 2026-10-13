@@ -11,7 +11,8 @@ Three environments. Never mix their databases or keys.
 **Fail-closed rules (enforced in code, `src/lib/env.ts`):**
 * Development adapters (OTP code in the response, free "payments", sales-switch bypass) run **only** when `APP_MODE=development` **and** `APP_URL` is explicitly `localhost`/`127.0.0.1` **and** the process is not a Cloudflare Worker. An unset `APP_URL`, or any unknown `APP_MODE` value, counts as live.
 * In live mode, every API call returns `503 CONFIG_INVALID`, and `/api/health` returns 503, until all of these are set: `DATABASE_URL`, `SESSION_SECRET`, `CREDENTIAL_KEY` (32+ chars each), `CRON_SECRET`, an https `APP_URL`, `DEPLOY_ENV`, `PAYMENT_PROVIDER=razorpay`, `RAZORPAY_KEY_ID` (`rzp_test_` on staging, `rzp_live_` on production), `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, a real `OTP_PROVIDER`, email delivery (`RESEND_API_KEY`+`EMAIL_FROM`, or Composio), and Clerk (`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` + `CLERK_SECRET_KEY`; the site cannot render pages without them).
-* `npm run deploy:secrets` refuses to push a development config, a non-https/localhost `APP_URL`, or a Razorpay key that doesn't match `DEPLOY_ENV`.
+* On `DEPLOY_ENV=production`, customer sales also stay closed until Clerk uses a **production instance** (`pk_live_…` and `sk_live_…`). A development instance (`pk_test_…`) shows Clerk's orange "Development mode" badge, caps its users and uses Clerk's shared Google credentials. The two keys must also come from the same kind of instance (`clerkInstanceProblems`). Staff sign-in, admin and gate scanning are not affected.
+* `npm run deploy:secrets` refuses to push a development config, a non-https/localhost `APP_URL`, a Razorpay key that doesn't match `DEPLOY_ENV`, or development Clerk keys for production.
 * `npm run db:seed` refuses any non-local database, and any database that has payments or confirmed bookings.
 
 ## 1. Accounts and environment files
@@ -37,9 +38,20 @@ MOBILE_PHONE_NUMBER_ENABLED=false        # email-only launch; true only after MS
 RESEND_API_KEY=…
 EMAIL_FROM=Samatat Tickets <tickets@your-domain>
 ALLOW_PUBLIC_SALES=false                 # true only when the committee opens sales
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=…      # required (pk_live_… in production; Google sign-in for customers)
-CLERK_SECRET_KEY=…                       # required
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=…      # required (pk_live_… in production; Google sign-in for customers). Built INTO the browser bundle: the deploy uses the GitHub repository secret of this name, not the Worker secret
+CLERK_SECRET_KEY=…                       # required (sk_live_… from the SAME Clerk instance in production)
 ```
+
+### Clerk production instance (customer Google sign-in)
+
+1. Clerk dashboard → the Samatat application → create the **Production** instance. Clerk serves production from a domain you own and needs DNS records there, so a `*.workers.dev` URL cannot host it: attach a custom domain to the Worker first.
+2. Production → SSO connections → Google: enter your own Google OAuth client ID and secret (Google Cloud console; authorised redirect URI as Clerk shows it). Only enable the sign-in methods you want customers to see. `/login` no longer links to Clerk's `/sign-in` form, but that route still exists and shows every method enabled in the instance (Facebook, email+password, sign-up).
+3. Production → Paths/Domains: allow the site's URL as a redirect origin.
+4. Set the GitHub repository secret `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` to the `pk_live_…` key. Set the Worker secret `CLERK_SECRET_KEY` to the matching `sk_live_…` key, and also set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` there.
+5. Redeploy: the publishable key only changes when the bundle is rebuilt.
+6. Check: `/login` loads `clerk.browser.js` from your domain (not `*.clerk.accounts.dev`), `/sign-in` has no "Development mode" badge, and `/api/health` shows `config: true`.
+
+Google accounts created in the development instance do not move to production. Customers sign in again, and their festival account is matched by verified email (`ensureUserFromClerk`), so bookings are kept.
 
 ### Sign-in code sender (e.g. otp@samatat.org)
 
