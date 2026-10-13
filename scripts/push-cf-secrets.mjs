@@ -35,6 +35,8 @@ const required = [
 const optional = [
   'ALLOW_PUBLIC_SALES',
   'CUSTOMER_OTP_ENABLED',
+  'SEASON_TICKET_SALES_ENABLED',
+  'CLERK_DEVELOPMENT_INSTANCE_ALLOWED',
   'CHROMA_URL',
   'CHROMA_COLLECTION',
   'OPS_MONITOR_TOKEN',
@@ -95,8 +97,14 @@ if (!(values.RAZORPAY_KEY_ID || '').startsWith(keyPrefix)) {
 const clerkKind = (key, prefix) => new RegExp(`^${prefix}_(live|test)_`).exec(key || '')?.[1] ?? null;
 const pk = clerkKind(values.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, 'pk');
 const sk = clerkKind(values.CLERK_SECRET_KEY, 'sk');
-if (values.DEPLOY_ENV === 'production' && (pk !== 'live' || sk !== 'live')) {
-  console.error('Refusing to deploy: production requires Clerk production-instance keys (pk_live_… and sk_live_…).');
+// CLERK_DEVELOPMENT_INSTANCE_ALLOWED=true (temporary, docs/GO_LIVE.md) accepts development keys in production.
+const clerkDevAllowed = (values.CLERK_DEVELOPMENT_INSTANCE_ALLOWED || '').trim().toLowerCase() === 'true';
+if (values.DEPLOY_ENV === 'production' && !clerkDevAllowed && (pk !== 'live' || sk !== 'live')) {
+  console.error('Refusing to deploy: production requires Clerk production-instance keys (pk_live_… and sk_live_…), or the temporary CLERK_DEVELOPMENT_INSTANCE_ALLOWED=true.');
+  process.exit(1);
+}
+if (!pk || !sk) {
+  console.error('Refusing to deploy: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY must be Clerk keys (pk_… and sk_…).');
   process.exit(1);
 }
 if (pk && sk && pk !== sk) {

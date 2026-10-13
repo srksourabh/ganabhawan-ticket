@@ -4,7 +4,7 @@ import { createCheckoutPaymentOrder, fulfillCheckout, confirmDevelopmentCheckout
 import { AppError, requireValue } from './errors';
 import { assertLiveConfiguration, developmentAdaptersAllowed, usingDevelopmentPayments } from './env';
 import { applyRefundWebhook } from './refunds';
-import { assertSeasonSalesOpenFor, expireIn, fulfill, type CapturedPayment } from './commerce';
+import { assertPublicSalesOpen, assertSeasonSalesOpenFor, expireIn, fulfill, type CapturedPayment } from './commerce';
 import { audit } from './audit';
 import type { User } from './types';
 import { assertCanPurchase } from './account-contacts';
@@ -111,6 +111,7 @@ async function openPaymentCase(key: string, detail: unknown) {
 
 export async function createPaymentOrder(user: User, bookingId: string) {
   assertLiveConfiguration();
+  assertPublicSalesOpen();
   await assertCanPurchase(user.id); // a verified email or mobile is required to buy
   requireValue(bookingId, 'Booking not found or no longer held.', 404);
   // A booking created by a cart checkout is paid as part of that checkout (one payment for the cart).

@@ -1,5 +1,7 @@
 import { query } from './db';
 import { STALE_JOB_MINUTES } from './jobs';
+import { clerkDevelopmentInstanceAllowed, coreConfigurationProblems, customerOtpEnabled, mobileFeaturesEnabled, salesConfigurationProblems, seasonTicketSalesEnabled } from './env';
+import { publicSalesOpen } from './commerce';
 
 /**
  * Operational signals for the owner/finance dashboard and an external uptime
@@ -14,6 +16,21 @@ export interface OpsStatus {
   refunds: { failed: number; processingOver7d: number; requestedOver1h: number };
   gate: { denied24h: number; unknown24h: number };
   auth: { staffPasswordFailures24h: number };
+  /**
+   * Why customer sales are refused, by setting NAME only (never a value): what /api/health
+   * reports as config/publicSales booleans. Visible to the owner, finance and the monitor only.
+   */
+  configuration: {
+    coreProblems: string[];
+    salesProblems: string[];
+    publicSalesSwitch: boolean;
+    publicSales: boolean;
+    /** SEASON_TICKET_SALES_ENABLED (new season-ticket sales also need publicSales). */
+    seasonTicketSales: boolean;
+    clerkDevelopmentInstanceAllowed: boolean;
+    customerEmailOtp: boolean;
+    mobile: boolean;
+  };
   critical: string[];
   /** Needs attention but no customer money is at risk (e.g. an email could not be sent; tickets remain in the app). */
   warnings: string[];
@@ -45,6 +62,7 @@ export async function opsStatus(): Promise<OpsStatus> {
     refunds: { failed: n('refunds_failed'), processingOver7d: n('refunds_slow'), requestedOver1h: n('refunds_stalled') },
     gate: { denied24h: n('denied'), unknown24h: n('unknown') },
     auth: { staffPasswordFailures24h: n('pw_fail') },
+    configuration: configurationStatus(),
     critical: [],
     warnings: [],
   };
@@ -52,6 +70,29 @@ export async function opsStatus(): Promise<OpsStatus> {
   if (status.refunds.failed) status.critical.push(`${status.refunds.failed} refund(s) failed at the provider`);
   if (status.refunds.requestedOver1h) status.critical.push(`${status.refunds.requestedOver1h} refund(s) not sent to the provider within 1 hour`);
   if (status.jobs.stuckRunning || status.jobs.overduePending) status.critical.push('background worker is behind or stuck');
+  const config = status.configuration;
+  if (config.coreProblems.length || config.salesProblems.length) {
+    status.warnings.push(`customer sales refused; missing or invalid: ${[...config.coreProblems, ...config.salesProblems].join('; ')}`);
+  } else if (!config.publicSalesSwitch) {
+    status.warnings.push('customer sales paused by the operator (ALLOW_PUBLIC_SALES is not "true")');
+  }
   if (status.jobs.failed7d) status.warnings.push(`${status.jobs.failed7d} background job(s) permanently failed in the last 7 days (see worker logs)`);
   return status;
+}
+
+function configurationStatus(): OpsStatus['configuration'] {
+  const coreProblems = coreConfigurationProblems();
+  const salesProblems = salesConfigurationProblems();
+  const publicSalesSwitch = publicSalesOpen();
+  return {
+    coreProblems,
+    salesProblems,
+    publicSalesSwitch,
+    // The same rule as /api/health publicSales and the purchase gates.
+    publicSales: coreProblems.length === 0 && salesProblems.length === 0 && publicSalesSwitch,
+    seasonTicketSales: seasonTicketSalesEnabled(),
+    clerkDevelopmentInstanceAllowed: clerkDevelopmentInstanceAllowed(),
+    customerEmailOtp: customerOtpEnabled(),
+    mobile: mobileFeaturesEnabled(),
+  };
 }

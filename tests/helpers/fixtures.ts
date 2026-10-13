@@ -30,6 +30,9 @@ export function useLiveStagingEnv() {
     // Customer code sign-in ON here so the existing code tests run; the switched-off
     // behaviour (the production default) is tested in integration-otp-disabled.test.ts.
     CUSTOMER_OTP_ENABLED: 'true',
+    // Season-ticket sales OPEN here so the existing season tests run; closed (the production
+    // default) is tested in integration-season-sales.test.ts.
+    SEASON_TICKET_SALES_ENABLED: 'true',
     RESEND_API_KEY: 're_integration',
     EMAIL_FROM: 'tickets@tickets.test',
     ALLOW_PUBLIC_SALES: 'true',
@@ -62,11 +65,10 @@ export async function resetDatabase() {
     webhook_events, audit_events, notification_deliveries, users RESTART IDENTITY CASCADE`);
 }
 
-/** A published festival with season sales OPEN (the admin switch, migration 0010), as before the switch existed. */
 export async function makeFestival() {
   return (await query<{ id: string }>(
-    `INSERT INTO festivals(name,name_bn,venue,address,status,contact_email,terms,capacity_approved,policies_approved,season_sales_open)
-     VALUES('Test Festival','টেস্ট','Ganabhawan','Uttarpara','PUBLISHED','tickets@tickets.test','Terms',true,true,true) RETURNING id`,
+    `INSERT INTO festivals(name,name_bn,venue,address,status,contact_email,terms,capacity_approved,policies_approved)
+     VALUES('Test Festival','টেস্ট','Ganabhawan','Uttarpara','PUBLISHED','tickets@tickets.test','Terms',true,true) RETURNING id`,
   ))[0];
 }
 

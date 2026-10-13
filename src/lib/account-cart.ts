@@ -1,6 +1,6 @@
 import { query, transaction, one, type Client } from './db';
 import { requireValue } from './errors';
-import { SEASON_SALES_OPEN_SQL, seasonSaleBlocked, sellState, type SellState } from './availability';
+import { seasonSaleBlocked, sellState, type SellState } from './availability';
 
 /**
  * The signed-in customer's unpaid cart, stored on the server (cart_items), never
@@ -35,14 +35,14 @@ export async function pruneExpiredCartLines() {
 
 type ProductRow = {
   id: string; name: string; name_bn: string; category: string; kind: string; price: number; version: number; enabled: boolean;
-  cap: number | null; cap_used: number; max_quantity: number; festival_status: string; season_sales_open: boolean;
+  cap: number | null; cap_used: number; max_quantity: number; festival_status: string;
   coverage: { status: string; starts_at: string; ends_at: string; title: string; title_bn: string; allocation: number; held: number; committed: number }[];
 };
 
 async function loadProducts(db: { query: Client['query'] }, ids: string[]) {
   if (ids.length === 0) return new Map<string, ProductRow>();
   const rows = (await db.query<ProductRow>(
-    `SELECT p.id, p.name, p.name_bn, p.category, p.kind, p.price, p.version, p.enabled, p.cap, f.max_quantity, f.status festival_status, ${SEASON_SALES_OPEN_SQL} season_sales_open,
+    `SELECT p.id, p.name, p.name_bn, p.category, p.kind, p.price, p.version, p.enabled, p.cap, f.max_quantity, f.status festival_status,
        (SELECT COALESCE(sum(quantity),0)::int FROM bookings b WHERE b.product_id=p.id AND b.status IN ('HELD','PAYMENT_PENDING','CONFIRMED')) cap_used,
        COALESCE((SELECT jsonb_agg(jsonb_build_object('status',s.status,'starts_at',s.starts_at,'ends_at',s.ends_at,'title',s.title,'title_bn',s.title_bn,
          'allocation',i.allocation,'held',i.held,'committed',i.committed) ORDER BY s.starts_at)
@@ -58,7 +58,7 @@ function lineState(p: ProductRow | undefined, nowMs = Date.now()): { state: Cart
   if (!p) return { state: 'UNAVAILABLE', available: 0, expired: true };
   const expired = !p.coverage.some((s) => s.status !== 'CANCELLED' && new Date(s.ends_at).getTime() > nowMs);
   if (!p.enabled || p.festival_status !== 'PUBLISHED') return { state: 'UNAVAILABLE', available: 0, expired };
-  if (seasonSaleBlocked(p.kind, p.season_sales_open)) return { state: 'CLOSED', available: 0, expired }; // admin season switch off
+  if (seasonSaleBlocked(p.kind)) return { state: 'CLOSED', available: 0, expired }; // season sales switched off
   const { state, available } = sellState(p.coverage, p.cap === null ? null : Number(p.cap), Number(p.cap_used), nowMs);
   return { state, available, expired };
 }

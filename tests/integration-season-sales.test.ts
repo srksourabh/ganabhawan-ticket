@@ -1,17 +1,20 @@
 /**
- * The admin's season-ticket sales switch (festivals.season_sales_open, migration 0010):
- * who may read and change it, that it persists, that every purchase entry point (single
- * hold, cart checkout, payment order for an earlier hold) refuses NEW season sales while it
- * is off without creating bookings or payment orders, that daily tickets, existing season
- * bookings and completed payments are untouched, and that it never overrides the global
- * ALLOW_PUBLIC_SALES switch. Real catalogue, cart, checkout and payment code on the local
- * test database; Razorpay/Resend are the in-process fakes.
+ * The operator's season-ticket switch (SEASON_TICKET_SALES_ENABLED, a runtime setting; no
+ * database column, so the schema before migration 0010 is enough): closed by default, every
+ * purchase entry point (single hold, cart checkout, payment order for an earlier hold) refuses
+ * NEW season sales while it is off without creating bookings or payment orders, daily tickets,
+ * existing season bookings and completed payments are untouched, it never overrides the global
+ * ALLOW_PUBLIC_SALES switch, and the dashboard only reads it. No application code references
+ * festivals.season_sales_open. Real catalogue, cart, checkout and payment code on the local test
+ * database; Razorpay/Resend are the in-process fakes.
  */
 import test, { after, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { FakeRazorpay } from './helpers/fake-razorpay';
 import { DB_AVAILABLE, checkoutSignature, makeSeason, makeShow, makeUser, resetDatabase, useLiveStagingEnv } from './helpers/fixtures';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { seasonSaleBlocked } from '../src/lib/availability';
 import type { Role, User } from '../src/lib/types';
 
@@ -42,12 +45,12 @@ after(async () => {
 beforeEach(async () => {
   if (skip) return;
   fake.reset();
+  process.env.SEASON_TICKET_SALES_ENABLED = 'true';
   await resetDatabase();
 });
 
 const count = async (sql: string, params: unknown[] = []) => Number((await query(sql, params))[0].n);
-const stored = async () => (await query<{ open: boolean }>('SELECT season_sales_open open FROM festivals LIMIT 1'))[0].open;
-const owner = () => makeUser('owner');
+const closeSeason = () => { process.env.SEASON_TICKET_SALES_ENABLED = 'false'; };
 const CLOSED = /Season-ticket sales are currently closed/;
 
 /** Two published performances, a daily ticket for each and a season ticket covering both. */
@@ -73,63 +76,70 @@ async function nothingCreated() {
 
 // ---- THE SWITCH -------------------------------------------------------------------------------------
 
-test('season switch: owner and inventory read and change it; every other role and customers are refused', { skip }, async () => {
-  await setup();
+test('season switch: closed unless SEASON_TICKET_SALES_ENABLED is exactly "true"; daily tickets never depend on it', () => {
+  const saved = process.env.SEASON_TICKET_SALES_ENABLED;
+  try {
+    for (const value of [undefined, '', 'false', '1', 'yes', 'open']) {
+      if (value === undefined) delete process.env.SEASON_TICKET_SALES_ENABLED; else process.env.SEASON_TICKET_SALES_ENABLED = value;
+      assert.equal(seasonSaleBlocked('SEASON'), true, String(value));
+      assert.equal(seasonSaleBlocked('DAILY'), false, String(value));
+    }
+    for (const value of ['true', 'TRUE', ' true ']) {
+      process.env.SEASON_TICKET_SALES_ENABLED = value;
+      assert.equal(seasonSaleBlocked('SEASON'), false, value);
+    }
+  } finally {
+    if (saved === undefined) delete process.env.SEASON_TICKET_SALES_ENABLED; else process.env.SEASON_TICKET_SALES_ENABLED = saved;
+  }
+});
+
+test('season switch: the dashboard reads it (owner and inventory only) and cannot change it', { skip }, async () => {
   for (const role of ['owner', 'inventory'] as Role[]) {
     const admin = await makeUser(role);
-    assert.deepEqual(await catalogue.setSeasonSales(admin, { open: false }), { open: false, migrated: true }, role);
-    assert.deepEqual(await catalogue.seasonSalesState(admin), { open: false, migrated: true }, role);
-    assert.deepEqual(await catalogue.setSeasonSales(admin, { open: true }), { open: true, migrated: true }, role);
+    assert.deepEqual(catalogue.seasonSalesState(admin), { open: true, setting: 'SEASON_TICKET_SALES_ENABLED' }, role);
   }
+  closeSeason();
+  assert.equal(catalogue.seasonSalesState(await makeUser('owner')).open, false);
   for (const role of ['finance', 'desk', 'scanner', 'supervisor', 'customer'] as Role[]) {
     const user = await makeUser(role);
-    await assert.rejects(catalogue.setSeasonSales(user, { open: false }), /permission/, role);
-    await assert.rejects(catalogue.seasonSalesState(user), /permission/, role);
+    assert.throws(() => catalogue.seasonSalesState(user), /permission/, role);
   }
-  assert.equal(await stored(), true, 'refused attempts changed nothing');
+  const route = await import('../app/api/admin/festival/season-sales/route');
+  assert.deepEqual(Object.keys(route).filter((k) => /^(GET|POST|PUT|PATCH|DELETE)$/.test(k)), ['GET'], 'no write endpoint');
+  assert.equal(await count("SELECT count(*)::int n FROM audit_events WHERE action LIKE 'festival.season%'"), 0);
 });
 
-test('season switch: invalid bodies are refused and change nothing; changes are audited, repeats are not', { skip }, async () => {
-  await setup();
-  const admin = await owner();
-  for (const body of [{}, { open: 'false' }, { open: 0 }, { open: null }, [], null] as unknown[]) {
-    await assert.rejects(catalogue.setSeasonSales(admin, body as Record<string, unknown>), /Send \{"open": true\}/, JSON.stringify(body));
+test('no application code depends on migration 0010 (festivals.season_sales_open)', () => {
+  const files: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) walk(path);
+      else if (/\.(ts|tsx|sql)$/.test(name)) files.push(path);
+    }
+  };
+  for (const dir of ['src', 'app', 'db/migrations', 'proxy.ts'].filter((d) => { try { statSync(d); return true; } catch { return false; } })) {
+    if (statSync(dir).isDirectory()) walk(dir); else files.push(dir);
   }
-  assert.equal(await stored(), true);
-  await catalogue.setSeasonSales(admin, { open: false });
-  await catalogue.setSeasonSales(admin, { open: false });
-  const audits = await query<{ meta: unknown }>("SELECT * FROM audit_events WHERE action='festival.season_sales'");
-  assert.equal(audits.length, 1, 'one change, one audit row');
+  const offenders = files.filter((path) => readFileSync(path, 'utf8').includes('season_sales_open'));
+  assert.deepEqual(offenders, []);
 });
 
-test('season switch: persisted in the database; concurrent changes leave one consistent stored state', { skip }, async () => {
-  await setup();
-  const admin = await owner();
-  await catalogue.setSeasonSales(admin, { open: false });
-  assert.equal(await stored(), false, 'stored, not in memory');
-  const results = await Promise.all(Array.from({ length: 8 }, (_, i) => catalogue.setSeasonSales(admin, { open: i % 2 === 0 })));
-  for (const r of results) assert.equal(typeof r.open, 'boolean');
-  const final = await stored();
-  assert.equal((await catalogue.seasonSalesState(admin)).open, final, 'what the dashboard reads is what is stored');
-  assert.equal(await count('SELECT count(*)::int n FROM festivals'), 1);
-});
-
-test('migration default: a festival created without the switch has season sales CLOSED', { skip }, async () => {
-  await query(`INSERT INTO festivals(name,name_bn,venue,address,status,contact_email,terms) VALUES('F','F','V','A','PUBLISHED','x@tickets.test','T')`);
-  assert.equal(await stored(), false);
-});
-
-test('seasonSaleBlocked: only an explicit true opens season sales; daily tickets never depend on it', () => {
-  for (const value of [false, null, undefined, 'true', 1]) assert.equal(seasonSaleBlocked('SEASON', value), true, String(value));
-  assert.equal(seasonSaleBlocked('SEASON', true), false);
-  for (const value of [false, null, undefined]) assert.equal(seasonSaleBlocked('DAILY', value), false);
+test('the test database has the pre-0010 schema the application uses (no season_sales_open column)', { skip }, async () => {
+  assert.equal(await count("SELECT count(*)::int n FROM information_schema.columns WHERE table_schema='public' AND table_name='festivals' AND column_name='season_sales_open'"), 0);
+  const { GET } = await import('../app/api/health/route');
+  const body = await (await GET()).json();
+  assert.deepEqual([body.db, body.schema, body.config, body.publicSales, body.seasonSales], [true, true, true, true, true]);
+  closeSeason();
+  const closed = await (await GET()).json();
+  assert.deepEqual([closed.publicSales, closed.seasonSales], [true, false], 'health reports season sales closed');
 });
 
 // ---- PURCHASES WHILE CLOSED --------------------------------------------------------------------------
 
 test('closed: single hold and cart checkout of a season ticket are refused; nothing is created or charged', { skip }, async () => {
   const { a, season } = await setup();
-  await catalogue.setSeasonSales(await owner(), { open: false });
+  closeSeason();
   const buyer = await makeUser();
   await assert.rejects(commerce.reserve(buyer, line(season), randomUUID()), CLOSED);
   await assert.rejects(checkout.createCheckout(buyer, [line(season)], randomUUID()),
@@ -141,7 +151,7 @@ test('closed: single hold and cart checkout of a season ticket are refused; noth
 
 test('closed: daily tickets still sell end to end (hold, cart, Razorpay order, verification, confirmation)', { skip }, async () => {
   const { a, b } = await setup();
-  await catalogue.setSeasonSales(await owner(), { open: false });
+  closeSeason();
   const buyer = await makeUser();
   const co = await checkout.createCheckout(buyer, [line(a, 2), line(b)], randomUUID());
   await pay(buyer, co.id);
@@ -169,18 +179,17 @@ test('closed: catalogue and cart show the season ticket as closed; daily tickets
     };
   };
   assert.deepEqual(await state(), { season: 'SELLABLE', daily: 'SELLABLE', cartSeason: 'SELLABLE', cartDaily: 'SELLABLE' });
-  await catalogue.setSeasonSales(await owner(), { open: false });
+  closeSeason();
   assert.deepEqual(await state(), { season: 'CLOSED', daily: 'SELLABLE', cartSeason: 'CLOSED', cartDaily: 'SELLABLE' });
   assert.equal((await cart.readAccountCart(buyer.id)).length, 2, 'the cart line is kept, not deleted');
 });
 
 test('closed after a hold: no NEW payment order for the held season ticket (cart and single paths); the hold just expires', { skip }, async () => {
   const { season } = await setup();
-  const admin = await owner();
   const buyer = await makeUser();
   const co = await checkout.createCheckout(buyer, [line(season)], randomUUID());
   const single = await commerce.reserve(await makeUser(), line(season), randomUUID());
-  await catalogue.setSeasonSales(admin, { open: false });
+  closeSeason();
   await assert.rejects(checkout.createCheckoutPaymentOrder(buyer, co.id), CLOSED);
   const singleOwner = (await query<User>('SELECT u.* FROM users u JOIN bookings b ON b.user_id=u.id WHERE b.id=$1', [single.id]))[0];
   await assert.rejects(payments.createPaymentOrder(singleOwner, single.id), CLOSED);
@@ -191,7 +200,6 @@ test('closed after a hold: no NEW payment order for the held season ticket (cart
 
 test('closed after paying: existing season bookings, tickets and payments are untouched; a payment already made in an open order is honoured', { skip }, async () => {
   const { season } = await setup();
-  const admin = await owner();
   const earlier = await makeUser();
   const co = await checkout.createCheckout(earlier, [line(season, 2)], randomUUID());
   await pay(earlier, co.id);
@@ -200,7 +208,7 @@ test('closed after paying: existing season bookings, tickets and payments are un
   const lateCo = await checkout.createCheckout(late, [line(season)], randomUUID());
   const order = await checkout.createCheckoutPaymentOrder(late, lateCo.id);
   const before = await query('SELECT id,status,total FROM bookings ORDER BY id');
-  await catalogue.setSeasonSales(admin, { open: false });
+  closeSeason();
   const p = fake.pay(order.orderId);
   await payments.verifyRazorpayCallback({ razorpay_order_id: order.orderId, razorpay_payment_id: p.id, razorpay_signature: checkoutSignature(order.orderId, p.id) }, late);
   assert.equal((await checkout.checkoutReceipt(earlier.id, co.id)).status, 'CONFIRMED');
@@ -214,9 +222,8 @@ test('closed after paying: existing season bookings, tickets and payments are un
 
 test('reopened: the season purchase flow works again exactly as before', { skip }, async () => {
   const { season } = await setup();
-  const admin = await owner();
-  await catalogue.setSeasonSales(admin, { open: false });
-  await catalogue.setSeasonSales(admin, { open: true });
+  closeSeason();
+  process.env.SEASON_TICKET_SALES_ENABLED = 'true';
   const buyer = await makeUser();
   const co = await checkout.createCheckout(buyer, [line(season)], randomUUID());
   await pay(buyer, co.id);

@@ -132,6 +132,9 @@ export function salesConfigurationProblems(): string[] {
   const resend = present('RESEND_API_KEY') && present('EMAIL_FROM');
   const composio = present('COMPOSIO_API_KEY') && (present('COMPOSIO_CONNECTED_ACCOUNT_ID') || present('COMPOSIO_USER_ID'));
   if (!resend && !composio) problems.push('email delivery (RESEND_API_KEY+EMAIL_FROM or Composio)');
+  // The default sender of every email (Resend needs it; Composio Gmail may omit it): one valid address when set.
+  const emailFrom = process.env.EMAIL_FROM?.trim();
+  if (emailFrom && !isEmailSender(emailFrom)) problems.push('EMAIL_FROM (an address such as tickets@samatat.org, or "Name <tickets@samatat.org>")');
   // Optional sender for sign-in code emails (auth.ts otpEmailSender); EMAIL_FROM when unset.
   const otpFrom = process.env.OTP_FROM_EMAIL?.trim();
   if (otpFrom && !isEmailSender(otpFrom)) problems.push('OTP_FROM_EMAIL (an address such as otp@samatat.org, or "Name <otp@samatat.org>")');
@@ -145,16 +148,54 @@ export function salesConfigurationProblems(): string[] {
  * live key. The two keys must also come from the same kind of instance.
  * The publishable key is read statically: the build inlines it, so this checks the exact key the
  * browser bundle uses (a Worker runtime secret of the same name does not change the bundle).
+ * CLERK_DEVELOPMENT_INSTANCE_ALLOWED (temporary, off by default) relaxes only the
+ * production-instance requirement; see clerkDevelopmentInstanceAllowed.
  */
-export function clerkInstanceProblems(env = deployEnv(), publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, secretKey = process.env.CLERK_SECRET_KEY): string[] {
+export function clerkInstanceProblems(
+  env = deployEnv(),
+  publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
+  secretKey = process.env.CLERK_SECRET_KEY,
+  allowDevelopment = clerkDevelopmentInstanceAllowed(),
+): string[] {
   const kind = (key: string | undefined, prefix: 'pk' | 'sk') => new RegExp(`^${prefix}_(live|test)_`).exec(key?.trim() ?? '')?.[1] ?? null;
   const pk = kind(publishableKey, 'pk');
   const sk = kind(secretKey, 'sk');
   const problems: string[] = [];
-  if (env === 'production' && publishableKey?.trim() && pk !== 'live') problems.push('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY (production needs a Clerk production instance, pk_live_; rebuild after changing it)');
-  if (env === 'production' && secretKey?.trim() && sk !== 'live') problems.push('CLERK_SECRET_KEY (production needs a Clerk production instance, sk_live_)');
+  const strict = env === 'production' && !allowDevelopment;
+  if (strict && publishableKey?.trim() && pk !== 'live') problems.push('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY (production needs a Clerk production instance, pk_live_; rebuild after changing it)');
+  if (strict && secretKey?.trim() && sk !== 'live') problems.push('CLERK_SECRET_KEY (production needs a Clerk production instance, sk_live_)');
+  // Override on: development keys are accepted, but they must still be real Clerk keys.
+  if (!strict && publishableKey?.trim() && !pk) problems.push('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY (not a Clerk publishable key)');
+  if (!strict && secretKey?.trim() && !sk) problems.push('CLERK_SECRET_KEY (not a Clerk secret key)');
   if (pk && sk && pk !== sk) problems.push('Clerk keys (publishable and secret key come from different kinds of Clerk instance)');
   return problems;
+}
+
+/**
+ * CLERK_DEVELOPMENT_INSTANCE_ALLOWED: a TEMPORARY operator override that lets a production
+ * deployment (DEPLOY_ENV=production) run customer Google sign-in on a Clerk DEVELOPMENT
+ * instance (pk_test_/sk_test_) until the Clerk production instance exists. Exactly "true"
+ * turns it on; unset or anything else keeps the strict pk_live_/sk_live_ rule. Server-side
+ * only. It changes nothing else: Clerk still verifies every session, the secret key stays
+ * server-side, staff still sign in with passwords, and every other sales requirement
+ * (database, keys, Razorpay live key, email, ALLOW_PUBLIC_SALES) still applies.
+ * Limitations of a development instance: Clerk shows a "Development mode" badge, it has a
+ * user cap, it uses Clerk's shared Google OAuth credentials (Clerk's name on the consent
+ * screen), and its session handshake goes through *.clerk.accounts.dev.
+ */
+export function clerkDevelopmentInstanceAllowed(): boolean {
+  return (process.env.CLERK_DEVELOPMENT_INSTANCE_ALLOWED ?? '').trim().toLowerCase() === 'true';
+}
+
+/**
+ * SEASON_TICKET_SALES_ENABLED, the operator's switch for NEW season-ticket sales, separate
+ * from ALLOW_PUBLIC_SALES (which it never overrides: a season sale needs both) and from each
+ * product's "On sale". A runtime setting (Cloudflare Worker variable), not a database value:
+ * exactly "true" (any case) opens season sales; unset or anything else keeps them CLOSED.
+ * Existing season bookings, tickets, QR codes, admission and payments never depend on it.
+ */
+export function seasonTicketSalesEnabled(): boolean {
+  return (process.env.SEASON_TICKET_SALES_ENABLED ?? '').trim().toLowerCase() === 'true';
 }
 
 /**
