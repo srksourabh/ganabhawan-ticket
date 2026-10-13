@@ -1,7 +1,6 @@
 import { query } from './db';
 import { STALE_JOB_MINUTES } from './jobs';
-import { clerkDevelopmentInstanceAllowed, coreConfigurationProblems, customerOtpEnabled, mobileFeaturesEnabled, salesConfigurationProblems, seasonTicketSalesEnabled } from './env';
-import { publicSalesOpen } from './commerce';
+import { clerkDevelopmentInstanceAllowed, coreConfigurationProblems, customerOtpEnabled, mobileFeaturesEnabled, publicSalesOpen, salesConfigurationProblems, seasonTicketSalesEnabled } from './env';
 
 /**
  * Operational signals for the owner/finance dashboard and an external uptime

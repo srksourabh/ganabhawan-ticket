@@ -4,7 +4,7 @@ import { AppError, requireValue } from './errors';
 import { audit } from './audit';
 import { developmentAdaptersAllowed, seasonTicketSalesEnabled } from './env';
 import { assertShowCancellable, cancelShowSales } from './commerce';
-import { seasonSaleBlocked, sellState, type CoveredPerformance } from './availability';
+import { productSellState, type CoveredPerformance } from './availability';
 import { zoneTemplate } from './inventory-admin';
 import { ADMIN_POLICY } from './admin-policy';
 export async function catalogue() {
@@ -36,10 +36,8 @@ export async function publicProducts(festivalId: string, nowMs = Date.now()) {
   const visible=coverage.filter(s=>s.status==='PUBLISHED'&&new Date(s.ends_at).getTime()>nowMs);
   if(visible.length===0) continue;
   const first=coverage[0];
-  // Season tickets while the operator's season switch is off: listed, but closed (same rule as the hold).
-  const {state,available}=seasonSaleBlocked(String(first.kind))
-   ? {state:'CLOSED' as const,available:0}
-   : sellState(coverage,first.cap===null?null:Number(first.cap),Number(first.cap_used),nowMs);
+  // The same gates as a purchase (availability.ts productSellState): listed, but closed when it cannot be bought.
+  const {state,available}=productSellState(String(first.kind),coverage,first.cap===null?null:Number(first.cap),Number(first.cap_used),nowMs);
   const product:Record<string,unknown>={};
   for(const [key,value] of Object.entries(first)) {
    if(!['product_id','show_id','title','title_bn','starts_at','ends_at','status','allocation','held','committed','cap_used'].includes(key)) product[key]=value;

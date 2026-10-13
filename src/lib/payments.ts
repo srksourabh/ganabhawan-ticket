@@ -4,7 +4,7 @@ import { createCheckoutPaymentOrder, fulfillCheckout, confirmDevelopmentCheckout
 import { AppError, requireValue } from './errors';
 import { assertLiveConfiguration, developmentAdaptersAllowed, usingDevelopmentPayments } from './env';
 import { applyRefundWebhook } from './refunds';
-import { assertPublicSalesOpen, assertSeasonSalesOpenFor, expireIn, fulfill, type CapturedPayment } from './commerce';
+import { assertHeldBookingsSellable, assertPublicSalesOpen, expireIn, fulfill, type CapturedPayment } from './commerce';
 import { audit } from './audit';
 import type { User } from './types';
 import { assertCanPurchase } from './account-contacts';
@@ -130,8 +130,8 @@ export async function createPaymentOrder(user: User, bookingId: string) {
       'Booking not found or no longer held.',
       404,
     );
-    // No new payment order for a season ticket once season sales are closed (the hold expires).
-    await assertSeasonSalesOpenFor(c, [bookingId]);
+    // No new payment order once a sales gate closed after the hold (the hold expires).
+    await assertHeldBookingsSellable(c, [bookingId]);
 
     if (booking.status === 'HELD') {
       await c.query("UPDATE bookings SET status='PAYMENT_PENDING' WHERE id=$1", [bookingId]);

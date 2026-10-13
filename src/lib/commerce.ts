@@ -4,7 +4,7 @@ import { AppError, requireValue } from './errors';
 import { token, hash, encrypt } from './security';
 import { audit, job } from './audit';
 import { markAttemptsConfirmed } from './attempts';
-import { developmentAdaptersAllowed, assertLiveConfiguration, seasonTicketSalesEnabled } from './env';
+import { assertLiveConfiguration, publicSalesOpen } from './env';
 import { salesOpen, seasonSaleBlocked } from './availability';
 import { assertCanPurchase } from './account-contacts';
 import type { User } from './types';
@@ -26,19 +26,22 @@ export async function expireHolds() { return transaction(c=>expireIn(c),true); }
 type BookingRow = Record<string, any>;
 export type HoldInput = {productId:string;quantity:number;version:number};
 export const SEASON_SALES_CLOSED='Season-ticket sales are currently closed.';
-/** The operator's global switch for NEW public purchases (ALLOW_PUBLIC_SALES exactly "true"; local development aside). */
-export function publicSalesOpen() { return developmentAdaptersAllowed() || process.env.ALLOW_PUBLIC_SALES==='true'; }
 /** Payment-order boundary: a hold made while sales were open gets no NEW payment order once they are paused (it expires). */
 export function assertPublicSalesOpen() { requireValue(publicSalesOpen(),'Ticket sales are paused.'); }
 /**
- * Payment-order boundary for held bookings: a hold made while season sales were open gets
- * no NEW payment order once they are closed (the hold simply expires). A payment the
- * customer already completed is still honoured by fulfil(); nothing is cancelled or refunded.
+ * The hold-time sales gates re-checked for bookings held earlier (reusing an open checkout,
+ * creating a payment order): public sales on, festival published, product "On sale", and the
+ * season switch for season tickets. A hold made while sales were open gets no NEW payment order
+ * once any of them is off (the hold simply expires). A payment the customer already completed is
+ * still honoured by fulfil(); nothing is cancelled or refunded here.
  */
-export async function assertSeasonSalesOpenFor(c:Client,bookingIds:string[]) {
-  if(seasonTicketSalesEnabled()) return;
-  const season=await one<{n:number}>(c,"SELECT count(*)::int n FROM bookings b JOIN products p ON p.id=b.product_id WHERE b.id=ANY($1::uuid[]) AND p.kind='SEASON'",[bookingIds]);
-  if((season?.n??0)>0) throw new AppError(409,SEASON_SALES_CLOSED,'SEASON_SALES_CLOSED');
+export async function assertHeldBookingsSellable(c:Client,bookingIds:string[]) {
+  assertPublicSalesOpen();
+  const rows=(await c.query<{kind:string;enabled:boolean;festival_status:string}>(
+   'SELECT p.kind,p.enabled,f.status festival_status FROM bookings b JOIN products p ON p.id=b.product_id JOIN festivals f ON f.id=p.festival_id WHERE b.id=ANY($1::uuid[])',[bookingIds])).rows;
+  requireValue(rows.every(r=>r.festival_status==='PUBLISHED'),'Ticket sales are paused.');
+  requireValue(rows.every(r=>r.enabled),'This ticket option is not available.');
+  if(rows.some(r=>seasonSaleBlocked(r.kind))) throw new AppError(409,SEASON_SALES_CLOSED,'SEASON_SALES_CLOSED');
 }
 /** Loads and validates a product for a hold (locks the product row). */
 export async function loadProductForHold(c:Client,input:HoldInput) {
@@ -57,7 +60,9 @@ export async function loadProductForHold(c:Client,input:HoldInput) {
  * lock; any failure throws and rolls the caller's transaction back.
  */
 export async function placeHold(c:Client,user:User,input:HoldInput,product:BookingRow) {
-  const coverage=(await c.query('SELECT pc.*,p.allocation,p.held,p.committed,s.title,s.starts_at,s.status FROM product_coverage pc JOIN pools p ON p.id=pc.pool_id JOIN shows s ON s.id=pc.show_id WHERE pc.product_id=$1 ORDER BY s.starts_at, p.id FOR UPDATE OF p',[product.id])).rows;
+  // Cancelled performances are not part of a new sale (availability.ts activeCoverage): no hold,
+  // snapshot entry or ticket entitlement for them.
+  const coverage=(await c.query("SELECT pc.*,p.allocation,p.held,p.committed,s.title,s.starts_at,s.status FROM product_coverage pc JOIN pools p ON p.id=pc.pool_id JOIN shows s ON s.id=pc.show_id WHERE pc.product_id=$1 AND s.status<>'CANCELLED' ORDER BY s.starts_at, p.id FOR UPDATE OF p",[product.id])).rows;
   requireValue(salesOpen(coverage as { status: string; starts_at: string }[]),'Sales for this performance have closed.');
   requireValue(coverage.every(p=>p.allocation-p.held-p.committed>=input.quantity),'Not enough tickets remain. Please choose fewer tickets.');
   if(product.cap!==null) { const used=await one(c,"SELECT COALESCE(sum(quantity),0)::int n FROM bookings WHERE product_id=$1 AND status IN ('HELD','PAYMENT_PENDING','CONFIRMED')",[product.id]); requireValue(used!.n+input.quantity<=product.cap,'The product limit has been reached.'); }

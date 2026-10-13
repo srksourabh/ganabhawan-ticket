@@ -1,4 +1,4 @@
-import { seasonTicketSalesEnabled } from './env';
+import { customerPurchasesOpen, seasonTicketSalesEnabled } from './env';
 
 /**
  * The one definition of "can this product be sold right now", used by both the
@@ -17,9 +17,23 @@ export interface CoveredPerformance {
   committed: number | string;
 }
 
-/** Every performance the product covers must be PUBLISHED and not yet started. */
+/**
+ * The performances a NEW sale covers: every covered performance except cancelled ones. A
+ * cancelled performance can never be attended or admitted, and a booking covering one could
+ * never be confirmed (commerce.ts assessBooking), so it must not keep a season ticket closed
+ * for the performances that remain. Holds, snapshots and tickets use this same list (placeHold).
+ */
+export function activeCoverage<T extends Pick<CoveredPerformance, 'status'>>(coverage: T[]): T[] {
+  return coverage.filter((s) => s.status !== 'CANCELLED');
+}
+
+/**
+ * Every remaining (not cancelled) covered performance must be PUBLISHED and not yet started,
+ * and at least one must remain. A draft or already-started performance still closes sales.
+ */
 export function salesOpen(coverage: Pick<CoveredPerformance, 'status' | 'starts_at'>[], nowMs = Date.now()) {
-  return coverage.length > 0 && coverage.every((s) => s.status === 'PUBLISHED' && new Date(s.starts_at).getTime() > nowMs);
+  const active = activeCoverage(coverage);
+  return active.length > 0 && active.every((s) => s.status === 'PUBLISHED' && new Date(s.starts_at).getTime() > nowMs);
 }
 
 /**
@@ -33,10 +47,22 @@ export function seasonSaleBlocked(kind: string, seasonSalesOpen = seasonTicketSa
 
 /** Tickets that can still be held: the scarcest covered pool, bounded by the product cap. */
 export function remainingTickets(coverage: CoveredPerformance[], cap: number | null, capUsed: number) {
-  if (coverage.length === 0) return 0;
-  const pools = Math.min(...coverage.map((p) => Number(p.allocation) - Number(p.held) - Number(p.committed)));
+  const active = activeCoverage(coverage);
+  if (active.length === 0) return 0;
+  const pools = Math.min(...active.map((p) => Number(p.allocation) - Number(p.held) - Number(p.committed)));
   const byCap = cap === null || cap === undefined ? Number.POSITIVE_INFINITY : Number(cap) - capUsed;
   return Math.max(0, Math.min(pools, byCap));
+}
+
+/**
+ * What customers see for a product (public catalogue, account cart, admin): the same gates a
+ * purchase checks, in one place. Closed while customer sales are not open (settings incomplete
+ * or ALLOW_PUBLIC_SALES off), for a season ticket while SEASON_TICKET_SALES_ENABLED is off, and
+ * otherwise by the sale window and stock (sellState). A purchase re-checks all of it on the server.
+ */
+export function productSellState(kind: string, coverage: CoveredPerformance[], cap: number | null, capUsed: number, nowMs = Date.now(), salesAllowed = customerPurchasesOpen()) {
+  if (!salesAllowed || seasonSaleBlocked(kind)) return { state: 'CLOSED' as SellState, available: 0 };
+  return sellState(coverage, cap, capUsed, nowMs);
 }
 
 export function sellState(coverage: CoveredPerformance[], cap: number | null, capUsed: number, nowMs = Date.now()) {

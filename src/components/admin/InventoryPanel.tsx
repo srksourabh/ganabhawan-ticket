@@ -39,7 +39,6 @@ async function send(url: string, method: string, body: unknown) {
  */
 export default function InventoryPanel({ onChanged }: { onChanged?: () => void }) {
   const [rows, setRows] = useState<ZoneRow[]>([]);
-  const [seasons, setSeasons] = useState<{ id: string; name: string; category: string }[]>([]);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -49,8 +48,6 @@ export default function InventoryPanel({ onChanged }: { onChanged?: () => void }
     const body = await res.json().catch(() => ({}));
     if (!res.ok) { setError((body as { error?: string }).error || 'Could not load inventory.'); return; }
     setRows((body as { zones: ZoneRow[] }).zones);
-    const products = await fetch('/api/admin/products', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : { products: [] })).catch(() => ({ products: [] }));
-    setSeasons(((products as { products?: { id: string; name: string; category: string; kind: string }[] }).products ?? []).filter((p) => p.kind === 'SEASON'));
   }, []);
 
   useEffect(() => {
@@ -104,50 +101,8 @@ export default function InventoryPanel({ onChanged }: { onChanged?: () => void }
         <button className="btn btn--primary" type="submit" disabled={busy}>Apply to zone</button>
       </form>
 
-      <form
-        className="card stack stack--sm"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const f = new FormData(event.currentTarget);
-          void run(() => send('/api/admin/products', 'POST', {
-            category: f.get('category'), name: f.get('name'), nameBn: f.get('nameBn'), price: Math.round(Number(f.get('price')) * 100),
-          }), 'Season ticket created. Enable or edit it under Ticket prices.');
-        }}
-      >
-        <h3 className="h3">New season ticket</h3>
-        <p className="muted" style={{ margin: 0 }}>Covers every published performance that has not started, for one zone.</p>
-        <div className="grid">
-          <label className="field"><span>Zone</span><select name="category">{ZONES.map((z) => <option key={z}>{z}</option>)}</select></label>
-          <label className="field"><span>Name</span><input name="name" required /></label>
-          <label className="field"><span>Name (Bengali)</span><input name="nameBn" required /></label>
-          <label className="field"><span>Price (₹)</span><input name="price" type="number" min={1} required /></label>
-        </div>
-        <button className="btn btn--primary" type="submit" disabled={busy}>Create season ticket</button>
-      </form>
+      <p className="muted" style={{ margin: 0 }}>Create, edit and delete season tickets, and choose their performances, under <strong>Seasons</strong>.</p>
 
-      <form
-        className="card stack stack--sm"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const f = new FormData(event.currentTarget);
-          void run(() => send(`/api/admin/products/${String(f.get('productId'))}/coverage`, 'POST', { showId: f.get('showId') }),
-            'Performance added to the season ticket.');
-        }}
-      >
-        <h3 className="h3">Add a performance to a season ticket</h3>
-        <p className="muted" style={{ margin: 0 }}>
-          New performances are not added to season tickets automatically. This is only possible before any season ticket of that zone is sold.
-        </p>
-        <div className="grid">
-          <label className="field"><span>Season ticket</span>
-            <select name="productId" required>{seasons.map((s) => <option key={s.id} value={s.id}>{s.name} · {s.category}</option>)}</select>
-          </label>
-          <label className="field"><span>Performance</span>
-            <select name="showId" required>{shows.map((s) => <option key={s.show_id} value={s.show_id}>{s.title} · {when(s.starts_at)}</option>)}</select>
-          </label>
-        </div>
-        <button className="btn btn--primary" type="submit" disabled={busy || seasons.length === 0}>Add to season</button>
-      </form>
 
       {shows.map((show) => (
         <section key={show.show_id} className="card stack stack--sm">
