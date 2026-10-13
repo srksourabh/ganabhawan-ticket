@@ -64,6 +64,12 @@ export function secret(name: string) {
   return value;
 }
 
+/** "otp@samatat.org" or "Samatat <otp@samatat.org>": one address, no spaces or angle brackets inside it. */
+export function isEmailSender(value: string): boolean {
+  const address = /^[^<>]*<([^<>]+)>$/.exec(value.trim())?.[1] ?? value.trim();
+  return /^[^\s@<>"]+@[^\s@<>"]+\.[a-z]{2,}$/i.test(address);
+}
+
 const present = (name: string) => Boolean(process.env[name]?.trim());
 const long = (name: string, min: number) => (process.env[name]?.trim().length ?? 0) >= min;
 
@@ -124,6 +130,9 @@ export function salesConfigurationProblems(): string[] {
   const resend = present('RESEND_API_KEY') && present('EMAIL_FROM');
   const composio = present('COMPOSIO_API_KEY') && (present('COMPOSIO_CONNECTED_ACCOUNT_ID') || present('COMPOSIO_USER_ID'));
   if (!resend && !composio) problems.push('email delivery (RESEND_API_KEY+EMAIL_FROM or Composio)');
+  // Optional sender for sign-in code emails (auth.ts otpEmailSender); EMAIL_FROM when unset.
+  const otpFrom = process.env.OTP_FROM_EMAIL?.trim();
+  if (otpFrom && !isEmailSender(otpFrom)) problems.push('OTP_FROM_EMAIL (an address such as otp@samatat.org, or "Name <otp@samatat.org>")');
   return problems;
 }
 

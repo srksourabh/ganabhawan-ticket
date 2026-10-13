@@ -41,6 +41,15 @@ NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=…      # required (pk_live_… in production
 CLERK_SECRET_KEY=…                       # required
 ```
 
+### Sign-in code sender (e.g. otp@samatat.org)
+
+The customer sign-in code is generated and emailed by the app (`src/lib/auth.ts` `requestOtp` → `sendEmail`), not by Clerk. Clerk's email settings do not affect it. The sender is `OTP_FROM_EMAIL` if set, otherwise `EMAIL_FROM`. Confirmations and notices always use `EMAIL_FROM`. The provider is chosen by which secrets are set:
+
+* **Composio Gmail** (`COMPOSIO_API_KEY` + `COMPOSIO_CONNECTED_ACCOUNT_ID`/`COMPOSIO_USER_ID`) is used first whenever it is configured. Mail leaves through the connected Gmail account, so it shows that account's address unless the sender is a verified Gmail "Send mail as" alias. A samatat.org address via Gmail also needs samatat.org's SPF/DMARC to allow Google.
+* **Resend** (`RESEND_API_KEY`) is used when Composio is not configured. Verify the domain `samatat.org` in Resend (Domains → add the SPF/DKIM DNS records Resend shows, wait for "Verified"). Resend refuses an unverified sender, and then every code fails with "Email delivery is temporarily unavailable".
+
+To send codes from otp@samatat.org through Resend: verify samatat.org in Resend, then set the Worker secrets `RESEND_API_KEY` and `OTP_FROM_EMAIL=Samatat Natyamela <otp@samatat.org>`. Set `EMAIL_FROM` to a samatat.org address too, because Resend needs it for confirmations. Then remove the three `COMPOSIO_*` Worker secrets so Resend is used, and check `/api/health` shows `config: true`. These are runtime settings, so no rebuild is needed, and none of them is a GitHub secret. A malformed `OTP_FROM_EMAIL` closes customer sales (`config: false`) but not staff access.
+
 ## 2. Database: migrate (non-destructive)
 
 ```powershell

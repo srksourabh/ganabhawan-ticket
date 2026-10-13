@@ -37,6 +37,8 @@ test('Gmail send arguments match Composio GMAIL_SEND_EMAIL', () => {
       user_id: 'me',
       from_email: 'srksourabh@gmail.com',
     });
+    // Sign-in codes pass their own sender (auth.ts otpEmailSender); nothing else changes.
+    assert.equal(buildGmailSendArguments('guest@example.com', 's', 'b', 'otp@samatat.org').from_email, 'otp@samatat.org');
   } finally {
     if (previousFrom === undefined) delete process.env.EMAIL_FROM;
     else process.env.EMAIL_FROM = previousFrom;

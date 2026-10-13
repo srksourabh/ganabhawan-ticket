@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { AppError } from '../src/lib/errors';
-import { assertLiveConfiguration, configurationProblems, developmentAdaptersAllowed, isLocalAppUrl, mobileConfigurationProblems, mobileFeaturesEnabled } from '../src/lib/env';
+import { assertLiveConfiguration, configurationProblems, coreConfigurationProblems, developmentAdaptersAllowed, isEmailSender, isLocalAppUrl, mobileConfigurationProblems, mobileFeaturesEnabled } from '../src/lib/env';
 import { safeNextPath } from '../src/lib/redirect';
 import { gateScanTarget } from '../src/lib/gates';
 import { entryAllowed } from '../src/lib/admission';
@@ -146,6 +146,20 @@ test('live mode lists every missing production requirement by name only', () => 
   withEnv({ ...LIVE_STAGING, SESSION_SECRET: 'short' }, () => assert.ok(configurationProblems().some((p) => p.startsWith('SESSION_SECRET'))));
   // Problems name settings, never their values.
   withEnv({ ...LIVE_STAGING, SESSION_SECRET: 'short-secret-value' }, () => assert.ok(!configurationProblems().join(' ').includes('short-secret-value')));
+});
+
+test('OTP_FROM_EMAIL is optional; when set it must be one address (fails closed, names only)', () => {
+  withEnv({ ...LIVE_STAGING, OTP_FROM_EMAIL: undefined }, () => assert.deepEqual(configurationProblems(), []));
+  for (const ok of ['otp@samatat.org', 'Samatat Natyamela <otp@samatat.org>']) {
+    withEnv({ ...LIVE_STAGING, OTP_FROM_EMAIL: ok }, () => assert.deepEqual(configurationProblems(), [], ok));
+  }
+  for (const bad of ['otp', 'otp@samatat', 'otp@ samatat.org', 'a@b.org, c@d.org', 'Samatat <otp@samatat.org', '<>', 'undefined']) {
+    assert.equal(isEmailSender(bad), false, bad);
+    withEnv({ ...LIVE_STAGING, OTP_FROM_EMAIL: bad }, () => {
+      assert.ok(configurationProblems().some((p) => p.startsWith('OTP_FROM_EMAIL')), bad);
+      assert.deepEqual(coreConfigurationProblems(), [], 'staff are not affected');
+    });
+  }
 });
 
 test('customer sign-in page: Google and the one-time code only — no "More sign-in options" link to Clerk\'s form', () => {

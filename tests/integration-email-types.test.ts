@@ -82,6 +82,33 @@ test('email 1: sign-in code — right recipient, a 6-digit code, the expiry; a p
   await assert.rejects(auth.requestOtp(user.contact, '10.4.0.1'), /Email delivery is temporarily unavailable/);
 });
 
+test('email 1b: sign-in codes come from OTP_FROM_EMAIL when set; every other email keeps EMAIL_FROM; the code still signs in', { skip }, async () => {
+  const user = await emailUser('sender');
+  // Unset: the code uses EMAIL_FROM like every other email (unchanged behaviour).
+  delete process.env.OTP_FROM_EMAIL;
+  await auth.requestOtp(user.contact, '10.4.0.2');
+  assert.equal(mailTo(user.contact)[0].from, process.env.EMAIL_FROM);
+  process.env.OTP_FROM_EMAIL = 'Samatat Natyamela <otp@samatat.org>';
+  try {
+    await query("UPDATE otp_challenges SET created_at=now()-interval '1 minute'");
+    const { challengeId } = await auth.requestOtp(user.contact, '10.4.0.2');
+    const mail = mailTo(user.contact)[1];
+    assert.equal(mail.from, 'Samatat Natyamela <otp@samatat.org>');
+    assert.match(mail.text, /^Your code is \d{6}\. It expires in 5 minutes\. Do not share it\.$/);
+    // Verification, expiry and the session are untouched by the sender.
+    const signedIn = await auth.verifyOtp(challengeId, /\d{6}/.exec(mail.text)![0]);
+    assert.equal(signedIn.user.id, user.id);
+    // Other email (confirmations, notices) still uses EMAIL_FROM.
+    await auth.sendEmail(user.contact, 'Other', 'Body');
+    assert.equal(mailTo(user.contact)[2].from, process.env.EMAIL_FROM);
+    // A blank OTP_FROM_EMAIL falls back instead of sending from "".
+    process.env.OTP_FROM_EMAIL = '  ';
+    assert.equal(auth.otpEmailSender(), process.env.EMAIL_FROM);
+  } finally {
+    delete process.env.OTP_FROM_EMAIL;
+  }
+});
+
 test('email 2: checkout confirmation — reference, zone, quantity, amounts, IST time, QR link, receipt link, card instruction; nobody else’s data', { skip }, async () => {
   const user = await emailUser('cart');
   const other = await emailUser('other');
