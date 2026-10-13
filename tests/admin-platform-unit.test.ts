@@ -25,12 +25,22 @@ test('availability: a season with every covered show published and upcoming is s
   assert.deepEqual(sellState([pool('PUBLISHED', future), pool('PUBLISHED', future, 3)], null, 0, NOW), { state: 'SELLABLE', available: 3 });
 });
 
-test('availability: one covered show started, draft or cancelled closes the WHOLE season (same as placeHold)', () => {
-  for (const bad of [pool('PUBLISHED', past), pool('DRAFT', future), pool('CANCELLED', future)]) {
+test('availability: one covered show started or draft closes the WHOLE season (same as placeHold)', () => {
+  for (const bad of [pool('PUBLISHED', past), pool('DRAFT', future)]) {
     assert.equal(salesOpen([pool('PUBLISHED', future), bad], NOW), false);
     assert.deepEqual(sellState([pool('PUBLISHED', future), bad], null, 0, NOW), { state: 'CLOSED', available: 0 });
   }
   assert.equal(salesOpen([], NOW), false, 'no coverage is never sellable');
+});
+
+test('availability: a cancelled covered show is left out of new sales (it used to close the season for good)', () => {
+  // The production symptom: every season ticket covered cancelled performances and showed "Sales closed".
+  assert.equal(salesOpen([pool('PUBLISHED', future), pool('CANCELLED', future)], NOW), true);
+  // Its stock does not count either (no seat is held in a cancelled performance).
+  assert.deepEqual(sellState([pool('PUBLISHED', future, 5), pool('CANCELLED', future, 0)], null, 0, NOW), { state: 'SELLABLE', available: 5 });
+  // Started or draft remaining performances still close it; nothing remaining = closed.
+  assert.equal(salesOpen([pool('CANCELLED', future), pool('PUBLISHED', past)], NOW), false);
+  assert.equal(salesOpen([pool('CANCELLED', future), pool('CANCELLED', future)], NOW), false);
 });
 
 test('availability: the scarcest pool and the product cap decide; zero left is SOLD_OUT, not CLOSED', () => {

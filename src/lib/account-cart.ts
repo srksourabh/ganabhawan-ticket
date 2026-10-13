@@ -1,6 +1,6 @@
 import { query, transaction, one, type Client } from './db';
 import { requireValue } from './errors';
-import { seasonSaleBlocked, sellState, type SellState } from './availability';
+import { productSellState, type SellState } from './availability';
 
 /**
  * The signed-in customer's unpaid cart, stored on the server (cart_items), never
@@ -58,8 +58,7 @@ function lineState(p: ProductRow | undefined, nowMs = Date.now()): { state: Cart
   if (!p) return { state: 'UNAVAILABLE', available: 0, expired: true };
   const expired = !p.coverage.some((s) => s.status !== 'CANCELLED' && new Date(s.ends_at).getTime() > nowMs);
   if (!p.enabled || p.festival_status !== 'PUBLISHED') return { state: 'UNAVAILABLE', available: 0, expired };
-  if (seasonSaleBlocked(p.kind)) return { state: 'CLOSED', available: 0, expired }; // season sales switched off
-  const { state, available } = sellState(p.coverage, p.cap === null ? null : Number(p.cap), Number(p.cap_used), nowMs);
+  const { state, available } = productSellState(p.kind, p.coverage, p.cap === null ? null : Number(p.cap), Number(p.cap_used), nowMs);
   return { state, available, expired };
 }
 

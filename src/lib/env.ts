@@ -187,6 +187,16 @@ export function clerkDevelopmentInstanceAllowed(): boolean {
   return (process.env.CLERK_DEVELOPMENT_INSTANCE_ALLOWED ?? '').trim().toLowerCase() === 'true';
 }
 
+/** The operator's global switch for NEW public purchases (ALLOW_PUBLIC_SALES exactly "true"; local development aside). */
+export function publicSalesOpen(): boolean {
+  return developmentAdaptersAllowed() || process.env.ALLOW_PUBLIC_SALES === 'true';
+}
+
+/** Customers can buy at all: every customer-sales setting valid AND public sales on (what purchases check). */
+export function customerPurchasesOpen(): boolean {
+  return configurationProblems().length === 0 && publicSalesOpen();
+}
+
 /**
  * SEASON_TICKET_SALES_ENABLED, the operator's switch for NEW season-ticket sales, separate
  * from ALLOW_PUBLIC_SALES (which it never overrides: a season sale needs both) and from each
