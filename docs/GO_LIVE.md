@@ -42,6 +42,27 @@ NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=…      # required (pk_live_… in production
 CLERK_SECRET_KEY=…                       # required (sk_live_… from the SAME Clerk instance in production)
 ```
 
+### Temporary: production on the Clerk development instance
+
+Until the Clerk production instance exists, set the Worker secret `CLERK_DEVELOPMENT_INSTANCE_ALLOWED=true`. Production then accepts the current development keys (`pk_test_…` / `sk_test_…`), and customer sales can open once every other requirement passes. Leave it unset to keep the strict rule (`pk_live_…` / `sk_live_…`). Exactly `true` turns it on; any other value is off.
+
+What it does **not** change:
+* Clerk still verifies every session. The secret key stays server-side.
+* Google sign-in still never gives staff powers. Staff sign in with passwords.
+* Both keys must still be real Clerk keys from the same kind of instance.
+* Every other requirement still applies: database, session and credential keys, `APP_URL`, `CRON_SECRET`, Razorpay **live** key and secrets, email delivery and `ALLOW_PUBLIC_SALES`.
+
+Limitations of serving the public from a Clerk **development** instance:
+* Customers see Clerk's orange "Development mode" badge.
+* Development instances cap their users (see Clerk's current limits).
+* Google sign-in uses Clerk's shared OAuth app, so the consent screen does not show your brand.
+* Sessions go through Clerk's development handshake on `*.clerk.accounts.dev`.
+* Accounts made there do not move to the production instance. Customers sign in again later and are re-linked by verified email, keeping their bookings.
+
+Remove the override as soon as the production instance below is live.
+
+The owner (or `OPS_MONITOR_TOKEN`) can see exactly which settings block sales, by name, never by value: `GET /api/ops/status` → `configuration.salesProblems`.
+
 ### Clerk production instance (customer Google sign-in)
 
 1. Clerk dashboard → the Samatat application → create the **Production** instance. Clerk serves production from a domain you own and needs DNS records there, so a `*.workers.dev` URL cannot host it: attach a custom domain to the Worker first.
@@ -62,9 +83,9 @@ The customer sign-in code is generated and emailed by the app (`src/lib/auth.ts`
 
 To send codes from otp@samatat.org through Resend: verify samatat.org in Resend, then set the Worker secrets `RESEND_API_KEY` and `OTP_FROM_EMAIL=Samatat Natyamela <otp@samatat.org>`. Set `EMAIL_FROM` to a samatat.org address too, because Resend needs it for confirmations. Then remove the three `COMPOSIO_*` Worker secrets so Resend is used, and check `/api/health` shows `config: true`. These are runtime settings, so no rebuild is needed, and none of them is a GitHub secret. A malformed `OTP_FROM_EMAIL` closes customer sales (`config: false`) but not staff access.
 
-### Customer code sign-in (temporarily off)
+### Customer code sign-in (email only)
 
-Customers sign in with Google only while `CUSTOMER_OTP_ENABLED` is unset; no setting is needed for that. To offer the one-time code again, first confirm code delivery works (see the sender section above). Then set the Worker secret `CUSTOMER_OTP_ENABLED=true`; no rebuild or migration is needed. Check that `/login` shows the code form, and request a code to your own address. To turn it off again, delete the secret or set it to `false`.
+Customers sign in with Google only while `CUSTOMER_OTP_ENABLED` is unset. To offer the **email** one-time code, first confirm code delivery works (see the sender section above). Then set the Worker secret `CUSTOMER_OTP_ENABLED=true`; no rebuild or migration is needed. This never enables mobile/SMS codes: a mobile number is refused and no SMS is sent while `MOBILE_PHONE_NUMBER_ENABLED` is unset or `false` (leave it so). MSG91 settings are then not needed. Check that `/login` shows the code form, and request a code to your own address. To turn it off again, delete the secret or set it to `false`.
 
 ## 2. Database: migrate (non-destructive)
 
