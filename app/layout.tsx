@@ -23,9 +23,11 @@ export const metadata: Metadata = {
     title: FESTIVAL_BN,
   },
   icons: {
+    // Browser-tab favicon: the Samatat emblem from the navbar logo (public/favicon.ico: 16, 32, 48 px).
+    // The home-screen (apple) and PWA manifest icons are separate and unchanged.
     icon: [
-      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/icons/favicon-32.png', sizes: '32x32', type: 'image/png' },
     ],
     apple: [{ url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }],
   },
