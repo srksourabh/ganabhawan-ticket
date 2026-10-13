@@ -17,7 +17,7 @@ import { assertLiveConfiguration, developmentAdaptersAllowed, usingDevelopmentPa
 import { audit, job } from './audit';
 import { hash } from './security';
 import {
-  assertSeasonSalesOpenFor, assessBooking, commitBooking, expireIn, loadProductForHold, placeHold, refundCase, releaseLiveHold,
+  assertPublicSalesOpen, assertSeasonSalesOpenFor, assessBooking, commitBooking, expireIn, loadProductForHold, placeHold, refundCase, releaseLiveHold,
   supersedeBooking, supersedeCheckout, type CapturedPayment, type HoldInput,
 } from './commerce';
 import { ensureProviderOrder } from './provider-order';
@@ -171,6 +171,7 @@ function lineError(error: unknown, label: string, productId: string) {
  */
 export async function createCheckoutPaymentOrder(user: User, checkoutId: string) {
   assertLiveConfiguration();
+  assertPublicSalesOpen();
   await assertCanPurchase(user.id); // a verified email or mobile is required to buy
   requireValue(UUID.test(checkoutId), 'Checkout not found.', 404);
   const prepared = await transaction(async (c) => {

@@ -26,6 +26,10 @@ export async function expireHolds() { return transaction(c=>expireIn(c),true); }
 type BookingRow = Record<string, any>;
 export type HoldInput = {productId:string;quantity:number;version:number};
 export const SEASON_SALES_CLOSED='Season-ticket sales are currently closed.';
+/** The operator's global switch for NEW public purchases (ALLOW_PUBLIC_SALES exactly "true"; local development aside). */
+export function publicSalesOpen() { return developmentAdaptersAllowed() || process.env.ALLOW_PUBLIC_SALES==='true'; }
+/** Payment-order boundary: a hold made while sales were open gets no NEW payment order once they are paused (it expires). */
+export function assertPublicSalesOpen() { requireValue(publicSalesOpen(),'Ticket sales are paused.'); }
 /**
  * Payment-order boundary for held bookings: a hold made while season sales were open gets
  * no NEW payment order once they are closed (the hold simply expires). A payment the
@@ -40,7 +44,7 @@ export async function assertSeasonSalesOpenFor(c:Client,bookingIds:string[]) {
 export async function loadProductForHold(c:Client,input:HoldInput) {
   const product=await one(c,`SELECT p.*,f.status festival_status,f.hold_minutes,f.max_quantity,f.terms,f.physical_required,${SEASON_SALES_OPEN_SQL} season_sales_open FROM products p JOIN festivals f ON f.id=p.festival_id WHERE p.id=$1 FOR UPDATE OF p`,[input.productId]);
   requireValue(product && product.enabled,'This ticket option is not available.',404);
-  requireValue(product.festival_status==='PUBLISHED' && (developmentAdaptersAllowed() || process.env.ALLOW_PUBLIC_SALES==='true'),'Ticket sales are paused.');
+  requireValue(product.festival_status==='PUBLISHED' && publicSalesOpen(),'Ticket sales are paused.');
   // The season switch never opens anything the global switch above keeps closed.
   if(seasonSaleBlocked(product.kind,product.season_sales_open)) throw new AppError(409,SEASON_SALES_CLOSED,'SEASON_SALES_CLOSED');
   requireValue(product.version===input.version,'This price has changed. Please refresh your selection.');
