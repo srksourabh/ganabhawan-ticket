@@ -45,7 +45,7 @@ export async function requestMobileVerification(userId: string, raw: string, ip:
   try { mobile = normalizeContact(raw); } catch { throw new AppError(400, 'Enter a valid mobile number with country code, for example +91.'); }
   requireValue(!mobile.includes('@'), 'Enter a mobile number, not an email.', 400);
   await assertMobileFree(userId, mobile);
-  const { challengeId, message } = await requestOtp(mobile, ip);
+  const { challengeId, message } = await requestOtp(mobile, ip, 'add-mobile');
   return { challengeId, message };
 }
 

@@ -34,6 +34,7 @@ const required = [
 
 const optional = [
   'ALLOW_PUBLIC_SALES',
+  'CUSTOMER_OTP_ENABLED',
   'CHROMA_URL',
   'CHROMA_COLLECTION',
   'OPS_MONITOR_TOKEN',

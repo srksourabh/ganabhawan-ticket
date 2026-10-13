@@ -113,7 +113,7 @@ test('flag 1–4: missing = false, "false" = false, "true" only with complete MS
 
 test('flag 5: nothing in the request can switch mobile on (body, query, cookie)', { skip }, async () => {
   const { POST, GET } = await import('../app/api/auth/otp/request/route');
-  assert.deepEqual(await GET().json(), { mobile: false });
+  assert.deepEqual(await GET().json(), { codeSignIn: true, mobile: false });
   const res = await POST(new Request('https://staging.tickets.test/api/auth/otp/request?MOBILE_PHONE_NUMBER_ENABLED=true&mobile=true', {
     method: 'POST',
     headers: { 'content-type': 'application/json', cookie: 'MOBILE_PHONE_NUMBER_ENABLED=true', 'x-forwarded-for': '10.3.0.5' },

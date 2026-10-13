@@ -27,6 +27,9 @@ export function useLiveStagingEnv() {
     CRON_SECRET: 'integration-cron-secret-0123',
     PAYMENT_PROVIDER: 'razorpay',
     OTP_PROVIDER: 'email',
+    // Customer code sign-in ON here so the existing code tests run; the switched-off
+    // behaviour (the production default) is tested in integration-otp-disabled.test.ts.
+    CUSTOMER_OTP_ENABLED: 'true',
     RESEND_API_KEY: 're_integration',
     EMAIL_FROM: 'tickets@tickets.test',
     ALLOW_PUBLIC_SALES: 'true',

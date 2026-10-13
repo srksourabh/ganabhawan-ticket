@@ -2,7 +2,7 @@ import { randomInt } from 'node:crypto';
 import { cookies, headers } from 'next/headers';
 import { auth, currentUser as clerkCurrentUser } from '@clerk/nextjs/server';
 import { query, transaction, one } from './db';
-import { assertLiveConfiguration, assertStaffConfiguration, developmentAdaptersAllowed, mobileConfigurationProblems, mobileFeaturesEnabled } from './env';
+import { assertLiveConfiguration, assertStaffConfiguration, customerOtpEnabled, developmentAdaptersAllowed, mobileConfigurationProblems, mobileFeaturesEnabled } from './env';
 import { keyedHash, normalizeContact, token, hash, safeEqual, hashPassword, verifyPassword } from './security';
 import type { Client } from './db';
 import { AppError, requireValue } from './errors';
@@ -122,7 +122,19 @@ export function assertMobileAvailable() {
   throw new AppError(400, MOBILE_UNAVAILABLE, 'MOBILE_DISABLED');
 }
 
-export async function requestOtp(raw: string, ip: string) {
+export const OTP_SIGN_IN_UNAVAILABLE = 'Sign-in with a one-time code is not available at the moment. Please continue with Google.';
+
+/** Refuses customer code sign-in while CUSTOMER_OTP_ENABLED is off: nothing stored, sent or signed in. */
+function assertCustomerOtpAvailable() {
+  if (!customerOtpEnabled()) throw new AppError(403, OTP_SIGN_IN_UNAVAILABLE, 'OTP_DISABLED');
+}
+
+/**
+ * A one-time code to `raw`. purpose 'sign-in' (the customer sign-in API) needs CUSTOMER_OTP_ENABLED;
+ * 'add-mobile' (account-contacts.ts: a signed-in customer proving a new mobile) does not.
+ */
+export async function requestOtp(raw: string, ip: string, purpose: 'sign-in' | 'add-mobile' = 'sign-in') {
+  if (purpose === 'sign-in') assertCustomerOtpAvailable();
   assertLiveConfiguration();
   let contact: string;
   try {
@@ -156,6 +168,8 @@ export async function requestOtp(raw: string, ip: string) {
 }
 
 export async function verifyOtp(challengeId: string, code: string) {
+  // Codes issued before the switch went off cannot sign anyone in either.
+  assertCustomerOtpAvailable();
   const result = await transaction(async (c) => {
     const challenge = await one(c, 'SELECT * FROM otp_challenges WHERE id=$1 FOR UPDATE', [challengeId]);
     if (!challenge || challenge.used || new Date(challenge.expires_at).getTime() < Date.now() || challenge.attempts >= 5) {
