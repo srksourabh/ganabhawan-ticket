@@ -174,6 +174,35 @@ test('production refuses a Clerk development instance; staging may use one; keys
   assert.ok(!clerkInstanceProblems('production', 'pk_test_SECRETVALUE', 'sk_test_SECRETVALUE').join(' ').includes('SECRETVALUE'));
 });
 
+test('CLERK_DEVELOPMENT_INSTANCE_ALLOWED: off by default (strict); "true" accepts development keys in production and nothing else', () => {
+  const DEV_KEYS = { NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk', CLERK_SECRET_KEY: 'sk_test_x' };
+  const PRODUCTION = { ...LIVE_STAGING, DEPLOY_ENV: 'production', RAZORPAY_KEY_ID: 'rzp_live_abc', ...DEV_KEYS };
+  // Default (unset) and every non-"true" value: strict, development keys refused.
+  for (const value of [undefined, '', 'false', '1', 'yes']) {
+    withEnv({ ...PRODUCTION, CLERK_DEVELOPMENT_INSTANCE_ALLOWED: value }, () => {
+      assert.ok(configurationProblems().some((p) => p.startsWith('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY')), String(value));
+      assert.throws(() => assertLiveConfiguration(), (err: unknown) => err instanceof AppError && err.status === 503);
+    });
+  }
+  withEnv({ ...PRODUCTION, CLERK_DEVELOPMENT_INSTANCE_ALLOWED: 'true' }, () => {
+    assert.deepEqual(configurationProblems(), []);
+    assert.doesNotThrow(() => assertLiveConfiguration());
+  });
+  // The override never relaxes anything else.
+  const OVERRIDE = { ...PRODUCTION, CLERK_DEVELOPMENT_INSTANCE_ALLOWED: 'true' };
+  withEnv({ ...OVERRIDE, CLERK_SECRET_KEY: 'sk_live_x' }, () => assert.ok(configurationProblems().some((p) => p.startsWith('Clerk keys')), 'mixed instance kinds'));
+  withEnv({ ...OVERRIDE, CLERK_SECRET_KEY: 'not-a-key' }, () => assert.ok(configurationProblems().some((p) => p.startsWith('CLERK_SECRET_KEY'))));
+  withEnv({ ...OVERRIDE, CLERK_SECRET_KEY: undefined }, () => assert.ok(configurationProblems().includes('CLERK_SECRET_KEY')));
+  withEnv({ ...OVERRIDE, RAZORPAY_KEY_ID: 'rzp_test_abc' }, () => assert.ok(configurationProblems().some((p) => /live key/.test(p)), 'Razorpay live key still required'));
+  for (const name of ['RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET', 'CRON_SECRET', 'DATABASE_URL', 'SESSION_SECRET', 'CREDENTIAL_KEY', 'APP_URL']) {
+    withEnv({ ...OVERRIDE, [name]: undefined }, () => assert.ok(configurationProblems().some((p) => p.startsWith(name)), name));
+  }
+  withEnv({ ...OVERRIDE, RESEND_API_KEY: undefined }, () => assert.ok(configurationProblems().some((p) => p.startsWith('email delivery'))));
+  withEnv({ ...OVERRIDE, PAYMENT_PROVIDER: 'development' }, () => assert.ok(configurationProblems().includes('PAYMENT_PROVIDER=razorpay')));
+  withEnv({ ...OVERRIDE, EMAIL_FROM: 'not an address' }, () => assert.ok(configurationProblems().some((p) => p.startsWith('EMAIL_FROM'))));
+  assert.deepEqual(clerkInstanceProblems('production', 'pk_live_a', 'sk_live_b', false), [], 'production keys pass either way');
+});
+
 test('OTP_FROM_EMAIL is optional; when set it must be one address (fails closed, names only)', () => {
   withEnv({ ...LIVE_STAGING, OTP_FROM_EMAIL: undefined }, () => assert.deepEqual(configurationProblems(), []));
   for (const ok of ['otp@samatat.org', 'Samatat Natyamela <otp@samatat.org>']) {
