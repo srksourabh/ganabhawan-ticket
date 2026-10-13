@@ -64,6 +64,12 @@ export function secret(name: string) {
   return value;
 }
 
+/** "otp@samatat.org" or "Samatat <otp@samatat.org>": one address, no spaces or angle brackets inside it. */
+export function isEmailSender(value: string): boolean {
+  const address = /^[^<>]*<([^<>]+)>$/.exec(value.trim())?.[1] ?? value.trim();
+  return /^[^\s@<>"]+@[^\s@<>"]+\.[a-z]{2,}$/i.test(address);
+}
+
 const present = (name: string) => Boolean(process.env[name]?.trim());
 const long = (name: string, min: number) => (process.env[name]?.trim().length ?? 0) >= min;
 
@@ -115,6 +121,8 @@ export function salesConfigurationProblems(): string[] {
   if (keyId && env === 'production' && !keyId.startsWith('rzp_live_')) problems.push('RAZORPAY_KEY_ID (production needs a live key)');
   if (keyId && env === 'staging' && !keyId.startsWith('rzp_test_')) problems.push('RAZORPAY_KEY_ID (staging needs a test key)');
 
+  problems.push(...clerkInstanceProblems(env));
+
   const otp = (process.env.OTP_PROVIDER || 'development').trim().toLowerCase();
   if (otp === 'development') problems.push('OTP_PROVIDER (real provider)');
   if (otp === 'httpsms') problems.push('OTP_PROVIDER (httpSMS is not used in live mode; mobile codes go through MSG91)');
@@ -124,6 +132,28 @@ export function salesConfigurationProblems(): string[] {
   const resend = present('RESEND_API_KEY') && present('EMAIL_FROM');
   const composio = present('COMPOSIO_API_KEY') && (present('COMPOSIO_CONNECTED_ACCOUNT_ID') || present('COMPOSIO_USER_ID'));
   if (!resend && !composio) problems.push('email delivery (RESEND_API_KEY+EMAIL_FROM or Composio)');
+  // Optional sender for sign-in code emails (auth.ts otpEmailSender); EMAIL_FROM when unset.
+  const otpFrom = process.env.OTP_FROM_EMAIL?.trim();
+  if (otpFrom && !isEmailSender(otpFrom)) problems.push('OTP_FROM_EMAIL (an address such as otp@samatat.org, or "Name <otp@samatat.org>")');
+  return problems;
+}
+
+/**
+ * Customer Google sign-in goes through Clerk. A Clerk development instance (pk_test_/sk_test_)
+ * shows Clerk's "Development mode" badge, caps its users and signs in with Clerk's shared Google
+ * credentials, so production needs a production instance (pk_live_/sk_live_), like Razorpay's
+ * live key. The two keys must also come from the same kind of instance.
+ * The publishable key is read statically: the build inlines it, so this checks the exact key the
+ * browser bundle uses (a Worker runtime secret of the same name does not change the bundle).
+ */
+export function clerkInstanceProblems(env = deployEnv(), publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, secretKey = process.env.CLERK_SECRET_KEY): string[] {
+  const kind = (key: string | undefined, prefix: 'pk' | 'sk') => new RegExp(`^${prefix}_(live|test)_`).exec(key?.trim() ?? '')?.[1] ?? null;
+  const pk = kind(publishableKey, 'pk');
+  const sk = kind(secretKey, 'sk');
+  const problems: string[] = [];
+  if (env === 'production' && publishableKey?.trim() && pk !== 'live') problems.push('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY (production needs a Clerk production instance, pk_live_; rebuild after changing it)');
+  if (env === 'production' && secretKey?.trim() && sk !== 'live') problems.push('CLERK_SECRET_KEY (production needs a Clerk production instance, sk_live_)');
+  if (pk && sk && pk !== sk) problems.push('Clerk keys (publishable and secret key come from different kinds of Clerk instance)');
   return problems;
 }
 

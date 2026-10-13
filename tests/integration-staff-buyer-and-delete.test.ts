@@ -120,6 +120,19 @@ test('customer sign-in paths are unchanged: Clerk maps an existing customer to t
   await assert.rejects(auth.verifyOtp(challenge.id, '123456'), /Staff accounts sign in/);
 });
 
+test('moving from the Clerk development instance to production keeps each customer account (re-linked by verified email)', { skip }, async () => {
+  const show = await makeShow();
+  const customer = await makeUser('customer', 'mover@tickets.test', { mobile: null });
+  assert.equal((await auth.ensureUserFromClerk('user_dev_instance', 'mover@tickets.test')).id, customer.id);
+  const { co } = await buy(customer, show.productId);
+  // The production instance issues a different Clerk user id for the same Google account.
+  const after = await auth.ensureUserFromClerk('user_prod_instance', 'mover@tickets.test');
+  assert.equal(after.id, customer.id, 'no duplicate account');
+  assert.equal((await query<{ n: number }>("SELECT count(*)::int AS n FROM users WHERE contact='mover@tickets.test'"))[0].n, 1);
+  assert.equal((await query<{ clerk_id: string }>('SELECT clerk_id FROM users WHERE id=$1', [customer.id]))[0].clerk_id, 'user_prod_instance');
+  assert.equal((await checkout.checkoutReceipt(after.id, co.id)).status, 'CONFIRMED', 'bookings stay with the account');
+});
+
 // ---- PROGRAMME DELETION -----------------------------------------------------------------------------
 
 test('delete: owner and inventory delete an untouched programme permanently (with its zones, pools, products and saved-cart lines); audited', { skip }, async () => {

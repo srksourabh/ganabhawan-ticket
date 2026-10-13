@@ -27,14 +27,15 @@ export async function rateLimit(key: string, limit: number, seconds: number) {
  * Idempotency-Key, honoured for 24 h) makes a retried job that already sent
  * the email — e.g. the send succeeded but marking the job done failed — a no-op
  * at the provider instead of a second email. No-op in local development.
+ * `from` defaults to EMAIL_FROM; sign-in codes pass otpEmailSender().
  */
-export async function sendEmail(to: string, subject: string, message: string, idempotencyKey?: string) {
+export async function sendEmail(to: string, subject: string, message: string, idempotencyKey?: string, from = process.env.EMAIL_FROM?.trim()) {
   if (composioGmailConfigured()) {
-    await sendComposioGmail(to, subject, message);
+    await sendComposioGmail(to, subject, message, from);
     return;
   }
   if (developmentAdaptersAllowed() && otpProvider() === 'development') return;
-  requireValue(process.env.RESEND_API_KEY && process.env.EMAIL_FROM, 'Email delivery is not configured.', 503);
+  requireValue(process.env.RESEND_API_KEY && from, 'Email delivery is not configured.', 503);
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -42,7 +43,7 @@ export async function sendEmail(to: string, subject: string, message: string, id
       'Content-Type': 'application/json',
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey.slice(0, 256) } : {}),
     },
-    body: JSON.stringify({ from: process.env.EMAIL_FROM, to: [to], subject, text: message }),
+    body: JSON.stringify({ from, to: [to], subject, text: message }),
     signal: AbortSignal.timeout(10000),
   });
   requireValue(response.ok, 'Email delivery is temporarily unavailable.', 503);
@@ -68,9 +69,18 @@ export async function sendMessage(contact: string, subject: string, message: str
   await sendFreeTextSms(contact, message, requestId);
 }
 
+/**
+ * Sender of sign-in code emails: OTP_FROM_EMAIL (e.g. otp@samatat.org) when set, else EMAIL_FROM
+ * like every other email. A malformed OTP_FROM_EMAIL closes customer sales (env.ts), never sends.
+ */
+export function otpEmailSender() {
+  return process.env.OTP_FROM_EMAIL?.trim() || process.env.EMAIL_FROM?.trim();
+}
+
 /** The sign-in code: email to an address; the MSG91 OTP template to a mobile. */
 async function sendCode(contact: string, code: string, subject: string, text: string, requestId: string) {
-  if (contact.includes('@')) return sendMessage(contact, subject, text, requestId);
+  // Same path as sendMessage for an address (Composio or Resend; no-op in local development), own sender.
+  if (contact.includes('@')) return sendEmail(contact, subject, text, undefined, otpEmailSender());
   // Local development without an SMS gateway: the code is shown on the page instead.
   if (developmentAdaptersAllowed() && otpProvider() === 'development' && !otpSmsConfigured()) return;
   await sendOtpSms(contact, code, text, requestId);

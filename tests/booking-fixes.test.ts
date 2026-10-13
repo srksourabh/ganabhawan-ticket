@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
 import { AppError } from '../src/lib/errors';
-import { assertLiveConfiguration, configurationProblems, developmentAdaptersAllowed, isLocalAppUrl, mobileConfigurationProblems, mobileFeaturesEnabled } from '../src/lib/env';
+import { assertLiveConfiguration, clerkInstanceProblems, configurationProblems, coreConfigurationProblems, developmentAdaptersAllowed, isEmailSender, isLocalAppUrl, mobileConfigurationProblems, mobileFeaturesEnabled } from '../src/lib/env';
 import { safeNextPath } from '../src/lib/redirect';
 import { gateScanTarget } from '../src/lib/gates';
 import { entryAllowed } from '../src/lib/admission';
@@ -145,6 +146,58 @@ test('live mode lists every missing production requirement by name only', () => 
   withEnv({ ...LIVE_STAGING, SESSION_SECRET: 'short' }, () => assert.ok(configurationProblems().some((p) => p.startsWith('SESSION_SECRET'))));
   // Problems name settings, never their values.
   withEnv({ ...LIVE_STAGING, SESSION_SECRET: 'short-secret-value' }, () => assert.ok(!configurationProblems().join(' ').includes('short-secret-value')));
+});
+
+test('production refuses a Clerk development instance; staging may use one; keys must match', () => {
+  const LIVE_PRODUCTION = { ...LIVE_STAGING, DEPLOY_ENV: 'production', RAZORPAY_KEY_ID: 'rzp_live_abc', NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'pk_live_ZXhhbXBsZS5vcmck', CLERK_SECRET_KEY: 'sk_live_x' };
+  withEnv(LIVE_PRODUCTION, () => assert.deepEqual(configurationProblems(), []));
+  // The deployed site that showed "Development mode": production with development (pk_test_/sk_test_) keys.
+  withEnv({ ...LIVE_PRODUCTION, NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk', CLERK_SECRET_KEY: 'sk_test_x' }, () => {
+    const problems = configurationProblems();
+    assert.ok(problems.some((p) => p.startsWith('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY')), problems.join('; '));
+    assert.ok(problems.some((p) => p.startsWith('CLERK_SECRET_KEY')));
+    assert.throws(() => assertLiveConfiguration(), (err: unknown) => err instanceof AppError && err.status === 503);
+    // Customer sales close; staff sign-in, admin and gate scanning (core settings) stay up.
+    assert.deepEqual(coreConfigurationProblems(), []);
+  });
+  // Only one key swapped: still refused, and the mismatch is named.
+  withEnv({ ...LIVE_PRODUCTION, CLERK_SECRET_KEY: 'sk_test_x' }, () => {
+    assert.ok(configurationProblems().some((p) => p.startsWith('CLERK_SECRET_KEY')));
+    assert.ok(configurationProblems().some((p) => p.startsWith('Clerk keys')));
+  });
+  withEnv({ ...LIVE_PRODUCTION, NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'not-a-clerk-key' }, () => assert.ok(configurationProblems().some((p) => p.startsWith('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY'))));
+  // Staging may use a development instance, but not mismatched keys.
+  assert.deepEqual(clerkInstanceProblems('staging', 'pk_test_a', 'sk_test_b'), []);
+  assert.deepEqual(clerkInstanceProblems('staging', 'pk_live_a', 'sk_live_b'), []);
+  assert.ok(clerkInstanceProblems('staging', 'pk_test_a', 'sk_live_b').some((p) => p.startsWith('Clerk keys')));
+  // Names only, never values.
+  assert.ok(!clerkInstanceProblems('production', 'pk_test_SECRETVALUE', 'sk_test_SECRETVALUE').join(' ').includes('SECRETVALUE'));
+});
+
+test('OTP_FROM_EMAIL is optional; when set it must be one address (fails closed, names only)', () => {
+  withEnv({ ...LIVE_STAGING, OTP_FROM_EMAIL: undefined }, () => assert.deepEqual(configurationProblems(), []));
+  for (const ok of ['otp@samatat.org', 'Samatat Natyamela <otp@samatat.org>']) {
+    withEnv({ ...LIVE_STAGING, OTP_FROM_EMAIL: ok }, () => assert.deepEqual(configurationProblems(), [], ok));
+  }
+  for (const bad of ['otp', 'otp@samatat', 'otp@ samatat.org', 'a@b.org, c@d.org', 'Samatat <otp@samatat.org', '<>', 'undefined']) {
+    assert.equal(isEmailSender(bad), false, bad);
+    withEnv({ ...LIVE_STAGING, OTP_FROM_EMAIL: bad }, () => {
+      assert.ok(configurationProblems().some((p) => p.startsWith('OTP_FROM_EMAIL')), bad);
+      assert.deepEqual(coreConfigurationProblems(), [], 'staff are not affected');
+    });
+  }
+});
+
+test('customer sign-in page: Google and the one-time code only — no "More sign-in options" link to Clerk\'s form', () => {
+  const page = readFileSync(new URL('../app/login/page.tsx', import.meta.url), 'utf8');
+  assert.ok(!page.includes('/sign-in'), 'no link to the Clerk sign-in form');
+  assert.ok(!page.includes('login.moreOptions'));
+  assert.ok(page.includes('<GoogleSignInButton redirectUrl={next} />'), 'Google sign-in stays, with the return path');
+  assert.ok(page.includes("fetch('/api/auth/otp/request'") && page.includes("fetch('/api/auth/otp/verify'"), 'one-time code request and verification stay');
+  assert.ok(page.includes("t('login.staffHint')"), 'staff instructions stay');
+  for (const route of ['../app/sign-in/[[...sign-in]]/page.tsx', '../app/sso-callback/page.tsx', '../app/admin/login/page.tsx', '../app/gate/login/page.tsx']) {
+    assert.ok(existsSync(new URL(route, import.meta.url)), `${route} still exists (Clerk callback, staff doors)`);
+  }
 });
 
 test('development adapters are refused on Cloudflare Workers even with a localhost APP_URL', () => {

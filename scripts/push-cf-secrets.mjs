@@ -39,6 +39,7 @@ const optional = [
   'OPS_MONITOR_TOKEN',
   'RESEND_API_KEY',
   'EMAIL_FROM',
+  'OTP_FROM_EMAIL',
   'COMPOSIO_API_KEY',
   'COMPOSIO_USER_ID',
   'COMPOSIO_CONNECTED_ACCOUNT_ID',
@@ -85,6 +86,20 @@ if (!['staging', 'production'].includes(values.DEPLOY_ENV)) {
 const keyPrefix = values.DEPLOY_ENV === 'production' ? 'rzp_live_' : 'rzp_test_';
 if (!(values.RAZORPAY_KEY_ID || '').startsWith(keyPrefix)) {
   console.error(`Refusing to deploy: ${values.DEPLOY_ENV} requires a ${keyPrefix}… Razorpay key.`);
+  process.exit(1);
+}
+
+// Same rule as src/lib/env.ts clerkInstanceProblems: production needs a Clerk production instance
+// (a development instance shows "Development mode" to customers) and both keys from one instance kind.
+const clerkKind = (key, prefix) => new RegExp(`^${prefix}_(live|test)_`).exec(key || '')?.[1] ?? null;
+const pk = clerkKind(values.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, 'pk');
+const sk = clerkKind(values.CLERK_SECRET_KEY, 'sk');
+if (values.DEPLOY_ENV === 'production' && (pk !== 'live' || sk !== 'live')) {
+  console.error('Refusing to deploy: production requires Clerk production-instance keys (pk_live_… and sk_live_…).');
+  process.exit(1);
+}
+if (pk && sk && pk !== sk) {
+  console.error('Refusing to deploy: the Clerk publishable and secret keys come from different kinds of Clerk instance.');
   process.exit(1);
 }
 
