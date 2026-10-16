@@ -417,6 +417,8 @@ export function receiptText(r: Receipt, appUrl: string) {
     '',
     `Total paid: ${rupees(r.total)}`,
     '',
+    `Your tickets: ${ticketsLink(base, r.lines.filter((l) => l.status === 'CONFIRMED').map((l) => l.bookingId))}`,
+    '',
     NO_REFUND,
     PICKUP_INSTRUCTION,
     LINK_SIGN_IN_NOTE,

@@ -138,8 +138,9 @@ test('quantity and product id are validated', { skip }, async () => {
   await assert.rejects(() => hold(user, show.productId, 1, 'short'), /idempotency key/);
 });
 
-test('sales close at curtain: a started show cannot be held', { skip }, async () => {
+test('sales close at 7pm: a show past its sales close cannot be held', { skip }, async () => {
   const show = await makeShow({ startsInMinutes: -5 });
+  await query("UPDATE shows SET sales_closes_at=now()-interval '1 minute' WHERE id=$1", [show.showId]);
   const user = await makeUser();
   await assert.rejects(() => hold(user, show.productId, 1, randomUUID()), /closed/i);
 });

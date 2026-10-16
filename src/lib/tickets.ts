@@ -249,6 +249,8 @@ export async function bookingConfirmation(bookingId: string): Promise<Confirmati
     ...(s.coverage ?? []).map((p) => `${p.title}: ${istTime(p.startsAt)}`),
     `Quantity: ${booking.quantity} × ${rupees(booking.unit_price)} = ${rupees(booking.total)}`,
     '',
+    `Your tickets: ${ticketsLink(base, [bookingId])}`,
+    '',
     NO_REFUND,
     PICKUP_INSTRUCTION,
     LINK_SIGN_IN_NOTE,

@@ -14,7 +14,7 @@ import type { User } from '../src/lib/types';
 
 const skip = !DB_AVAILABLE;
 const fake = new FakeRazorpay();
-const CARDS = 'Please collect your physical cards before the show.';
+const CARDS = 'Collect your tickets at the counter before the show.';
 const MSG91 = ['SMS_PROVIDER', 'MSG91_AUTH_KEY', 'MSG91_OTP_TEMPLATE_ID', 'MSG91_TEMPLATE_ID'];
 let auth: typeof import('../src/lib/auth');
 let checkout: typeof import('../src/lib/checkout');
@@ -222,7 +222,7 @@ test('journey 19–21/25/32/33/35/37: email-only customer buys with no MSG91 con
   const [bookingId] = await bookingsOf(co.id);
   const mail = emailsTo(user.contact);
   assert.equal(mail.length, 1);
-  assert.ok(mail[0].text.includes(`Your QR tickets: https://staging.tickets.test/tickets/${bookingId}`));
+  assert.ok(mail[0].text.includes(`Your tickets: https://staging.tickets.test/tickets/${bookingId}`));
   assert.ok(mail[0].text.includes(CARDS));
   assert.ok(mail[0].text.includes(co.reference));
   const { ownedBookings } = await import('../src/lib/commerce');
@@ -252,7 +252,7 @@ test('journey 28/29/31/34/36: duplicate webhooks and email retries keep 2 bookin
   assert.equal(first.length, 3);
   assert.equal(await count('SELECT count(*)::int n FROM bookings WHERE checkout_id=$1', [co.id]), 2);
   assert.equal(emailsTo(user.contact).length, 1);
-  assert.ok(emailsTo(user.contact)[0].text.includes('Your QR tickets: https://staging.tickets.test/tickets\n'), 'two bookings → the ticket list');
+  assert.ok(emailsTo(user.contact)[0].text.includes('Your tickets: https://staging.tickets.test/tickets\n'), 'two bookings → the ticket list');
   const { ownedBookings } = await import('../src/lib/commerce');
   assert.equal((await ownedBookings(user.id)).length, 2, 'the list shows every booking of the checkout');
 

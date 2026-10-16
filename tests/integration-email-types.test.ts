@@ -19,7 +19,7 @@ import type { User } from '../src/lib/types';
 
 const skip = !DB_AVAILABLE;
 const fake = new FakeRazorpay();
-const CARDS = 'Please collect your physical cards before the show.';
+const CARDS = 'Collect your tickets at the counter before the show.';
 const BASE = 'https://staging.tickets.test';
 let auth: typeof import('../src/lib/auth');
 let checkout: typeof import('../src/lib/checkout');
@@ -124,10 +124,11 @@ test('email 2: checkout confirmation — reference, zone, quantity, amounts, IST
   assert.equal(mail.subject, `Your Samatat Sanskriti tickets - ${co.reference}`);
   assert.equal(mail.idempotencyKey, `checkout:${co.id}`);
   for (const expected of [
-    `Your booking is confirmed! View your QR tickets using the secure link below. ${CARDS}`,
-    `Your QR tickets: ${BASE}/tickets/${bookingId}`,
+    'This email is your ticket.',
+    CARDS,
+    `Your tickets: ${BASE}/tickets/${bookingId}`,
     `Order ${co.reference} is confirmed.`,
-    `Payment ${p.id}`, 'Zone: Premier', 'Raktakarabi', 'Quantity: 2 × ₹450 = ₹900', 'Total paid: ₹900',
+    `Payment ${p.id}`, 'Daily ticket · Premier', 'Raktakarabi', 'Quantity: 2 × ₹450 = ₹900', 'Total paid: ₹900',
     `Full receipt: ${BASE}/receipts/${co.id}`,
   ]) assert.ok(mail.text.includes(expected), `email mentions: ${expected}`);
   assert.match(mail.text, /\d{1,2} \w{3} \d{4}, \d{1,2}:\d{2} [ap]m/i, 'performance time in IST, en-IN format');
@@ -145,7 +146,7 @@ test('email 3: single-booking confirmation — the booking’s own QR link and t
   const mails = mailTo(user.contact);
   assert.equal(mails.length, 1, 'a retried job is not a second email');
   const reference = (await query<{ reference: string }>('SELECT reference FROM bookings WHERE id=$1', [bookingId]))[0].reference;
-  for (const expected of [CARDS, `Your QR tickets: ${BASE}/tickets/${bookingId}`, `Booking ${reference}`, 'Quantity: 3 × ₹300 = ₹900']) {
+  for (const expected of [CARDS, `Your tickets: ${BASE}/tickets/${bookingId}`, `Booking ${reference}`, 'Quantity: 3 × ₹300 = ₹900']) {
     assert.ok(mails[0].text.includes(expected), `email mentions: ${expected}`);
   }
   assert.equal(await (await query('SELECT count(*)::int n FROM tickets WHERE booking_id=$1', [bookingId]))[0].n, 3, 'no extra tickets');
