@@ -108,12 +108,12 @@ for (const [label, missing] of [['email delivery not configured', EMAIL], ['Razo
   test(`sales not ready (${label}): the proxy allows only staff/internal APIs; customer APIs get CONFIG_INVALID`, { skip }, async () => {
     await without(missing, async () => {
       for (const path of ['/api/auth/password', '/api/auth/logout', '/api/auth/me', '/api/admin/me', '/api/admin/staff', '/api/admin/inventory',
-        '/api/admin/metrics', '/api/admission/scan', '/api/ops/status', '/api/posters/abc']) {
+        '/api/admin/metrics', '/api/admission/scan', '/api/ops/status', '/api/posters/abc', '/api/cron/worker']) {
         assert.equal(gate.apiRefusal(path), null, `${path} allowed for staff`);
       }
       for (const path of ['/api/checkouts', '/api/holds', '/api/payments/order', '/api/payments/confirm', '/api/payments/sync', '/api/cart',
         '/api/cart/merge', '/api/account/mobile', '/api/auth/otp/request', '/api/auth/otp/verify', '/api/auth/clerk/sync',
-        '/api/booking-attempts', '/api/bookings', '/api/tickets/x/resend', '/api/cron/worker', '/api/auth/password-reset', '/api/adminx']) {
+        '/api/booking-attempts', '/api/bookings', '/api/tickets/x/resend', '/api/auth/password-reset', '/api/adminx']) {
         assert.match(String(gate.apiRefusal(path)), /not configured for sales/, `${path} blocked`);
       }
     });
