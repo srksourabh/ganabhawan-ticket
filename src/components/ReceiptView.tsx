@@ -29,6 +29,8 @@ export default function ReceiptView({ receipt }: { receipt: Receipt }) {
           )}
           <p>{t('tickets.status')}: {receipt.status === 'PARTIALLY_CANCELLED' ? t('receipt.statusPartial') : receipt.status.replace('_', ' ')}</p>
           {receipt.customer.name && <p>{t('receipt.customer')}: {receipt.customer.name}</p>}
+          {receipt.customer.email && <p>{t('receipt.email')}: {receipt.customer.email}</p>}
+          {receipt.customer.phone && <p>{t('receipt.phone')}: {receipt.customer.phone}</p>}
         </div>
 
         <h2 className="h3">{t('receipt.items')}</h2>

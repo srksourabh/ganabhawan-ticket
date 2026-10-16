@@ -1,6 +1,6 @@
 'use client';
 
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useCart } from '@/components/CartProvider';
@@ -60,7 +60,6 @@ function BookFallback() {
 function BookPageInner() {
   const { productId } = useParams<{ productId: string }>();
   const searchParams = useSearchParams();
-  const router = useRouter();
   const cart = useCart();
   const { locale, t } = useLocale();
   const dl = dateLocale(locale);
@@ -69,7 +68,8 @@ function BookPageInner() {
 
   const [quantity, setQuantity] = useState(1);
   const [name, setName] = useState('');
-  const [contact, setContact] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [product, setProduct] = useState<CatalogueProduct | null>(null);
   const [added, setAdded] = useState(false);
   const [stage, setStage] = useState<'select' | 'held' | 'ordered' | 'confirmed'>('select');
@@ -77,7 +77,7 @@ function BookPageInner() {
   const [order, setOrder] = useState<OrderResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [me, setMe] = useState<{ contact?: string; name?: string }>({});
+  const [me, setMe] = useState<{ contact?: string; name?: string; mobile?: string | null }>({});
   const idempotencyKey = useRef(crypto.randomUUID());
   const attemptId = useRef('');
   const resumed = useRef(false);
@@ -97,10 +97,12 @@ function BookPageInner() {
     fetch('/api/auth/me')
       .then(async (res) => {
         if (!res.ok) return;
-        const body = (await res.json()) as { contact?: string; name?: string };
-        setMe({ contact: body.contact, name: body.name });
+        const body = (await res.json()) as { contact?: string; name?: string; mobile?: string | null };
+        setMe({ contact: body.contact, name: body.name, mobile: body.mobile ?? null });
         if (body.name) setName((current) => current || body.name || '');
-        if (body.contact) setContact((current) => current || body.contact || '');
+        if (body.contact?.includes('@')) setEmail((current) => current || body.contact || '');
+        const knownPhone = body.mobile || (body.contact && !body.contact.includes('@') ? body.contact : '');
+        if (knownPhone) setPhone((current) => current || knownPhone);
       })
       .catch(() => undefined);
   }, []);
@@ -114,11 +116,11 @@ function BookPageInner() {
   const checkoutOpts = useCallback(() => ({
     name: festivalName,
     description: t('book.title'),
-    ...prefillFromContact(me.contact, me.name),
-    prefillEmail: me.contact?.includes('@') ? me.contact : undefined,
-    prefillContact: me.contact && !me.contact.includes('@') ? me.contact : undefined,
-    prefillName: me.name,
-  }), [festivalName, me.contact, me.name, t]);
+    ...prefillFromContact(phone, name),
+    prefillEmail: email || undefined,
+    prefillContact: phone || undefined,
+    prefillName: name,
+  }), [email, festivalName, name, phone, t]);
 
   const payOrder = useCallback(async (nextOrder: OrderResult) => {
     setOrder(nextOrder);
@@ -144,11 +146,16 @@ function BookPageInner() {
     }
   }, [payOrder, t]);
 
-  const placeHold = useCallback(async (who?: { name: string; contact: string; quantity: number; attemptId?: string }) => {
+  const placeHold = useCallback(async (who?: { name: string; email: string; phone: string; quantity: number; attemptId?: string }) => {
     const buyerName = (who?.name ?? name).trim();
-    const buyerContact = (who?.contact ?? contact).trim();
+    const buyerEmail = (who?.email ?? email).trim();
+    const buyerPhone = (who?.phone ?? phone).trim();
     const qty = who?.quantity ?? quantity;
     setError('');
+    if (!buyerName || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail) || buyerPhone.replace(/\D/g, '').length < 10) {
+      setError(t('checkout.detailsRequired'));
+      return;
+    }
     setLoading(true);
     try {
       let nextAttempt = who?.attemptId || attemptId.current;
@@ -156,11 +163,11 @@ function BookPageInner() {
         const recorded = await fetch('/api/booking-attempts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: buyerName, contact: buyerContact, productId, quantity: qty }),
+          body: JSON.stringify({ name: buyerName, email: buyerEmail, phone: buyerPhone, contact: me.contact || buyerEmail, productId, quantity: qty }),
         });
         const recordedBody = await recorded.json().catch(() => ({}));
         if (!recorded.ok) {
-          setError(recordedBody.error || 'Enter your name and mobile or email.');
+          setError(recordedBody.error || t('checkout.detailsRequired'));
           return;
         }
         nextAttempt = recordedBody.id as string;
@@ -173,11 +180,26 @@ function BookPageInner() {
       });
       const body = await res.json();
       if (res.status === 401) {
-        sessionStorage.setItem('gb-pending-book', JSON.stringify({
-          productId, quantity: qty, version, attemptId: nextAttempt, name: buyerName, contact: buyerContact,
-        }));
-        const next = encodeURIComponent(`/book/${productId}?version=${version}`);
-        router.push(`/login?next=${next}&contact=${encodeURIComponent(buyerContact)}`);
+        const guest = await fetch('/api/auth/guest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: buyerName, email: buyerEmail, phone: buyerPhone }),
+        });
+        const guestBody = await guest.json().catch(() => ({}));
+        if (!guest.ok) {
+          setError(guestBody.error || t('checkout.detailsRequired'));
+          return;
+        }
+        const again = await fetch('/api/holds', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey.current },
+          body: JSON.stringify({ productId, quantity: qty, version, attemptId: nextAttempt }),
+        });
+        const againBody = await again.json();
+        if (!again.ok) { setError(againBody.error || 'Unable to reserve tickets. Please try again.'); return; }
+        setHold(againBody);
+        setStage('held');
+        await placeOrder(againBody.id);
         return;
       }
       sessionStorage.removeItem('gb-pending-book');
@@ -190,7 +212,7 @@ function BookPageInner() {
     } finally {
       setLoading(false);
     }
-  }, [contact, name, placeOrder, productId, quantity, router, version]);
+  }, [email, me.contact, name, phone, placeOrder, productId, quantity, t, version]);
 
   useEffect(() => {
     if (!me.contact || resumed.current) return;
@@ -198,24 +220,26 @@ function BookPageInner() {
     if (!raw) return;
     resumed.current = true;
     try {
-      const pending = JSON.parse(raw) as { productId?: string; quantity?: number; version?: number; attemptId?: string; name?: string; contact?: string };
+      const pending = JSON.parse(raw) as { productId?: string; quantity?: number; version?: number; attemptId?: string; name?: string; email?: string; phone?: string; contact?: string };
       if (pending.productId !== productId || pending.version !== version || !pending.attemptId) return;
       sessionStorage.removeItem('gb-pending-book');
       // eslint-disable-next-line react-hooks/set-state-in-effect
       if (pending.name) setName(pending.name);
-      if (pending.contact) setContact(pending.contact);
+      if (pending.email || pending.contact?.includes('@')) setEmail(pending.email || pending.contact || '');
+      if (pending.phone || (pending.contact && !pending.contact.includes('@'))) setPhone(pending.phone || pending.contact || '');
       if (pending.quantity) setQuantity(pending.quantity);
       attemptId.current = pending.attemptId;
       void placeHold({
         name: pending.name || me.name || '',
-        contact: pending.contact || me.contact,
+        email: pending.email || (pending.contact?.includes('@') ? pending.contact : email),
+        phone: pending.phone || (pending.contact && !pending.contact.includes('@') ? pending.contact : phone),
         quantity: pending.quantity || quantity,
         attemptId: pending.attemptId,
       });
     } catch {
       sessionStorage.removeItem('gb-pending-book');
     }
-  }, [me.contact, me.name, placeHold, productId, quantity, version]);
+  }, [email, me.contact, me.name, phone, placeHold, productId, quantity, version]);
 
   async function addToCart() {
     if (!product) {
@@ -223,18 +247,23 @@ function BookPageInner() {
       return;
     }
     const buyerName = name.trim();
-    const buyerContact = contact.trim();
+    const buyerEmail = email.trim();
+    const buyerPhone = phone.trim();
     setError('');
+    if (!buyerName || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail) || buyerPhone.replace(/\D/g, '').length < 10) {
+      setError(t('checkout.detailsRequired'));
+      return;
+    }
     setLoading(true);
     try {
       const recorded = await fetch('/api/booking-attempts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: buyerName, contact: buyerContact, productId, quantity }),
+        body: JSON.stringify({ name: buyerName, email: buyerEmail, phone: buyerPhone, contact: me.contact || buyerEmail, productId, quantity }),
       });
       const recordedBody = await recorded.json().catch(() => ({}));
       if (!recorded.ok) {
-        setError(recordedBody.error || 'Enter your name and mobile or email.');
+        setError(recordedBody.error || t('checkout.detailsRequired'));
         return;
       }
       const show = product.coverage?.[0];
@@ -295,11 +324,15 @@ function BookPageInner() {
             <>
               <label className="field" htmlFor="buyer-name">
                 <span>{t('book.name')}</span>
-                <input id="buyer-name" value={name} autoComplete="name" onChange={(e) => setName(e.target.value)} disabled={loading} />
+                <input id="buyer-name" value={name} autoComplete="name" onChange={(e) => setName(e.target.value)} disabled={loading} required />
               </label>
-              <label className="field" htmlFor="buyer-contact">
-                <span>{t('book.contact')}</span>
-                <input id="buyer-contact" value={contact} autoComplete="tel" inputMode="tel" onChange={(e) => setContact(e.target.value)} disabled={loading} />
+              <label className="field" htmlFor="buyer-email">
+                <span>{t('book.email')}</span>
+                <input id="buyer-email" type="email" value={email} autoComplete="email" onChange={(e) => setEmail(e.target.value)} disabled={loading} required />
+              </label>
+              <label className="field" htmlFor="buyer-phone">
+                <span>{t('book.phone')}</span>
+                <input id="buyer-phone" type="tel" value={phone} autoComplete="tel" inputMode="tel" onChange={(e) => setPhone(e.target.value)} disabled={loading} required />
               </label>
               <label className="field" htmlFor="qty">
                 <span>{t('book.qty')} <span className="muted">{t('book.max')}</span></span>

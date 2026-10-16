@@ -1,6 +1,6 @@
 import { query, transaction, one, type Client } from './db';
 import { requireValue } from './errors';
-import { productSellState, type SellState } from './availability';
+import { productSellState, type SaleWindow, type SellState } from './availability';
 
 /**
  * The signed-in customer's unpaid cart, stored on the server (cart_items), never
@@ -36,16 +36,18 @@ export async function pruneExpiredCartLines() {
 type ProductRow = {
   id: string; name: string; name_bn: string; category: string; kind: string; price: number; version: number; enabled: boolean;
   cap: number | null; cap_used: number; max_quantity: number; festival_status: string;
-  coverage: { status: string; starts_at: string; ends_at: string; title: string; title_bn: string; allocation: number; held: number; committed: number }[];
+  booking_opens_at: string | null; season_closes_at: string | null;
+  coverage: { status: string; starts_at: string; ends_at: string; title: string; title_bn: string; allocation: number; held: number; committed: number; sales_closes_at?: string | null }[];
 };
 
 async function loadProducts(db: { query: Client['query'] }, ids: string[]) {
   if (ids.length === 0) return new Map<string, ProductRow>();
   const rows = (await db.query<ProductRow>(
     `SELECT p.id, p.name, p.name_bn, p.category, p.kind, p.price, p.version, p.enabled, p.cap, f.max_quantity, f.status festival_status,
+       f.booking_opens_at, f.season_closes_at,
        (SELECT COALESCE(sum(quantity),0)::int FROM bookings b WHERE b.product_id=p.id AND b.status IN ('HELD','PAYMENT_PENDING','CONFIRMED')) cap_used,
        COALESCE((SELECT jsonb_agg(jsonb_build_object('status',s.status,'starts_at',s.starts_at,'ends_at',s.ends_at,'title',s.title,'title_bn',s.title_bn,
-         'allocation',i.allocation,'held',i.held,'committed',i.committed) ORDER BY s.starts_at)
+         'sales_closes_at',s.sales_closes_at,'allocation',i.allocation,'held',i.held,'committed',i.committed) ORDER BY s.starts_at)
          FROM product_coverage pc JOIN shows s ON s.id=pc.show_id JOIN pools i ON i.id=pc.pool_id WHERE pc.product_id=p.id),'[]'::jsonb) coverage
      FROM products p JOIN festivals f ON f.id=p.festival_id WHERE p.id = ANY($1::uuid[])`,
     [ids],
@@ -58,7 +60,9 @@ function lineState(p: ProductRow | undefined, nowMs = Date.now()): { state: Cart
   if (!p) return { state: 'UNAVAILABLE', available: 0, expired: true };
   const expired = !p.coverage.some((s) => s.status !== 'CANCELLED' && new Date(s.ends_at).getTime() > nowMs);
   if (!p.enabled || p.festival_status !== 'PUBLISHED') return { state: 'UNAVAILABLE', available: 0, expired };
-  const { state, available } = productSellState(p.kind, p.coverage, p.cap === null ? null : Number(p.cap), Number(p.cap_used), nowMs);
+  const kind = p.kind === 'SEASON' ? 'SEASON' : 'DAILY';
+  const window: SaleWindow = { kind, opensAt: p.booking_opens_at, closesAt: kind === 'SEASON' ? p.season_closes_at : undefined };
+  const { state, available } = productSellState(p.kind, p.coverage, p.cap === null ? null : Number(p.cap), Number(p.cap_used), nowMs, undefined, window);
   return { state, available, expired };
 }
 

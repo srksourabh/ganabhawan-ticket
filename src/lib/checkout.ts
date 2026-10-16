@@ -23,7 +23,8 @@ import {
 import { ensureProviderOrder } from './provider-order';
 import { razorpayKeyId } from './razorpay';
 import type { User } from './types';
-import { CONFIRMED_LEAD, LINK_SIGN_IN_NOTE, appBaseUrl, smsShowLabel, ticketsLink, type ConfirmationMessage } from './confirmation';
+import { CONFIRMED_LEAD, LINK_SIGN_IN_NOTE, NO_REFUND, PICKUP_INSTRUCTION, appBaseUrl, smsShowLabel, ticketsLink, type ConfirmationMessage } from './confirmation';
+import { DEFAULT_VENUE } from './brand';
 import { assertCanPurchase, contactsOf } from './account-contacts';
 
 export const MAX_CHECKOUT_LINES = 10;
@@ -322,7 +323,8 @@ export type ReceiptLine = {
 };
 export type Receipt = {
   checkoutId: string; reference: string; status: string; currency: string; total: number; createdAt: string;
-  customer: { name: string; contact: string };
+  customer: { name: string; contact: string; email?: string; phone?: string };
+  venue?: string;
   payment: { reference: string; paidAt: string; amount: number } | null;
   refunds: { bookingId: string; amount: number; state: string; reason: string }[];
   lines: ReceiptLine[];
@@ -338,10 +340,11 @@ export async function checkoutReceipt(userId: string, checkoutId: string): Promi
 async function buildReceipt(co: Row): Promise<Receipt> {
   const bookings = await query<Row>(
     // expires_at is required by checkoutStatus: without it every open checkout read as EXPIRED.
-    'SELECT id, reference, quantity, unit_price, total, status, expires_at, snapshot, holder_name FROM bookings WHERE checkout_id=$1 ORDER BY created_at, id',
+    'SELECT id, reference, quantity, unit_price, total, status, expires_at, snapshot, holder_name, holder_email, holder_phone FROM bookings WHERE checkout_id=$1 ORDER BY created_at, id',
     [co.id],
   );
   const user = (await query<Row>('SELECT name, contact FROM users WHERE id=$1', [co.user_id]))[0];
+  const festival = (await query<Row>('SELECT venue FROM festivals ORDER BY created_at LIMIT 1'))[0];
   const paid = (await query<Row>(
     "SELECT provider_payment_id, created_at, amount FROM payments WHERE checkout_id=$1 AND state='CAPTURED' ORDER BY created_at LIMIT 1",
     [co.id],
@@ -357,7 +360,13 @@ async function buildReceipt(co: Row): Promise<Receipt> {
     currency: co.currency,
     total: Number(co.total),
     createdAt: new Date(co.created_at).toISOString(),
-    customer: { name: bookings.find((b) => b.holder_name)?.holder_name ?? user?.name ?? '', contact: user?.contact ?? '' },
+    customer: {
+      name: bookings.find((b) => b.holder_name)?.holder_name ?? user?.name ?? '',
+      contact: user?.contact ?? '',
+      email: bookings.find((b) => b.holder_email)?.holder_email ?? (String(user?.contact ?? '').includes('@') ? user?.contact : ''),
+      phone: bookings.find((b) => b.holder_phone)?.holder_phone ?? '',
+    },
+    venue: festival?.venue || DEFAULT_VENUE,
     payment: paid ? { reference: paid.provider_payment_id, paidAt: new Date(paid.created_at).toISOString(), amount: Number(paid.amount) } : null,
     refunds: refunds.map((r) => ({ bookingId: r.booking_id, amount: Number(r.amount), state: r.state, reason: r.reason })),
     lines: bookings.map((b) => ({
@@ -385,18 +394,20 @@ export function receiptText(r: Receipt, appUrl: string) {
   const base = appUrl.replace(/\/$/, '');
   const items = r.lines.map((l, i) => [
     `${i + 1}. ${l.product}${l.status !== 'CONFIRMED' ? ` [${l.status.replace('_', ' ')}]` : ''}`,
-    `   Zone: ${l.category}${l.kind ? ` · ${l.kind === 'SEASON' ? 'Season ticket' : 'Daily ticket'}` : ''}`,
+    `   Theatre: ${r.venue || DEFAULT_VENUE}`,
+    `   ${l.kind === 'SEASON' ? 'Season ticket' : 'Daily ticket'} · ${l.category}`,
     ...l.performances.map((p) => `   ${p.title}: ${ist(p.startsAt)}`),
     `   Quantity: ${l.quantity} × ${rupees(l.unitPrice)} = ${rupees(l.lineTotal)}`,
-    `   Tickets and QR codes (booking ${l.bookingReference}): ${base}/tickets/${l.bookingId}`,
   ].join('\n'));
-  const confirmed = r.lines.filter((l) => l.status === 'CONFIRMED').map((l) => l.bookingId);
   return [
     r.customer.name ? `Dear ${r.customer.name},` : '',
     '',
     CONFIRMED_LEAD,
-    `Your QR tickets: ${ticketsLink(base, confirmed)}`,
-    LINK_SIGN_IN_NOTE,
+    '',
+    `Name: ${r.customer.name}`,
+    `Email: ${r.customer.email || r.customer.contact}`,
+    `Mobile: ${r.customer.phone || ''}`,
+    `Theatre: ${r.venue || DEFAULT_VENUE}`,
     '',
     `Order ${r.reference} is confirmed.`,
     r.payment ? `Payment ${r.payment.reference} on ${ist(r.payment.paidAt)}` : '',
@@ -405,11 +416,14 @@ export function receiptText(r: Receipt, appUrl: string) {
     ...items,
     '',
     `Total paid: ${rupees(r.total)}`,
+    '',
+    `Your tickets: ${ticketsLink(base, r.lines.filter((l) => l.status === 'CONFIRMED').map((l) => l.bookingId))}`,
+    '',
+    NO_REFUND,
+    PICKUP_INSTRUCTION,
+    LINK_SIGN_IN_NOTE,
     ...r.refunds.map((x) => `Refund: ${rupees(x.amount)} (${x.reason}) — ${x.state.toLowerCase()}`),
     '',
-    'Each ticket has its QR code on its booking page. Show it at the venue entrance.',
-    '',
-    `My tickets: ${base}/tickets`,
     `Full receipt: ${base}/receipts/${r.checkoutId}`,
   ].filter((line, i, all) => line !== '' || (i > 0 && all[i - 1] !== '')).join('\n');
 }
@@ -421,18 +435,20 @@ export function receiptText(r: Receipt, appUrl: string) {
  */
 export async function checkoutConfirmation(checkoutId: string): Promise<ConfirmationMessage | null> {
   // Contacts in the same query (each query is a Worker subrequest in the cron tick).
-  const co = (await query<Row>(`SELECT co.*, u.contact AS account_contact, u.verified_mobile AS account_mobile
+  const co = (await query<Row>(`SELECT co.*, u.contact AS account_contact, u.verified_mobile AS account_mobile,
+      (SELECT b.holder_email FROM bookings b WHERE b.checkout_id=co.id AND b.holder_email IS NOT NULL LIMIT 1) holder_email
     FROM checkouts co JOIN users u ON u.id=co.user_id WHERE co.id=$1`, [checkoutId]))[0];
   if (!co) return null;
   const receipt = await buildReceipt(co);
   const { ORGANISATION } = await import('./brand');
   const base = appBaseUrl();
-  const { email, mobile } = contactsOf(co.account_contact, co.account_mobile);
+  const account = contactsOf(co.account_contact, co.account_mobile);
+  const email = String(co.holder_email || '').includes('@') ? String(co.holder_email) : account.email;
   const confirmedLines = receipt.lines.filter((l) => l.status === 'CONFIRMED');
   return {
     confirmed: (receipt.status === 'CONFIRMED' || receipt.status === 'PARTIALLY_CANCELLED') && receipt.payment !== null,
     email,
-    mobile,
+    mobile: account.mobile,
     subject: `Your ${ORGANISATION} tickets - ${receipt.reference}`,
     emailText: receiptText(receipt, base),
     sms: {

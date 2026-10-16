@@ -249,7 +249,7 @@ test('holder name entered at checkout is attached to the booking for its owner o
   const show = await makeShow();
   const user = await makeUser();
   const { recordBookingAttempt, linkAttempt } = await import('../src/lib/attempts');
-  const attempt = await recordBookingAttempt({ name: 'Anita Roy', contact: user.contact, productId: show.productId, quantity: 1, userId: user.id });
+  const attempt = await recordBookingAttempt({ name: 'Anita Roy', contact: user.contact, email: user.contact, phone: '+919876543210', productId: show.productId, quantity: 1, userId: user.id });
   const h = (await commerce.reserve(user, { productId: show.productId, quantity: 1, version: 1 }, randomUUID())) as { id: string };
   await linkAttempt(attempt.id, user.id, user.contact, h.id, 'HELD');
   assert.equal((await commerce.ownedBookings(user.id, h.id))[0].holder_name, 'Anita Roy');

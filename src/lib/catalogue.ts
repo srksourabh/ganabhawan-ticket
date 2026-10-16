@@ -4,7 +4,7 @@ import { AppError, requireValue } from './errors';
 import { audit } from './audit';
 import { developmentAdaptersAllowed, seasonTicketSalesEnabled } from './env';
 import { assertShowCancellable, cancelShowSales } from './commerce';
-import { productSellState, type CoveredPerformance } from './availability';
+import { defaultDailyClose, productSellState, type CoveredPerformance, type SaleWindow } from './availability';
 import { zoneTemplate } from './inventory-admin';
 import { ADMIN_POLICY } from './admin-policy';
 export async function catalogue() {
@@ -25,9 +25,10 @@ type CoverageRow = Record<string, unknown> & CoveredPerformance & { product_id: 
  * with available 0, never as purchasable.
  */
 export async function publicProducts(festivalId: string, nowMs = Date.now()) {
- const rows=await query<CoverageRow>(`SELECT p.*, p.id product_id, pc.show_id, s.title, s.title_bn, s.starts_at, s.ends_at, s.status, i.allocation, i.held, i.committed,
+ const rows=await query<CoverageRow>(`SELECT p.*, p.id product_id, pc.show_id, s.title, s.title_bn, s.starts_at, s.ends_at, s.status, s.sales_closes_at, i.allocation, i.held, i.committed,
+  f.booking_opens_at, f.season_closes_at,
   (SELECT COALESCE(sum(quantity),0)::int FROM bookings b WHERE b.product_id=p.id AND b.status IN ('HELD','PAYMENT_PENDING','CONFIRMED')) cap_used
-  FROM products p JOIN product_coverage pc ON pc.product_id=p.id JOIN pools i ON i.id=pc.pool_id JOIN shows s ON s.id=pc.show_id
+  FROM products p JOIN festivals f ON f.id=p.festival_id JOIN product_coverage pc ON pc.product_id=p.id JOIN pools i ON i.id=pc.pool_id JOIN shows s ON s.id=pc.show_id
   WHERE p.festival_id=$1 AND p.enabled=true ORDER BY p.price, p.id, s.starts_at`,[festivalId]);
  const byProduct=new Map<string,CoverageRow[]>();
  for(const row of rows) byProduct.set(row.product_id,[...(byProduct.get(row.product_id)??[]),row]);
@@ -36,16 +37,25 @@ export async function publicProducts(festivalId: string, nowMs = Date.now()) {
   const visible=coverage.filter(s=>s.status==='PUBLISHED'&&new Date(s.ends_at).getTime()>nowMs);
   if(visible.length===0) continue;
   const first=coverage[0];
-  // The same gates as a purchase (availability.ts productSellState): listed, but closed when it cannot be bought.
-  const {state,available}=productSellState(String(first.kind),coverage,first.cap===null?null:Number(first.cap),Number(first.cap_used),nowMs);
+  const kind=first.kind==='SEASON'?'SEASON':'DAILY';
+  const {state,available}=productSellState(kind,coverage,first.cap===null?null:Number(first.cap),Number(first.cap_used),nowMs,undefined,saleWindow(kind,{booking_opens_at:first.booking_opens_at,season_closes_at:first.season_closes_at}));
   const product:Record<string,unknown>={};
   for(const [key,value] of Object.entries(first)) {
-   if(!['product_id','show_id','title','title_bn','starts_at','ends_at','status','allocation','held','committed','cap_used'].includes(key)) product[key]=value;
+   if(!['product_id','show_id','title','title_bn','starts_at','ends_at','status','allocation','held','committed','cap_used','sales_closes_at','booking_opens_at','season_closes_at'].includes(key)) product[key]=value;
   }
   products.push({...(product as unknown as Product),available,state,
    coverage:visible.map(s=>({id:s.show_id,title:s.title,title_bn:s.title_bn,starts_at:new Date(s.starts_at).toISOString(),status:s.status}) as unknown as Show)});
  }
  return products;
+}
+function saleWindow(kind: 'DAILY' | 'SEASON', row: { booking_opens_at?: unknown; season_closes_at?: unknown }): SaleWindow {
+ return { kind, opensAt: row.booking_opens_at as string | null, closesAt: kind === 'SEASON' ? row.season_closes_at as string | null : undefined };
+}
+function instantOrNull(value: unknown, label: string): string | null {
+ if (value === undefined || value === null || value === '') return null;
+ const parsed = new Date(String(value));
+ requireValue(!Number.isNaN(parsed.getTime()), `${label} is not a valid time.`, 400);
+ return parsed.toISOString();
 }
 export async function adminCatalogue() {
  const festival=(await query<Festival>('SELECT * FROM festivals ORDER BY created_at LIMIT 1'))[0];
@@ -154,16 +164,22 @@ export async function updateFestival(user:User,input:Record<string,unknown>) {
     { holdMinutes: input.holdMinutes, maxQuantity: input.maxQuantity, entryBefore: input.entryBefore, entryAfter: input.entryAfter },
     { holdMinutes: f.hold_minutes, maxQuantity: f.max_quantity, entryBefore: f.entry_before, entryAfter: f.entry_after },
   );
+  const bookingOpensAt = input.bookingOpensAt === undefined ? (f.booking_opens_at ?? null) : instantOrNull(input.bookingOpensAt, 'Booking open time');
+  const seasonClosesAt = input.seasonClosesAt === undefined
+    ? (f.season_closes_at ?? null)
+    : instantOrNull(input.seasonClosesAt, 'Season close time');
+  requireValue(seasonClosesAt, 'Season ticket sales need a closing time.', 400);
   await c.query(`UPDATE festivals SET status=$1,physical_required=$2,hold_minutes=$3,max_quantity=$4,entry_before=$5,entry_after=$6,
-   name=$7,name_bn=$8,venue=$9,address=$10,contact_email=$11,terms=$12,theater_photo=$13 WHERE id=$14`,
+   name=$7,name_bn=$8,venue=$9,address=$10,contact_email=$11,terms=$12,theater_photo=$13,booking_opens_at=$14,season_closes_at=$15 WHERE id=$16`,
    [status,input.physicalRequired??f.physical_required,limits.holdMinutes,limits.maxQuantity,
-    limits.entryBefore,limits.entryAfter,name,nameBn,venue,address,contactEmail,terms,theaterPhoto,f.id]);
+    limits.entryBefore,limits.entryAfter,name,nameBn,venue,address,contactEmail,terms,theaterPhoto,bookingOpensAt,seasonClosesAt,f.id]);
   await audit(c,user.id,'festival.update',f.id,input); return {ok:true};
  },true);
 }
 export interface ShowInput {
  title:string; titleBn:string; troupe:string; synopsis:string; synopsisBn:string;
  startsAt:string; runtime:number; genre:string; language?:string; artwork?:string; status?:string;
+ salesClosesAt?:string;
 }
 export async function upsertShow(user:User, input:ShowInput) {
  return transaction(async c=>{
@@ -177,10 +193,12 @@ export async function upsertShow(user:User, input:ShowInput) {
   const status=String(input.status??'DRAFT');
   requireValue(['DRAFT','PUBLISHED','CANCELLED'].includes(status),'Invalid show status.',400);
   const endsAt=new Date(startsAt.getTime()+input.runtime*60000);
-  const show=(await one<Show>(c,`INSERT INTO shows(festival_id,title,title_bn,troupe,synopsis,synopsis_bn,starts_at,ends_at,language,runtime,genre,artwork,status)
-   VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+  const salesClosesAt=input.salesClosesAt ? new Date(input.salesClosesAt) : defaultDailyClose(startsAt);
+  requireValue(!Number.isNaN(salesClosesAt.getTime()),'Daily ticket sales need a valid closing time.',400);
+  const show=(await one<Show>(c,`INSERT INTO shows(festival_id,title,title_bn,troupe,synopsis,synopsis_bn,starts_at,ends_at,language,runtime,genre,artwork,status,sales_closes_at)
+   VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
    [festival!.id,input.title,input.titleBn,input.troupe,input.synopsis,input.synopsisBn,startsAt.toISOString(),endsAt.toISOString(),
-    input.language??'Bengali',input.runtime,input.genre,input.artwork??'red',status]))!;
+    input.language??'Bengali',input.runtime,input.genre,input.artwork??'red',status,salesClosesAt.toISOString()]))!;
   // A new performance never joins an existing season ticket by itself: that would change
   // what season customers bought (and close season sales while the show is a draft). The
   // admin adds it explicitly (addShowToSeason), which is refused once the season has sales.
@@ -295,11 +313,15 @@ export async function updateShow(user:User, id:string, input:Record<string,unkno
   const synopsis=String(input.synopsis??show!.synopsis), synopsisBn=String(input.synopsisBn??show!.synopsis_bn);
   const genre=String(input.genre??show!.genre), language=String(input.language??show!.language);
   const artwork=input.artwork!==undefined?String(input.artwork):show!.artwork;
+  const salesClosesAt=input.salesClosesAt===undefined && show!.sales_closes_at
+    ? new Date(show!.sales_closes_at)
+    : input.salesClosesAt ? new Date(String(input.salesClosesAt)) : defaultDailyClose(startsAt);
+  requireValue(!Number.isNaN(salesClosesAt.getTime()),'Daily ticket sales need a valid closing time.',400);
   requireValue(title.trim().length>0 && titleBn.trim().length>0 && troupe.trim().length>0 && synopsis.trim().length>0 && synopsisBn.trim().length>0 && genre.trim().length>0,
    'Title, troupe, synopsis and genre are required.',400);
-  const updated=(await one<Show>(c,`UPDATE shows SET title=$1,title_bn=$2,troupe=$3,synopsis=$4,synopsis_bn=$5,starts_at=$6,ends_at=$7,runtime=$8,genre=$9,language=$10,status=$11,artwork=$12
-   WHERE id=$13 RETURNING *`,
-   [title,titleBn,troupe,synopsis,synopsisBn,startsAt.toISOString(),endsAt.toISOString(),runtime,genre,language,status,artwork,id]))!;
+  const updated=(await one<Show>(c,`UPDATE shows SET title=$1,title_bn=$2,troupe=$3,synopsis=$4,synopsis_bn=$5,starts_at=$6,ends_at=$7,runtime=$8,genre=$9,language=$10,status=$11,artwork=$12,sales_closes_at=$13
+   WHERE id=$14 RETURNING *`,
+   [title,titleBn,troupe,synopsis,synopsisBn,startsAt.toISOString(),endsAt.toISOString(),runtime,genre,language,status,artwork,salesClosesAt.toISOString(),id]))!;
   if (status === 'CANCELLED' && show!.status !== 'CANCELLED') await cancelShowSales(c, id, user.id);
   await audit(c,user.id,'show.update',id,input);
   return updated;

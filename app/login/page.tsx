@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import GoogleSignInButton from '@/components/GoogleSignInButton';
 import { useLocale } from '@/components/LocaleProvider';
@@ -116,6 +117,10 @@ function LoginForm() {
             </>
           )}
           <p style={styles.muted}>{t('login.staffHint')}</p>
+          <p style={styles.muted}>
+            <Link href="/catalogue">{t('login.guest')}</Link>
+            {' — '}{t('login.guestHint')}
+          </p>
         </div>
       </div>
     );

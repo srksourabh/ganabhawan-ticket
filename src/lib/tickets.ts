@@ -6,7 +6,7 @@ import { decrypt } from './security';
 import { sendEmail, sendMessage } from './auth';
 import { renderSms, sendSms } from './sms';
 import { DEFAULT_VENUE, ORGANISATION } from './brand';
-import { CONFIRMED_LEAD, LINK_SIGN_IN_NOTE, appBaseUrl, smsShowLabel, ticketsLink, type ConfirmationMessage } from './confirmation';
+import { CONFIRMED_LEAD, LINK_SIGN_IN_NOTE, NO_REFUND, PICKUP_INSTRUCTION, appBaseUrl, smsShowLabel, ticketsLink, type ConfirmationMessage } from './confirmation';
 import { verifiedContacts } from './account-contacts';
 import type { User } from './types';
 
@@ -214,11 +214,11 @@ const istTime = (iso: string) => new Date(iso).toLocaleString('en-IN', { dateSty
 export async function bookingConfirmation(bookingId: string): Promise<ConfirmationMessage | null> {
   const base = appBaseUrl();
   const booking = (await query<{
-    user_id: string; contact: string; user_name: string; holder_name: string | null; reference: string; status: string;
+    user_id: string; contact: string; user_name: string; holder_name: string | null; holder_email: string | null; holder_phone: string | null; reference: string; status: string;
     quantity: number; unit_price: number; total: number; snapshot: { name?: string; category?: string; kind?: string; coverage?: { title: string; startsAt: string }[] };
     payment_reference: string | null; paid_at: string | null;
   }>(
-    `SELECT b.user_id, u.contact, u.name user_name, b.holder_name, b.reference, b.status, b.quantity, b.unit_price, b.total, b.snapshot,
+    `SELECT b.user_id, u.contact, u.name user_name, b.holder_name, b.holder_email, b.holder_phone, b.reference, b.status, b.quantity, b.unit_price, b.total, b.snapshot,
        (SELECT p.provider_payment_id FROM payments p WHERE p.booking_id=b.id AND p.state='CAPTURED' ORDER BY p.created_at LIMIT 1) payment_reference,
        (SELECT p.created_at FROM payments p WHERE p.booking_id=b.id AND p.state='CAPTURED' ORDER BY p.created_at LIMIT 1) paid_at
      FROM bookings b JOIN users u ON u.id=b.user_id WHERE b.id=$1`,
@@ -229,29 +229,35 @@ export async function bookingConfirmation(bookingId: string): Promise<Confirmati
   const name = booking.holder_name || booking.user_name;
   const s = booking.snapshot ?? {};
   const rupees = (paise: number) => `₹${(Number(paise) / 100).toLocaleString('en-IN')}`;
+  const festival = (await query<{ venue: string }>('SELECT venue FROM festivals ORDER BY created_at LIMIT 1'))[0];
+  const venue = festival?.venue || DEFAULT_VENUE;
+  const emailTo = booking.holder_email?.includes('@') ? booking.holder_email : null;
   const emailText = [
     name ? `Dear ${name},` : '',
     '',
     CONFIRMED_LEAD,
-    `Your QR tickets: ${ticketsLink(base, [bookingId])}`,
-    LINK_SIGN_IN_NOTE,
     '',
+    `Name: ${name}`,
+    `Email: ${emailTo || booking.contact}`,
+    `Mobile: ${booking.holder_phone || ''}`,
+    `Theatre: ${venue}`,
     `Booking ${booking.reference}`,
     booking.payment_reference && booking.paid_at ? `Payment ${booking.payment_reference} on ${istTime(booking.paid_at)}` : '',
     '',
     `${s.name ?? 'Tickets'}`,
-    `Zone: ${s.category ?? ''}${s.kind ? ` · ${s.kind === 'SEASON' ? 'Season ticket' : 'Daily ticket'}` : ''}`,
+    `${s.kind === 'SEASON' ? 'Season ticket' : 'Daily ticket'} · ${s.category ?? ''}`,
     ...(s.coverage ?? []).map((p) => `${p.title}: ${istTime(p.startsAt)}`),
     `Quantity: ${booking.quantity} × ${rupees(booking.unit_price)} = ${rupees(booking.total)}`,
     '',
-    'Open your tickets and QR codes:',
-    confirmationLinks(base, bookingId, tickets.map((t) => t.reference)),
+    `Your tickets: ${ticketsLink(base, [bookingId])}`,
     '',
-    'Each play has its own QR code on the page. Open it on your phone and show it at the venue entrance. You can keep the page on your Home Screen for offline viewing.',
-    '',
-    `My tickets: ${base}/tickets`,
+    NO_REFUND,
+    PICKUP_INSTRUCTION,
+    LINK_SIGN_IN_NOTE,
   ].filter((line, i, all) => line !== '' || (i > 0 && all[i - 1] !== '')).join('\n');
-  const { email, mobile } = await verifiedContacts(booking.user_id);
+  const account = await verifiedContacts(booking.user_id);
+  const email = emailTo || account.email;
+  const mobile = account.mobile;
   return {
     confirmed: booking.status === 'CONFIRMED' && tickets.length > 0,
     email,

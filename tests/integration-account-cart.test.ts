@@ -206,7 +206,7 @@ test('expiry: checkout after a show ended or was cancelled is refused (server-si
   const s = await makeShow();
   const user = await makeUser();
   await cart.saveAccountCart(user.id, [{ productId: s.productId, quantity: 1 }]);
-  await query("UPDATE shows SET starts_at=now()-interval '10 minutes' WHERE id=$1", [s.showId]);
+  await query("UPDATE shows SET starts_at=now()-interval '10 minutes', sales_closes_at=now()-interval '1 minute' WHERE id=$1", [s.showId]);
   await assert.rejects(checkout.createCheckout(user, [{ productId: s.productId, quantity: 1, version: 1 }], randomUUID()), /Sales for this performance have closed/);
   await nothingHeld();
 });

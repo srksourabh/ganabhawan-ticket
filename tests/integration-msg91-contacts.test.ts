@@ -228,9 +228,9 @@ test('contact 11/22: email-only customer buys, gets ONE email with the secure li
   const [bookingId] = await bookingsOf(co.id);
   const mail = emailsTo(user.contact);
   assert.equal(mail.length, 1);
-  assert.ok(mail[0].text.includes(`Your QR tickets: https://staging.tickets.test/tickets/${bookingId}`), 'link to that booking’s QR page');
-  assert.ok(mail[0].text.includes(CARDS));
-  assert.ok(mail[0].text.includes('Your booking is confirmed! View your QR tickets using the secure link below.'));
+  assert.ok(mail[0].text.includes(`Your tickets: https://staging.tickets.test/tickets/${bookingId}`), 'link to that booking’s ticket page');
+  assert.ok(mail[0].text.includes('Collect your tickets at the counter before the show.'));
+  assert.ok(mail[0].text.includes('This email is your ticket.'));
   assert.equal(fake.sms.length, 0);
   assert.equal((await query("SELECT count(*)::int n FROM jobs WHERE kind='NOTIFY'"))[0].n, 0, 'no SMS job for an email-only account');
 });
@@ -295,7 +295,7 @@ test('notify 29: the card instruction is in the email and in the SMS wording (te
   const user = await makeUser('customer', undefined, { mobile: '+919876500029' });
   await buy(user, [1]);
   await deliver();
-  assert.ok(emailsTo(user.contact)[0].text.includes(CARDS));
+  assert.ok(emailsTo(user.contact)[0].text.includes('Collect your tickets at the counter before the show.'));
 });
 
 test('notify 30: MSG91 and Resend both down → booking stays CONFIRMED; each channel recovers on retry exactly once', { skip }, async () => {

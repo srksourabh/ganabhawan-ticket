@@ -1,9 +1,10 @@
 /** What a post-payment confirmation says, independent of the channel that carries it. */
-export const PICKUP_INSTRUCTION = 'Please collect your physical cards before the show.';
+export const NO_REFUND = 'A ticket, once booked, cannot be cancelled or refunded.';
+export const PICKUP_INSTRUCTION = 'Collect your tickets at the counter before the show. Bring this email and a photo ID. The name on the ID must match the name on this email. Only this email is accepted.';
 /** Opening of every confirmation email (the SMS template carries the same instruction: sms.ts). */
-export const CONFIRMED_LEAD = `Your booking is confirmed! View your QR tickets using the secure link below. ${PICKUP_INSTRUCTION}`;
-/** The ticket pages are private to the buyer's account: the link is not a login credential. */
-export const LINK_SIGN_IN_NOTE = 'The link opens after you sign in to the account you booked with.';
+export const CONFIRMED_LEAD = `Your booking is confirmed. This email is your ticket. ${PICKUP_INSTRUCTION} ${NO_REFUND}`;
+/** The email itself is what the counter accepts, together with a photo ID. */
+export const LINK_SIGN_IN_NOTE = 'Show this email at the counter with your photo ID. You do not need an account.';
 
 /**
  * The secure ticket link: the booking's own QR page when the order has one booking,

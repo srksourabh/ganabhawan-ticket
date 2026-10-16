@@ -5,7 +5,7 @@ import { token, hash, encrypt } from './security';
 import { audit, job } from './audit';
 import { markAttemptsConfirmed } from './attempts';
 import { assertLiveConfiguration, publicSalesOpen } from './env';
-import { salesOpen, seasonSaleBlocked } from './availability';
+import { salesOpen, seasonSaleBlocked, type CoveredPerformance } from './availability';
 import { assertCanPurchase } from './account-contacts';
 import type { User } from './types';
 export async function movement(c:Client,poolId:string,operation:string,held:number,committed:number,reason:string) {
@@ -62,8 +62,16 @@ export async function loadProductForHold(c:Client,input:HoldInput) {
 export async function placeHold(c:Client,user:User,input:HoldInput,product:BookingRow) {
   // Cancelled performances are not part of a new sale (availability.ts activeCoverage): no hold,
   // snapshot entry or ticket entitlement for them.
-  const coverage=(await c.query("SELECT pc.*,p.allocation,p.held,p.committed,s.title,s.starts_at,s.status FROM product_coverage pc JOIN pools p ON p.id=pc.pool_id JOIN shows s ON s.id=pc.show_id WHERE pc.product_id=$1 AND s.status<>'CANCELLED' ORDER BY s.starts_at, p.id FOR UPDATE OF p",[product.id])).rows;
-  requireValue(salesOpen(coverage as { status: string; starts_at: string }[]),'Sales for this performance have closed.');
+  const coverage=(await c.query(`SELECT pc.*,p.allocation,p.held,p.committed,s.title,s.starts_at,s.status,s.sales_closes_at,f.booking_opens_at,f.season_closes_at
+   FROM product_coverage pc JOIN pools p ON p.id=pc.pool_id JOIN shows s ON s.id=pc.show_id
+   JOIN products pr ON pr.id=pc.product_id JOIN festivals f ON f.id=pr.festival_id
+   WHERE pc.product_id=$1 AND s.status<>'CANCELLED' ORDER BY s.starts_at, p.id FOR UPDATE OF p`,[product.id])).rows;
+  const kind=product.kind==='SEASON'?'SEASON':'DAILY';
+  requireValue(salesOpen(coverage as CoveredPerformance[], Date.now(), {
+    kind,
+    opensAt: coverage[0]?.booking_opens_at ?? null,
+    closesAt: kind==='SEASON' ? coverage[0]?.season_closes_at ?? null : undefined,
+  }),'Sales for this performance have closed.');
   requireValue(coverage.every(p=>p.allocation-p.held-p.committed>=input.quantity),'Not enough tickets remain. Please choose fewer tickets.');
   if(product.cap!==null) { const used=await one(c,"SELECT COALESCE(sum(quantity),0)::int n FROM bookings WHERE product_id=$1 AND status IN ('HELD','PAYMENT_PENDING','CONFIRMED')",[product.id]); requireValue(used!.n+input.quantity<=product.cap,'The product limit has been reached.'); }
   const snapshot={name:product.name,category:product.category,kind:product.kind,terms:product.terms,physicalRequired:product.physical_required,coverage:coverage.map(s=>({showId:s.show_id,poolId:s.pool_id,title:s.title,startsAt:s.starts_at,weight:s.weight}))};

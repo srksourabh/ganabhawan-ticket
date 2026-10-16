@@ -6,7 +6,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { salesOpen, sellState } from '../src/lib/availability';
+import { defaultDailyClose, salesOpen, sellState } from '../src/lib/availability';
+import { summariseSheet, type SheetRow } from '../src/lib/booking-sheet';
+import { receiptText, type Receipt } from '../src/lib/checkout';
 import { validateCapacityConfig } from '../src/lib/inventory-admin';
 import { ACCOUNT_CART_PING_KEY, GUEST_CART_KEY, cleanupStaleCartStorage, forgetAccountLocally, guestCartId, pendingKey, readGuestItems, resetGuestCart, writeGuestItems, type CartStorage } from '../src/lib/cart-storage';
 import { ADMIN_POLICY } from '../src/lib/admin-policy';
@@ -41,6 +43,69 @@ test('availability: a cancelled covered show is left out of new sales (it used t
   // Started or draft remaining performances still close it; nothing remaining = closed.
   assert.equal(salesOpen([pool('CANCELLED', future), pool('PUBLISHED', past)], NOW), false);
   assert.equal(salesOpen([pool('CANCELLED', future), pool('CANCELLED', future)], NOW), false);
+});
+
+test('availability: a daily ticket stays on sale after curtain until 7pm IST that day', () => {
+  const curtain = '2026-12-19T12:30:00Z'; // 18:00 IST
+  const during = Date.parse('2026-12-19T13:00:00Z'); // 18:30 IST
+  const atClose = Date.parse('2026-12-19T13:30:00Z'); // 19:00 IST
+  assert.equal(salesOpen([pool('PUBLISHED', curtain)], during), true);
+  assert.equal(salesOpen([pool('PUBLISHED', curtain)], atClose), false);
+  assert.equal(defaultDailyClose(curtain).toISOString(), '2026-12-19T13:30:00.000Z');
+  assert.equal(salesOpen([pool('PUBLISHED', curtain, 10)], during, { kind: 'DAILY', closesAt: '2026-12-19T13:00:00Z' }), false, 'an admin close time wins');
+});
+
+test('availability: season sales close at the configured time while covered nights are still ahead', () => {
+  const shows = [pool('PUBLISHED', '2026-12-20T13:00:00Z'), pool('PUBLISHED', '2026-12-21T13:00:00Z')];
+  assert.equal(salesOpen(shows, Date.parse('2026-12-19T13:29:00Z'), { kind: 'SEASON', closesAt: '2026-12-19T13:30:00Z' }), true);
+  assert.equal(salesOpen(shows, Date.parse('2026-12-19T13:30:00Z'), { kind: 'SEASON', closesAt: '2026-12-19T13:30:00Z' }), false);
+});
+
+test('availability: sales stay closed until the booking window opens', () => {
+  const show = pool('PUBLISHED', future);
+  assert.equal(salesOpen([show], NOW, { kind: 'DAILY', opensAt: '2026-12-10T13:30:00Z' }), false);
+  assert.equal(salesOpen([show], Date.parse('2026-12-10T13:30:00Z'), { kind: 'DAILY', opensAt: '2026-12-10T13:30:00Z' }), true);
+});
+
+test('booking sheet: counts people, season and daily tickets, and categories', () => {
+  const row = (kind: SheetRow['kind'], category: string, email: string, quantity: number): SheetRow => ({
+    bookedAt: '2026-12-01T12:00:00.000Z', name: 'Rina', email, phone: '+919876543210', category, kind,
+    show: 'Macbeth', quantity, amount: 50000, order: 'GC-1', reference: email + kind, venue: 'Ganabhawan',
+  });
+  const summary = summariseSheet([
+    row('Season', 'Balcony', 'a@example.com', 2),
+    row('Daily', 'Premier', 'a@example.com', 1),
+    row('Daily', 'Premier', 'b@example.com', 3),
+  ]);
+  assert.equal(summary.people, 2);
+  assert.equal(summary.bookings, 3);
+  assert.equal(summary.tickets, 6);
+  assert.deepEqual(summary.byKind, { Season: 2, Daily: 4 });
+  assert.equal(summary.byCategory.Premier, 4);
+  assert.equal(summary.byCategory.Balcony, 2);
+});
+
+test('confirmation email names the buyer, theatre, ticket type, and the counter rules', () => {
+  const receipt: Receipt = {
+    checkoutId: 'c1', reference: 'GC-1', status: 'CONFIRMED', currency: 'INR', total: 50000, createdAt: '2026-12-01T12:00:00.000Z',
+    venue: 'Ganabhawan',
+    customer: { name: 'Rina Das', contact: 'rina@example.com', email: 'rina@example.com', phone: '+919876543210' },
+    payment: { reference: 'pay_1', paidAt: '2026-12-01T12:05:00.000Z', amount: 50000 },
+    refunds: [],
+    lines: [{
+      bookingId: 'b1', bookingReference: 'GF-1', product: 'Macbeth – Balcony', category: 'Balcony', kind: 'DAILY',
+      performances: [{ title: 'Macbeth', startsAt: '2026-12-19T12:30:00.000Z' }],
+      quantity: 2, unitPrice: 25000, lineTotal: 50000, status: 'CONFIRMED',
+    }],
+  };
+  const text = receiptText(receipt, 'https://tickets.example');
+  assert.match(text, /Name: Rina Das/);
+  assert.match(text, /Email: rina@example.com/);
+  assert.match(text, /Mobile: \+919876543210/);
+  assert.match(text, /Theatre: Ganabhawan/);
+  assert.match(text, /Daily ticket · Balcony/);
+  assert.match(text, /cannot be cancelled or refunded/);
+  assert.match(text, /photo ID/);
 });
 
 test('availability: the scarcest pool and the product cap decide; zero left is SOLD_OUT, not CLOSED', () => {
