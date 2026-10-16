@@ -7,10 +7,12 @@ export async function POST(request: Request): Promise<Response> {
   try {
     await rateLimit('attempt-ip:' + hash(clientIp(request)), 40, 3600);
     const user = await currentUser();
-    const body = await readJson<{ name?: string; contact?: string; productId?: string; quantity?: number }>(request);
+    const body = await readJson<{ name?: string; contact?: string; email?: string; phone?: string; productId?: string; quantity?: number }>(request);
     const row = await recordBookingAttempt({
       name: body.name?.trim() || user?.name,
       contact: body.contact?.trim() || user?.contact,
+      email: body.email,
+      phone: body.phone,
       productId: body.productId,
       quantity: body.quantity,
       userId: user?.id ?? null,

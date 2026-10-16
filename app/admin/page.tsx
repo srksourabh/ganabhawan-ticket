@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AUDITORIUM_PHOTO } from '@/lib/brand';
+import { defaultDailyClose } from '@/lib/availability';
 import InventoryPanel from '@/components/admin/InventoryPanel';
 import SeasonsPanel from '@/components/admin/SeasonsPanel';
 import StaffPanel from '@/components/admin/StaffPanel';
@@ -35,6 +36,8 @@ type Festival = {
   hold_minutes: number;
   max_quantity: number;
   theater_photo?: string;
+  booking_opens_at?: string | null;
+  season_closes_at?: string | null;
 };
 
 type Show = {
@@ -50,6 +53,7 @@ type Show = {
   status: string;
   language: string;
   artwork: string;
+  sales_closes_at?: string | null;
 };
 
 type Product = {
@@ -195,6 +199,8 @@ export default function AdminPage() {
       holdMinutes: Number(form.get('holdMinutes') || festival.hold_minutes),
       maxQuantity: Number(form.get('maxQuantity') || festival.max_quantity),
       theaterPhoto: String(form.get('theaterPhoto') || festival.theater_photo || AUDITORIUM_PHOTO),
+      bookingOpensAt: String(form.get('bookingOpensAt') || '') ? fromLocalInput(String(form.get('bookingOpensAt'))) : '',
+      seasonClosesAt: fromLocalInput(String(form.get('seasonClosesAt') || '')),
     };
     const res = await fetch('/api/admin/festival', {
       method: 'PATCH',
@@ -234,6 +240,7 @@ export default function AdminPage() {
       synopsis: String(form.get('synopsis') || 'Programme details to follow.'),
       synopsisBn: String(form.get('synopsisBn') || form.get('synopsis') || 'বিস্তারিত শীঘ্রই।'),
       startsAt: fromLocalInput(String(form.get('startsAt') || '')),
+      salesClosesAt: String(form.get('salesClosesAt') || '') ? fromLocalInput(String(form.get('salesClosesAt'))) : '',
       runtime: Number(form.get('runtime') || 90),
       genre: String(form.get('genre') || 'Drama'),
       language: String(form.get('language') || 'Bengali'),
@@ -348,6 +355,7 @@ export default function AdminPage() {
         </div>
         <div className="admin__tabs" role="tablist">
           <Link className="btn btn--primary" href="/admin/accounts">Accounts</Link>
+          <Link className="btn btn--ghost" href="/admin/sheet">Booking sheet</Link>
           <Link className="btn btn--ghost" href="/gate">Check tickets</Link>
           {TABS.filter((t) => profile && t.roles.includes(profile.role)).map(({ id, label }) => (
             <button
@@ -403,6 +411,14 @@ export default function AdminPage() {
               </select>
             </label>
             <label className="field">
+              <span>Booking opens (IST, optional)</span>
+              <input name="bookingOpensAt" type="datetime-local" defaultValue={festival.booking_opens_at ? toLocalInput(festival.booking_opens_at) : ''} />
+            </label>
+            <label className="field">
+              <span>Season tickets close (IST)</span>
+              <input name="seasonClosesAt" type="datetime-local" defaultValue={toLocalInput(festival.season_closes_at || '2026-12-19T13:30:00.000Z')} required />
+            </label>
+            <label className="field">
               <span>Hold minutes</span>
               <input name="holdMinutes" type="number" min={1} max={30} defaultValue={festival.hold_minutes} />
             </label>
@@ -445,7 +461,7 @@ export default function AdminPage() {
           </div>
 
           {(creating || editingShow) && (
-            <form className="card stack" onSubmit={saveShow}>
+            <form className="card stack" key={editingShow?.id ?? 'new'} onSubmit={saveShow}>
               <h3 className="h3">{creating ? 'New drama' : `Edit · ${editingShow?.title}`}</h3>
               <div className="admin__grid-2">
                 <label className="field">
@@ -463,6 +479,10 @@ export default function AdminPage() {
                 <label className="field">
                   <span>Date & time (IST)</span>
                   <input name="startsAt" type="datetime-local" defaultValue={editingShow ? toLocalInput(editingShow.starts_at) : ''} required />
+                </label>
+                <label className="field">
+                  <span>Daily tickets close (IST)</span>
+                  <input name="salesClosesAt" type="datetime-local" defaultValue={editingShow ? toLocalInput(editingShow.sales_closes_at || defaultDailyClose(editingShow.starts_at).toISOString()) : ''} />
                 </label>
                 <label className="field">
                   <span>Runtime (minutes)</span>

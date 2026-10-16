@@ -51,6 +51,8 @@ export default function CheckoutPage() {
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(false);
   const [me, setMe] = useState<{ contact?: string; name?: string; mobile?: string | null; mobileEnabled?: boolean }>({});
+  const [buyer, setBuyer] = useState({ name: '', email: '', phone: '' });
+  const [buyerError, setBuyerError] = useState('');
   const runningRef = useRef(false);
   /** One key per checkout attempt: a retried request reuses it; after a failure the next attempt gets a new one. */
   const checkoutKey = useRef(newCheckoutKey());
@@ -60,13 +62,20 @@ export default function CheckoutPage() {
     fetch('/api/auth/me')
       .then((res) => {
         if (res.status === 401) {
-          router.replace('/login?next=/cart/checkout');
+          setAuthChecked(true);
           return;
         }
         return res.json();
       })
       .then((body) => {
-        if (body?.contact) setMe({ contact: body.contact, name: body.name, mobile: body.mobile ?? null, mobileEnabled: body.mobileEnabled === true });
+        if (body?.contact) {
+          setMe({ contact: body.contact, name: body.name, mobile: body.mobile ?? null, mobileEnabled: body.mobileEnabled === true });
+          setBuyer((current) => ({
+            name: current.name || body.name || '',
+            email: current.email || (String(body.contact).includes('@') ? body.contact : ''),
+            phone: current.phone || (body.mobile && !String(body.mobile).includes('@') ? body.mobile : (!String(body.contact).includes('@') ? body.contact : '')),
+          }));
+        }
         setAuthChecked(true);
       })
       .catch(() => setAuthChecked(true));
@@ -90,7 +99,33 @@ export default function CheckoutPage() {
    */
   async function runCheckout() {
     if (runningRef.current) return; // double-click / repeated submit
+    if (lines.some((line) => line.status === 'unavailable')) return;
+    const name = buyer.name.trim();
+    const email = buyer.email.trim();
+    const phone = buyer.phone.trim();
+    if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || phone.replace(/\D/g, '').length < 10) {
+      setBuyerError(t('checkout.detailsRequired'));
+      return;
+    }
+    setBuyerError('');
     runningRef.current = true;
+    try {
+      if (!me.contact) {
+        const guest = await fetch('/api/auth/guest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, email, phone }),
+        });
+        const guestBody = await guest.json().catch(() => ({}));
+        if (!guest.ok) throw new Error(guestBody.error || t('checkout.detailsRequired'));
+        setMe((current) => ({ ...current, contact: email, name }));
+      }
+    } catch (error) {
+      runningRef.current = false;
+      setRunning(false);
+      setBuyerError(error instanceof Error ? error.message : t('checkout.detailsRequired'));
+      return;
+    }
     setRunning(true);
     setDone(false);
     let checkoutId: string | null = null;
@@ -101,7 +136,7 @@ export default function CheckoutPage() {
         const res = await fetch('/api/booking-attempts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: me.name, contact: me.contact, productId: line.item.productId, quantity: line.item.quantity }),
+          body: JSON.stringify({ name, email, phone, contact: me.contact || email, productId: line.item.productId, quantity: line.item.quantity }),
         });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(body.error || 'Enter your name and mobile or email before checkout.');
@@ -128,10 +163,10 @@ export default function CheckoutPage() {
       await payExistingOrder(order, {
         name: locale === 'bn' ? FESTIVAL_BN : FESTIVAL,
         description: lines.length === 1 ? `${lines[0].item.name} × ${lines[0].item.quantity}` : `${lines.length} ticket types · ${checkout.reference}`,
-        ...prefillFromContact(me.contact, me.name),
-        prefillEmail: me.contact?.includes('@') ? me.contact : undefined,
-        prefillContact: me.contact && !me.contact.includes('@') ? me.contact : undefined,
-        prefillName: me.name,
+        ...prefillFromContact(phone, name),
+        prefillEmail: email,
+        prefillContact: phone,
+        prefillName: name,
       });
       // Confirmed by the server (payExistingOrder throws unless status is CONFIRMED).
       setLines((prev) => updateAll(prev, { status: 'confirmed', message: checkout.reference }));
@@ -217,6 +252,8 @@ export default function CheckoutPage() {
         <p className="eyebrow">{locale === 'bn' ? FESTIVAL_BN : FESTIVAL}</p>
         <h1 className="h2">{t('checkout.title')}</h1>
         <p className="muted">{t('checkout.intro')}</p>
+        <p className="banner" role="note">{t('checkout.guest')}. {t('checkout.pickup')}</p>
+        <p className="banner banner--err" role="note">{t('checkout.noRefunds')}</p>
 
         <div className="stack">
           {lines.map((line) => (
@@ -260,16 +297,31 @@ export default function CheckoutPage() {
             <span>{money(total, dl)}</span>
           </div>
 
-          {/* No Pay button while a line cannot be sold: paying would only fail again. */}
-          {blocked ? (
-            <Link href="/cart" className="btn btn--ghost btn--block">{t('checkout.editCart')}</Link>
-          ) : (
-            <button type="button" className="btn btn--primary btn--block" disabled={running} onClick={runCheckout}>
-              {running ? t('checkout.processing') : t('checkout.pay', { amount: money(total, dl) })}
-            </button>
-          )}
+          <form className="card stack" onSubmit={(event) => { event.preventDefault(); void runCheckout(); }}>
+            <h2 className="h3">{t('checkout.buyer')}</h2>
+            <label className="field">
+              <span>{t('checkout.name')}</span>
+              <input name="buyerName" autoComplete="name" required value={buyer.name} disabled={running} onChange={(event) => setBuyer((current) => ({ ...current, name: event.target.value }))} />
+            </label>
+            <label className="field">
+              <span>{t('checkout.email')}</span>
+              <input name="buyerEmail" type="email" autoComplete="email" required value={buyer.email} disabled={running} onChange={(event) => setBuyer((current) => ({ ...current, email: event.target.value }))} />
+            </label>
+            <label className="field">
+              <span>{t('checkout.phone')}</span>
+              <input name="buyerPhone" type="tel" autoComplete="tel" inputMode="tel" required value={buyer.phone} disabled={running} onChange={(event) => setBuyer((current) => ({ ...current, phone: event.target.value }))} />
+            </label>
+            {buyerError && <p role="alert" className="banner banner--err">{buyerError}</p>}
+            {blocked ? (
+              <Link href="/cart" className="btn btn--ghost btn--block">{t('checkout.editCart')}</Link>
+            ) : (
+              <button type="submit" className="btn btn--primary btn--block" disabled={running}>
+                {running ? t('checkout.processing') : t('checkout.pay', { amount: money(total, dl) })}
+              </button>
+            )}
+          </form>
 
-          <p className="muted" style={{ margin: 0 }}>{t('checkout.noRefunds')}</p>
+          <p className="muted" style={{ margin: 0 }}>{t('checkout.pickup')}</p>
 
           {/* Email-only accounts may buy; a verified mobile only adds the SMS confirmation (offered only while the server has mobile features on). */}
           {me.mobileEnabled && me.contact?.includes('@') && !me.mobile && !running && (

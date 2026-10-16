@@ -99,7 +99,9 @@ export default function CartPage() {
               <span>{money(cart.total, dl)}</span>
             </div>
 
-            <Link href="/cart/checkout" className="btn btn--primary btn--block">{t('book.reserve')}</Link>
+            <Link href="/cart/checkout" className="btn btn--primary btn--block">{t('checkout.guest')}</Link>
+            <p className="muted" style={{ margin: 0 }}>{t('checkout.intro')}</p>
+            <p className="banner banner--err" role="note">{t('checkout.noRefunds')} {t('checkout.pickup')}</p>
           </div>
         )}
       </section>

@@ -3,16 +3,31 @@ import assert from 'node:assert/strict';
 import { AppError } from '../src/lib/errors';
 import { parseAttempt, summarizeMoney } from '../src/lib/attempts';
 
-test('parseAttempt keeps a name, Indian mobile, and quantity', () => {
+test('parseAttempt keeps a name, email, Indian mobile, and quantity', () => {
   const parsed = parseAttempt({
     name: '  Rina Das ',
-    contact: '9876543210',
+    email: 'Rina@Example.com',
+    phone: '9876543210',
     productId: '11111111-1111-4111-8111-111111111111',
     quantity: 2,
   });
   assert.equal(parsed.name, 'Rina Das');
-  assert.equal(parsed.contact, '+919876543210');
+  assert.equal(parsed.email, 'rina@example.com');
+  assert.equal(parsed.phone, '+919876543210');
+  assert.equal(parsed.contact, 'rina@example.com');
   assert.equal(parsed.quantity, 2);
+});
+
+test('parseAttempt rejects a phone-only contact', () => {
+  assert.throws(
+    () => parseAttempt({
+      name: 'Rina Das',
+      contact: '9876543210',
+      productId: '11111111-1111-4111-8111-111111111111',
+      quantity: 1,
+    }),
+    (error: unknown) => error instanceof AppError && error.status === 400,
+  );
 });
 
 test('parseAttempt rejects a blank name', () => {

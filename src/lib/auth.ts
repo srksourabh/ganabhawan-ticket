@@ -167,6 +167,44 @@ export async function requestOtp(raw: string, ip: string, purpose: 'sign-in' | '
   };
 }
 
+/**
+ * Guest checkout: no sign-up code. The email they type becomes the customer
+ * record the booking is paid against, and the confirmation is sent there.
+ * A staff account is never reused.
+ */
+export async function openGuestSession(name: string, emailRaw: string, phoneRaw: string) {
+  let email: string;
+  let phone: string;
+  try {
+    email = normalizeContact(emailRaw);
+    phone = normalizeContact(phoneRaw);
+  } catch (error) {
+    throw new AppError(400, (error as Error).message);
+  }
+  requireValue(email.includes('@'), 'Enter your email address.', 400);
+  requireValue(!phone.includes('@'), 'Enter your mobile number.', 400);
+  const cleanName = name.trim().slice(0, 120);
+  requireValue(cleanName.length > 0, 'Enter your name.', 400);
+  const result = await transaction(async (c) => {
+    const staff = await one(
+      c,
+      `SELECT id FROM users WHERE role <> 'customer' AND (lower(contact)=lower($1) OR verified_mobile=$2) LIMIT 1`,
+      [email, phone],
+    );
+    requireValue(!staff, 'Use a personal email address to book.', 400);
+    let user = await one<User>(c, 'SELECT * FROM users WHERE lower(contact)=lower($1) FOR UPDATE', [email]);
+    if (user && user.role !== 'customer') return { error: 'Use a personal email address to book.' };
+    if (!user) user = (await one<User>(c, 'INSERT INTO users(contact, name) VALUES($1,$2) RETURNING *', [email, cleanName]))!;
+    else await c.query('UPDATE users SET name=$1 WHERE id=$2', [cleanName, user.id]);
+    const sessionToken = token();
+    await c.query("INSERT INTO sessions(digest,user_id,expires_at) VALUES($1,$2,now()+interval '12 hours')", [hash(sessionToken), user!.id]);
+    await audit(c, user!.id, 'auth.guest', user!.id);
+    return { sessionToken, user: { id: user!.id, contact: email, name: cleanName, role: 'customer' as const } };
+  });
+  if ('error' in result) throw new AppError(400, result.error!);
+  return result;
+}
+
 export async function verifyOtp(challengeId: string, code: string) {
   // Codes issued before the switch went off cannot sign anyone in either.
   assertCustomerOtpAvailable();

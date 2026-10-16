@@ -19,6 +19,8 @@ export type BookingDetail = {
   currency: string;
   created_at: string;
   holder_name?: string | null;
+  holder_email?: string | null;
+  holder_phone?: string | null;
   checkout_id?: string | null;
   checkout_reference?: string | null;
   checkout_total?: number | null;
@@ -55,6 +57,8 @@ export default function TicketDetailView({ booking, contact }: { booking: Bookin
         <div className="card" style={{ marginBottom: '1.25rem' }}>
           <Row label={t('tickets.status')} value={booking.status.replace('_', ' ')} />
           {booking.holder_name && <Row label={t('tickets.holder')} value={booking.holder_name} />}
+          {booking.holder_email && <Row label={t('receipt.email')} value={booking.holder_email} />}
+          {booking.holder_phone && <Row label={t('receipt.phone')} value={booking.holder_phone} />}
           <Row label={t('tickets.quantity')} value={`${booking.quantity}`} />
           <Row label={t('tickets.unitPrice')} value={money(booking.unit_price, dl)} />
           <Row label={t('tickets.total')} value={money(booking.total, dl)} />

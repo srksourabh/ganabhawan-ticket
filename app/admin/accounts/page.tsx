@@ -8,6 +8,8 @@ type Attempt = {
   created_at: string;
   name: string;
   contact: string;
+  email?: string | null;
+  phone?: string | null;
   quantity: number;
   outcome: string;
   product_name: string;
@@ -126,7 +128,10 @@ export default function AccountsPage() {
           <h1 className="h2">Accounts</h1>
           <p className="muted">Income, refunds, and everyone who tried to book.</p>
         </div>
-        <Link className="btn btn--ghost" href="/admin">Festival settings</Link>
+        <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
+          <Link className="btn btn--primary" href="/admin/sheet">Booking sheet</Link>
+          <Link className="btn btn--ghost" href="/admin">Festival settings</Link>
+        </div>
       </div>
 
       <div className="ledger-cards">
@@ -191,7 +196,8 @@ export default function AccountsPage() {
               <tr>
                 <th>When</th>
                 <th>Name</th>
-                <th>Contact</th>
+                <th>Email</th>
+                <th>Phone</th>
                 <th>Ticket</th>
                 <th>Qty</th>
                 <th>Outcome</th>
@@ -200,13 +206,14 @@ export default function AccountsPage() {
             </thead>
             <tbody>
               {ledger.attempts.length === 0 && (
-                <tr><td colSpan={7}>No booking attempts yet.</td></tr>
+                <tr><td colSpan={8}>No booking attempts yet.</td></tr>
               )}
               {ledger.attempts.map((row) => (
                 <tr key={row.id}>
                   <td>{when(row.created_at)}</td>
                   <td>{row.name}</td>
-                  <td>{row.contact}</td>
+                  <td>{row.email || (row.contact?.includes('@') ? row.contact : '—')}</td>
+                  <td>{row.phone || (row.contact && !row.contact.includes('@') ? row.contact : '—')}</td>
                   <td>{row.product_name}<br /><span className="muted">{row.kind} · {row.category}</span></td>
                   <td>{row.quantity}</td>
                   <td>{row.outcome}</td>

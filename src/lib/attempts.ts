@@ -4,14 +4,22 @@ import { normalizeContact } from './security';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-export function parseAttempt(body: { name?: string; contact?: string; productId?: string; quantity?: number }) {
+export function parseAttempt(body: { name?: string; contact?: string; email?: string; phone?: string; productId?: string; quantity?: number }) {
   const name = (body.name ?? '').trim().slice(0, 120);
   if (!name) throw new AppError(400, 'Enter your name.');
-  let contact: string;
+  let email: string;
+  let phone: string;
   try {
-    contact = normalizeContact(body.contact ?? '');
+    email = normalizeContact(body.email ?? '');
+    phone = normalizeContact(body.phone ?? '');
   } catch (error) {
     throw new AppError(400, (error as Error).message);
+  }
+  if (!email.includes('@')) throw new AppError(400, 'Enter your email address.');
+  if (phone.includes('@')) throw new AppError(400, 'Enter your mobile number.');
+  let contact = email;
+  if ((body.contact ?? '').trim()) {
+    try { contact = normalizeContact(body.contact ?? ''); } catch { contact = email; }
   }
   const quantity = body.quantity ?? 0;
   if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20) {
@@ -19,7 +27,7 @@ export function parseAttempt(body: { name?: string; contact?: string; productId?
   }
   const productId = (body.productId ?? '').trim();
   if (!UUID.test(productId)) throw new AppError(400, 'Choose a ticket.');
-  return { name, contact, productId, quantity };
+  return { name, contact, email, phone, productId, quantity };
 }
 
 export function summarizeMoney(income: number, refunded: number, pending: number) {
@@ -29,6 +37,8 @@ export function summarizeMoney(income: number, refunded: number, pending: number
 export async function recordBookingAttempt(input: {
   name?: string;
   contact?: string;
+  email?: string;
+  phone?: string;
   productId?: string;
   quantity?: number;
   userId?: string | null;
@@ -37,9 +47,9 @@ export async function recordBookingAttempt(input: {
   const products = await query('SELECT id FROM products WHERE id=$1', [parsed.productId]);
   requireValue(products[0], 'This ticket option is not available.', 404);
   const rows = await query(
-    `INSERT INTO booking_attempts(user_id, contact, name, product_id, quantity, outcome)
-     VALUES($1,$2,$3,$4,$5,'STARTED') RETURNING id, outcome, created_at`,
-    [input.userId ?? null, parsed.contact, parsed.name, parsed.productId, parsed.quantity],
+    `INSERT INTO booking_attempts(user_id, contact, name, email, phone, product_id, quantity, outcome)
+     VALUES($1,$2,$3,$4,$5,$6,$7,'STARTED') RETURNING id, outcome, created_at`,
+    [input.userId ?? null, parsed.contact, parsed.name, parsed.email, parsed.phone, parsed.productId, parsed.quantity],
   );
   return rows[0];
 }
@@ -61,8 +71,10 @@ export async function linkAttempt(
   if (bookingId) {
     // The name entered at checkout becomes the booking's ticket holder (owner-only visibility).
     await query(
-      `UPDATE bookings b SET holder_name=a.name FROM booking_attempts a
-       WHERE a.id=$1::uuid AND b.id=$2::uuid AND b.user_id=$3 AND a.user_id=$3 AND b.holder_name IS NULL`,
+      `UPDATE bookings b SET holder_name=COALESCE(b.holder_name, a.name),
+         holder_email=COALESCE(b.holder_email, a.email), holder_phone=COALESCE(b.holder_phone, a.phone)
+       FROM booking_attempts a
+       WHERE a.id=$1::uuid AND b.id=$2::uuid AND b.user_id=$3 AND a.user_id=$3`,
       [attemptId, bookingId, userId],
     );
   }
@@ -84,7 +96,7 @@ export async function accountsLedger() {
   );
   const money = summarizeMoney(Number(incomeRow?.n ?? 0), Number(refundRow?.n ?? 0), Number(pendingRow?.n ?? 0));
   const attempts = await query(
-    `SELECT a.id, a.created_at, a.name, a.contact, a.quantity, a.outcome,
+    `SELECT a.id, a.created_at, a.name, a.contact, a.email, a.phone, a.quantity, a.outcome,
             p.name AS product_name, p.category, p.kind,
             b.reference, b.status AS booking_status
      FROM booking_attempts a
