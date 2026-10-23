@@ -20,7 +20,7 @@ export class FakeRazorpay {
   payments = new Map<string, Payment>();
   refunds = new Map<string, Refund>();
   calls: string[] = [];
-  emails: { to: string; from?: string; subject: string; text: string; idempotencyKey?: string }[] = [];
+  emails: { to: string; from?: string; subject: string; text: string; html?: string; idempotencyKey?: string }[] = [];
   /** MSG91 flow calls (transactional SMS). */
   sms: { to: string; templateId: string; variables: Record<string, string> }[] = [];
   failSms = false;
@@ -70,7 +70,7 @@ export class FakeRazorpay {
       const key = (init?.headers as Record<string, string> | undefined)?.['Idempotency-Key'];
       // Resend honours Idempotency-Key: a repeat with the same key is not sent again.
       if (key && this.emails.some((e) => e.idempotencyKey === key)) return json({ id: id('email') });
-      this.emails.push({ to: body.to?.[0], from: body.from, subject: body.subject, text: body.text, idempotencyKey: key });
+      this.emails.push({ to: body.to?.[0], from: body.from, subject: body.subject, text: body.text, html: body.html, idempotencyKey: key });
       return json({ id: id('email') });
     }
     if (url === 'https://control.msg91.com/api/v5/flow') {

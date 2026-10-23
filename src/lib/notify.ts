@@ -7,6 +7,15 @@ import { checkoutConfirmation, checkoutStatus } from './checkout';
 import { bookingConfirmation } from './tickets';
 import { contactsOf } from './account-contacts';
 import { appBaseUrl, smsShowLabel, ticketsLink, type ConfirmationMessage, type SmsValues } from './confirmation';
+import { DEFAULT_TICKET_COPY_EMAIL } from './brand';
+
+/** Where the organisation's copy of every ticket confirmation goes (TICKET_COPY_EMAIL; "off" = none). */
+export function ticketCopyEmail(): string | null {
+  const value = (process.env.TICKET_COPY_EMAIL ?? '').trim();
+  if (value.toLowerCase() === 'off') return null;
+  const address = value || DEFAULT_TICKET_COPY_EMAIL;
+  return address.includes('@') ? address : null;
+}
 
 /**
  * Post-payment notifications. A DELIVERY job exists only because a payment was
@@ -48,8 +57,16 @@ export async function deliverConfirmation(target: ConfirmationTarget, jobKey: st
     await transaction((c) => job(c, 'NOTIFY', `sms:${jobKey}`, { channel: 'sms', ...target }));
   }
   if (message.email && !(await alreadyDelivered(jobKey))) {
-    await sendEmail(message.email, message.subject, message.emailText, jobKey);
+    await sendEmail(message.email, message.subject, message.emailText, jobKey, undefined, message.emailHtml);
     await recordDelivered(jobKey, 'email');
+  }
+  // The organisation's copy: a separate email (the customer never sees the address), recorded under
+  // its own key, so a retry sends neither email twice. Sent after the customer's, never instead of it.
+  const copyTo = ticketCopyEmail();
+  const copyKey = `${jobKey}:org-copy`;
+  if (copyTo && copyTo.toLowerCase() !== message.email?.toLowerCase() && !(await alreadyDelivered(copyKey))) {
+    await sendEmail(copyTo, `[Copy] ${message.subject}`, message.emailText, copyKey, undefined, message.emailHtml);
+    await recordDelivered(copyKey, 'email');
   }
 }
 

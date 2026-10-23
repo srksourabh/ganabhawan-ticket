@@ -7,7 +7,8 @@ import type { Receipt } from '@/lib/checkout';
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
 
-export default function ReceiptView({ receipt }: { receipt: Receipt }) {
+/** guest: a guest checkout session (no account): tickets are reached through the email, not My tickets. */
+export default function ReceiptView({ receipt, guest = false }: { receipt: Receipt; guest?: boolean }) {
   const { locale, t } = useLocale();
   const dl = dateLocale(locale);
   const when = (iso: string) => new Date(iso).toLocaleString(dl, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' });
@@ -15,9 +16,13 @@ export default function ReceiptView({ receipt }: { receipt: Receipt }) {
   return (
     <main className="page-pad">
       <section className="container stack" style={{ maxWidth: 640 }}>
-        <p>
-          <Link href="/tickets" className="btn btn--ghost btn--sm" style={{ display: 'inline-flex' }}>{t('tickets.back')}</Link>
-        </p>
+        {guest ? (
+          (receipt.status === 'CONFIRMED' || receipt.status === 'PARTIALLY_CANCELLED') && receipt.payment && <p className="banner banner--ok" role="status">{t('book.emailed', { email: receipt.customer.email || receipt.customer.contact })}</p>
+        ) : (
+          <p>
+            <Link href="/tickets" className="btn btn--ghost btn--sm" style={{ display: 'inline-flex' }}>{t('tickets.back')}</Link>
+          </p>
+        )}
         <p className="eyebrow">{t('receipt.title')}</p>
         <h1 className="h2">{t('receipt.order', { ref: receipt.reference })}</h1>
 
@@ -53,7 +58,7 @@ export default function ReceiptView({ receipt }: { receipt: Receipt }) {
                   ))}
                 </p>
               )}
-              {line.status === 'CONFIRMED' && (
+              {line.status === 'CONFIRMED' && !guest && (
                 <Link href={`/tickets/${line.bookingId}`}>{t('receipt.viewTickets')} · {line.bookingReference}</Link>
               )}
             </li>

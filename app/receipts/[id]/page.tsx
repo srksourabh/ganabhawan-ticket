@@ -18,5 +18,5 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
   }
   if (!receipt) notFound();
 
-  return <ReceiptView receipt={receipt} />;
+  return <ReceiptView receipt={receipt} guest={Boolean(user.guestSince)} />;
 }

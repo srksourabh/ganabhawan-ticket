@@ -8,6 +8,7 @@ import { renderSms, sendSms } from './sms';
 import { DEFAULT_VENUE, ORGANISATION } from './brand';
 import { CONFIRMED_LEAD, LINK_SIGN_IN_NOTE, NO_REFUND, PICKUP_INSTRUCTION, appBaseUrl, smsShowLabel, ticketsLink, type ConfirmationMessage } from './confirmation';
 import { verifiedContacts } from './account-contacts';
+import { issuedTickets, renderTicketEmailHtml, ticketTextLines } from './ticket-email';
 import type { User } from './types';
 
 export async function ticketPdf(user: User, ticketId: string): Promise<Uint8Array> {
@@ -225,11 +226,11 @@ export async function bookingConfirmation(bookingId: string): Promise<Confirmati
     [bookingId],
   ))[0];
   if (!booking) return null;
-  const tickets = await query<{ reference: string }>("SELECT reference FROM tickets WHERE booking_id=$1 AND status='ACTIVE' ORDER BY ordinal", [bookingId]);
+  const tickets = await issuedTickets([bookingId]);
   const name = booking.holder_name || booking.user_name;
   const s = booking.snapshot ?? {};
   const rupees = (paise: number) => `₹${(Number(paise) / 100).toLocaleString('en-IN')}`;
-  const festival = (await query<{ venue: string }>('SELECT venue FROM festivals ORDER BY created_at LIMIT 1'))[0];
+  const festival = (await query<{ venue: string; contact_email: string | null }>('SELECT venue, contact_email FROM festivals ORDER BY created_at LIMIT 1'))[0];
   const venue = festival?.venue || DEFAULT_VENUE;
   const emailTo = booking.holder_email?.includes('@') ? booking.holder_email : null;
   const emailText = [
@@ -250,6 +251,7 @@ export async function bookingConfirmation(bookingId: string): Promise<Confirmati
     `Quantity: ${booking.quantity} × ${rupees(booking.unit_price)} = ${rupees(booking.total)}`,
     '',
     `Your tickets: ${ticketsLink(base, [bookingId])}`,
+    ...(tickets.length ? ['', ...ticketTextLines(tickets, base)] : []),
     '',
     NO_REFUND,
     PICKUP_INSTRUCTION,
@@ -264,6 +266,21 @@ export async function bookingConfirmation(bookingId: string): Promise<Confirmati
     mobile,
     subject: `Your ${ORGANISATION} tickets - ${booking.reference}`,
     emailText,
+    emailHtml: renderTicketEmailHtml({
+      base,
+      customerName: name,
+      orderReference: booking.reference,
+      venue,
+      total: Number(booking.total),
+      payment: booking.payment_reference && booking.paid_at ? { reference: booking.payment_reference, paidAt: new Date(booking.paid_at).toISOString() } : null,
+      lines: [{
+        bookingId, product: s.name ?? 'Tickets', kind: s.kind ?? '', category: s.category ?? '',
+        performances: [...(s.coverage ?? [])].map((p) => ({ title: p.title, startsAt: new Date(p.startsAt).toISOString() })).sort((x, y) => x.startsAt.localeCompare(y.startsAt)),
+        quantity: Number(booking.quantity), unitPrice: Number(booking.unit_price), lineTotal: Number(booking.total), confirmed: booking.status === 'CONFIRMED',
+      }],
+      tickets,
+      supportEmail: festival?.contact_email ?? null,
+    }),
     sms: { REFERENCE: booking.reference, SHOW: smsShowLabel([s.coverage?.[0]?.title ?? s.name ?? '']), LINK: ticketsLink(base, [bookingId]), NAME: name || 'Guest' },
   };
 }
@@ -272,7 +289,7 @@ export async function bookingConfirmation(bookingId: string): Promise<Confirmati
 export async function deliverBooking(bookingId: string): Promise<void> {
   const message = await bookingConfirmation(bookingId);
   if (!message?.confirmed) return;
-  if (message.email) await sendEmail(message.email, message.subject, message.emailText);
+  if (message.email) await sendEmail(message.email, message.subject, message.emailText, undefined, undefined, message.emailHtml);
   else if (message.mobile) await sendSms(message.mobile, renderSms(message.sms)); // the approved confirmation template
 }
 

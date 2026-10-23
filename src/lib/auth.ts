@@ -29,9 +29,11 @@ export async function rateLimit(key: string, limit: number, seconds: number) {
  * at the provider instead of a second email. No-op in local development.
  * `from` defaults to EMAIL_FROM; sign-in codes pass otpEmailSender().
  */
-export async function sendEmail(to: string, subject: string, message: string, idempotencyKey?: string, from = process.env.EMAIL_FROM?.trim()) {
+export async function sendEmail(to: string, subject: string, message: string, idempotencyKey?: string, from = process.env.EMAIL_FROM?.trim(), html?: string) {
+  // `message` is the plain text; `html` (ticket emails) the rich version. Resend sends both parts;
+  // the Composio Gmail tool takes one body, so it gets the HTML when there is one.
   if (composioGmailConfigured()) {
-    await sendComposioGmail(to, subject, message, from);
+    await sendComposioGmail(to, subject, html ?? message, from, Boolean(html));
     return;
   }
   if (developmentAdaptersAllowed() && otpProvider() === 'development') return;
@@ -43,7 +45,7 @@ export async function sendEmail(to: string, subject: string, message: string, id
       'Content-Type': 'application/json',
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey.slice(0, 256) } : {}),
     },
-    body: JSON.stringify({ from, to: [to], subject, text: message }),
+    body: JSON.stringify({ from, to: [to], subject, text: message, ...(html ? { html } : {}) }),
     signal: AbortSignal.timeout(10000),
   });
   requireValue(response.ok, 'Email delivery is temporarily unavailable.', 503);

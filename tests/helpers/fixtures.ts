@@ -33,6 +33,9 @@ export function useLiveStagingEnv() {
     // Season-ticket sales OPEN here so the existing season tests run; closed (the production
     // default) is tested in integration-season-sales.test.ts.
     SEASON_TICKET_SALES_ENABLED: 'true',
+    // The organisation's copy of each ticket email is OFF here so existing tests count customer
+    // emails only; it is tested in integration-ticket-email.test.ts.
+    TICKET_COPY_EMAIL: 'off',
     RESEND_API_KEY: 're_integration',
     EMAIL_FROM: 'tickets@tickets.test',
     ALLOW_PUBLIC_SALES: 'true',
