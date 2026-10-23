@@ -1,5 +1,5 @@
 import { linkAttempt } from '@/lib/attempts';
-import { authenticated } from '@/lib/auth';
+import { authenticatedBuyer } from '@/lib/auth';
 import { reserve } from '@/lib/commerce';
 import { jsonOk, jsonError, readJson } from '@/lib/http';
 import { AppError } from '@/lib/errors';
@@ -9,7 +9,7 @@ export async function POST(request: Request): Promise<Response> {
   let userContact = '';
   let userId = '';
   try {
-    const user = await authenticated();
+    const user = await authenticatedBuyer(); // signed in, or a guest checkout session
     userContact = user.contact;
     userId = user.id;
     const idempotencyKey = request.headers.get('Idempotency-Key') ?? '';

@@ -1,4 +1,4 @@
-import { authenticated } from '@/lib/auth';
+import { authenticatedBuyer } from '@/lib/auth';
 import { createCheckout } from '@/lib/checkout';
 import { linkAttempt } from '@/lib/attempts';
 import { jsonOk, jsonError, readJson } from '@/lib/http';
@@ -11,7 +11,7 @@ import { AppError } from '@/lib/errors';
  */
 export async function POST(request: Request): Promise<Response> {
   try {
-    const user = await authenticated();
+    const user = await authenticatedBuyer(); // signed in, or a guest checkout session
     const key = request.headers.get('Idempotency-Key') ?? '';
     if (!key) throw new AppError(400, 'Idempotency-Key header is required.');
     const body = await readJson<{ lines?: { productId?: string; quantity?: number; version?: number; attemptId?: string }[] }>(request);

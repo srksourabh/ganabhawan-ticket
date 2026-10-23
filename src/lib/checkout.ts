@@ -115,11 +115,13 @@ export async function createCheckout(user: User, rawLines: unknown, key: string)
     }
     await expireIn(c);
 
-    // The customer's still-open checkouts: reuse an identical one, supersede the rest.
+    // The customer's still-open checkouts: reuse an identical one, supersede the rest. A guest
+    // session touches only what it created (never the account owner's own open checkouts).
+    const since = user.guestSince ?? null;
     const openIds = (await c.query<{ checkout_id: string }>(
       `SELECT DISTINCT checkout_id FROM bookings WHERE user_id=$1 AND checkout_id IS NOT NULL
-       AND status IN ('HELD','PAYMENT_PENDING') AND expires_at>now()`,
-      [user.id],
+       AND status IN ('HELD','PAYMENT_PENDING') AND expires_at>now() AND ($2::timestamptz IS NULL OR created_at >= $2)`,
+      [user.id, since],
     )).rows.map((r) => r.checkout_id);
     for (const openId of openIds) {
       const bookings = (await c.query<Row>('SELECT * FROM bookings WHERE checkout_id=$1 ORDER BY id FOR UPDATE', [openId])).rows;
@@ -138,8 +140,8 @@ export async function createCheckout(user: User, rawLines: unknown, key: string)
     // Stray single-ticket holds on these products (older flow) are superseded too.
     const stray = (await c.query<Row>(
       `SELECT * FROM bookings WHERE user_id=$1 AND checkout_id IS NULL AND product_id = ANY($2::uuid[])
-       AND status IN ('HELD','PAYMENT_PENDING') AND expires_at>now() ORDER BY id FOR UPDATE`,
-      [user.id, lines.map((l) => l.productId)],
+       AND status IN ('HELD','PAYMENT_PENDING') AND expires_at>now() AND ($3::timestamptz IS NULL OR created_at >= $3) ORDER BY id FOR UPDATE`,
+      [user.id, lines.map((l) => l.productId), since],
     )).rows;
     for (const b of stray) await supersedeBooking(c, b, user.id);
 
