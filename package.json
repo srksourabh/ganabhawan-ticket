@@ -29,7 +29,8 @@
     "deploy:secrets": "node scripts/push-cf-secrets.mjs",
     "db:staff": "tsx scripts/staff.ts",
     "db:purge-synthetic": "tsx scripts/purge-synthetic.ts",
-    "drill:razorpay": "tsx scripts/razorpay-drill.ts"
+    "drill:razorpay": "tsx scripts/razorpay-drill.ts",
+    "preview:email": "tsx scripts/preview-ticket-email.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.1",

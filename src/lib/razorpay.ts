@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { AppError, requireValue } from './errors';
 import { safeEqual } from './security';
+import { query } from './db';
 
 const RAZORPAY_API = 'https://api.razorpay.com/v1';
 
@@ -22,9 +23,15 @@ type RazorpayOrderEntity = {
 
 type Collection<T> = { items?: T[] };
 
+/**
+ * A pasted secret often carries a trailing newline or space; Razorpay would then refuse every
+ * request with 401 "Authentication failed". Key ids and secrets never contain whitespace.
+ */
+const setting = (name: string) => process.env[name]?.trim() || undefined;
+
 function credentials() {
-  const keyId = process.env.RAZORPAY_KEY_ID;
-  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+  const keyId = setting('RAZORPAY_KEY_ID');
+  const keySecret = setting('RAZORPAY_KEY_SECRET');
   requireValue(keyId && keySecret, 'Payment provider is not configured.', 503);
   return { keyId: keyId!, keySecret: keySecret! };
 }
@@ -58,12 +65,33 @@ export function assertCheckoutSignature(orderId: string, paymentId: string, sign
 }
 
 export function assertWebhookSignature(rawBody: string, signature: string) {
-  const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+  const webhookSecret = setting('RAZORPAY_WEBHOOK_SECRET');
   requireValue(webhookSecret, 'Webhook secret not configured.', 503);
   requireValue(signature, 'Invalid webhook signature.', 400);
   const expected = razorpayWebhookDigest(rawBody, webhookSecret);
   requireValue(signaturesMatch(expected, signature), 'Invalid webhook signature.', 400);
   return webhookSecret;
+}
+
+/** Audit action for a Razorpay API refusal (Admin → Ops shows the latest). */
+export const PROVIDER_FAILURE_ACTION = 'payment.provider.error';
+
+/**
+ * Records why Razorpay refused a request: HTTP status, endpoint (ids masked) and Razorpay's own
+ * error code/reason/description. Never a key, secret, amount or customer detail. Best effort:
+ * a failure here never changes what the caller sees.
+ */
+async function recordProviderFailure(status: number, endpoint: string, error?: { code?: string; description?: string; reason?: string }) {
+  const clip = (value: unknown) => (typeof value === 'string' ? value.slice(0, 300) : null);
+  try {
+    await query('INSERT INTO audit_events(actor_id,action,entity,detail) VALUES(NULL,$1,$2,$3)', [
+      PROVIDER_FAILURE_ACTION,
+      'razorpay',
+      JSON.stringify({ status, endpoint, code: clip(error?.code), reason: clip(error?.reason), description: clip(error?.description) }),
+    ]);
+  } catch (failure) {
+    console.error('[razorpay] could not record the provider failure', failure instanceof Error ? failure.message : failure);
+  }
 }
 
 function isTimeoutError(error: unknown) {
@@ -89,12 +117,18 @@ async function razorpayRequest<T>(path: string, init?: RequestInit): Promise<T> 
   }
 
   const body = (await response.json().catch(() => ({}))) as {
-    error?: { description?: string };
+    error?: { code?: string; description?: string; reason?: string };
   } & T;
 
   if (!response.ok) {
-    // The provider's own text (e.g. "Too Many Requests", validation details) is for the logs only.
-    console.error('[razorpay] request failed', response.status, path.split('?')[0].replace(/[A-Za-z]+_[A-Za-z0-9]{8,}/g, ':id'), body.error?.description ?? '');
+    // The provider's own text (e.g. "Authentication failed", "Too Many Requests", validation
+    // details) is for operators only: logged, and recorded for Admin → Ops (recordProviderFailure).
+    const endpoint = path.split('?')[0].replace(/[A-Za-z]+_[A-Za-z0-9]{8,}/g, ':id');
+    console.error('[razorpay] request failed', response.status, endpoint, body.error?.description ?? '');
+    if (response.status === 401) {
+      console.error('[razorpay] authentication failed: RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET are not a valid pair for this Razorpay account and mode');
+    }
+    await recordProviderFailure(response.status, `${(init?.method ?? 'GET').toUpperCase()} ${endpoint}`, body.error);
     if (response.status === 429) throw new AppError(503, 'The payment service is busy. Please wait a moment and try again.', 'PROVIDER_BUSY');
     throw new AppError(502, 'The payment service is unavailable right now. Please try again in a moment.', 'PROVIDER_ERROR');
   }

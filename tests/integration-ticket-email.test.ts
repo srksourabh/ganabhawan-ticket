@@ -153,10 +153,29 @@ test('ticket QR image: signed link serves the existing credential; forged, unkno
   const png = new Uint8Array(await ok.arrayBuffer());
   assert.deepEqual([...png.slice(0, 4)], [0x89, 0x50, 0x4e, 0x47], 'a PNG');
   const [id, sig] = email.ticketQrCode(ticket.id).split('.');
-  assert.equal((await get(`${id}.${sig.slice(0, -1)}x`)).status, 404, 'forged signature');
+  // A forgery must really differ: the signature is base64url, so replacing a character with a fixed
+  // one (e.g. "x") leaves it unchanged whenever it already was that character (1 run in 64).
+  const other = (ch: string) => (ch === 'A' ? 'B' : 'A');
+  const tamper = (s: string, i: number) => s.slice(0, i) + other(s[i]) + s.slice(i + 1);
+  assert.equal((await get(`${id}.${tamper(sig, sig.length - 1)}`)).status, 404, 'forged signature');
+  for (let i = 0; i < sig.length; i++) {
+    assert.equal(email.ticketIdFromQrCode(`${id}.${tamper(sig, i)}`), null, `signature changed at position ${i}`);
+  }
+  for (const i of [0, 9, 35]) {
+    const changedId = id.slice(0, i) + (id[i] === 'a' ? 'b' : 'a') + id.slice(i + 1);
+    assert.equal((await get(`${changedId}.${sig}`)).status, 404, `ticket id changed at position ${i}`);
+  }
   assert.equal((await get(`${randomUUID()}.${sig}`)).status, 404, 'another ticket id with this signature');
-  assert.equal((await get(id)).status, 404, 'no signature');
+  assert.equal((await get(email.ticketQrCode(randomUUID()))).status, 404, 'correctly signed, but no such ticket');
+  const malformed = [id, `${id}.`, `${id}.${sig.slice(0, -1)}`, `${id}.${sig}A`, `${id}.${sig}.${sig}`, `${id}.${sig.toUpperCase()}`, `${id}.${sig.toLowerCase()}`];
+  for (const bad of malformed.filter((code) => code !== `${id}.${sig}`)) {
+    assert.equal((await get(bad)).status, 404, `malformed: ${bad.length} chars`);
+  }
   assert.equal(email.ticketIdFromQrCode(email.ticketQrCode(ticket.id)), ticket.id);
+  await query("UPDATE credentials SET status='REVOKED' WHERE ticket_id=$1", [ticket.id]);
+  assert.equal((await get(email.ticketQrCode(ticket.id))).status, 404, 'revoked credential');
+  await query("UPDATE credentials SET status='ACTIVE' WHERE ticket_id=$1", [ticket.id]);
+  assert.equal((await get(email.ticketQrCode(ticket.id))).status, 200, 'the same link serves again once the credential is active');
   await query("UPDATE tickets SET status='CANCELLED' WHERE id=$1", [ticket.id]);
   assert.equal((await get(email.ticketQrCode(ticket.id))).status, 404, 'cancelled ticket');
 });

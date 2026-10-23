@@ -85,9 +85,9 @@ export function nextReconcileDelayMinutes(minutesSinceExpiry: number, live: bool
 
 // Orders are fetched with the current keys, so only orders created in the current Razorpay
 // environment (or not recorded) are claimed; the other environment's are left untouched.
-const CLAIM_RECONCILE_SQL = `UPDATE payment_attempts a
-   SET next_reconcile_at = now() + interval '5 minutes', reconcile_checks = a.reconcile_checks + 1, last_reconciled_at = now()
-   WHERE a.id IN (
+// MATERIALIZED: the LIMIT/SKIP LOCKED pick runs exactly once (as `IN (SELECT … LIMIT …)` a rescanned
+// subquery could claim far more than the limit; see the job claim in jobs.ts).
+const CLAIM_RECONCILE_SQL = `WITH picked AS MATERIALIZED (
      SELECT a2.id FROM payment_attempts a2
      WHERE a2.state = 'READY' AND a2.provider_order_id IS NOT NULL
        AND a2.provider_order_id NOT LIKE 'dev-%' -- development-adapter orders never existed at Razorpay
@@ -100,6 +100,9 @@ const CLAIM_RECONCILE_SQL = `UPDATE payment_attempts a
      ORDER BY a2.next_reconcile_at, a2.id
      LIMIT $1
      FOR UPDATE OF a2 SKIP LOCKED)
+   UPDATE payment_attempts a
+   SET next_reconcile_at = now() + interval '5 minutes', reconcile_checks = a.reconcile_checks + 1, last_reconciled_at = now()
+   FROM picked WHERE a.id = picked.id
    RETURNING a.id, a.provider_order_id, a.reconcile_checks, a.created_at,
      (SELECT CASE WHEN bool_and(b.status IN ('HELD','PAYMENT_PENDING')) THEN min(b.expires_at) END FROM bookings b
        WHERE b.id = a.booking_id OR (a.checkout_id IS NOT NULL AND b.checkout_id = a.checkout_id)) AS live_until,

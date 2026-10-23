@@ -31,6 +31,11 @@ export class FakeRazorpay {
   down = false;
   /** Razorpay answering 429 (its own text: "Too Many Requests"). */
   throttled = false;
+  /**
+   * When set, only this key id + secret authenticate (HTTP Basic, exactly as Razorpay checks it);
+   * anything else gets Razorpay's own 401 "Authentication failed". Null = any key accepted.
+   */
+  acceptedKeys: { id: string; secret: string } | null = null;
   private original?: typeof fetch;
 
   install() {
@@ -46,7 +51,7 @@ export class FakeRazorpay {
   reset() {
     this.orders.clear(); this.payments.clear(); this.refunds.clear(); this.calls = []; this.emails = [];
     this.latencyMs = 0; this.refundStatus = 'processed'; this.failEmail = false; this.down = false; this.throttled = false;
-    this.sms = []; this.failSms = false;
+    this.sms = []; this.failSms = false; this.acceptedKeys = null;
   }
 
   /** Customer pays an order in the checkout modal. */
@@ -90,6 +95,12 @@ export class FakeRazorpay {
     if (this.latencyMs) await new Promise((resolve) => setTimeout(resolve, this.latencyMs));
     if (this.down) return json({ error: { description: 'Service unavailable' } }, 503);
     if (this.throttled) return json({ error: { code: 'BAD_REQUEST_ERROR', description: 'Too Many Requests' } }, 429);
+    if (this.acceptedKeys) {
+      const expected = 'Basic ' + Buffer.from(`${this.acceptedKeys.id}:${this.acceptedKeys.secret}`).toString('base64');
+      if ((init?.headers as Record<string, string> | undefined)?.Authorization !== expected) {
+        return json({ error: { code: 'BAD_REQUEST_ERROR', description: 'Authentication failed', source: 'NA', step: 'NA', reason: 'NA', metadata: {} } }, 401);
+      }
+    }
     const body = init?.body ? JSON.parse(String(init.body)) : {};
     let m: RegExpMatchArray | null;
 
