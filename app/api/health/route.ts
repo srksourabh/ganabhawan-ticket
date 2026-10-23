@@ -29,14 +29,16 @@ export async function GET(): Promise<Response> {
   // Customer mobile sign-in + SMS (MOBILE_PHONE_NUMBER_ENABLED and MSG91 complete). Not part of `ok`.
   const mobile = mobileFeaturesEnabled();
   // The deploy workflow does not migrate: report a schema behind what this code uses (0007 checkouts,
-  // 0008 season allocations, 0009 account carts). Nothing in the code needs a later migration.
+  // 0008 season allocations, 0009 account carts, 0010 sale windows and checkout contact details).
   let schema = false;
   if (db) {
     try {
       schema = (await bounded(query<{ ok: boolean }>(
         `SELECT to_regclass('public.checkouts') IS NOT NULL
            AND to_regclass('public.cart_items') IS NOT NULL
-           AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='capacities' AND column_name='season_allocation') AS ok`,
+           AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='capacities' AND column_name='season_allocation')
+           AND (SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND (table_name, column_name) IN
+             (('shows','sales_closes_at'),('festivals','season_closes_at'),('bookings','holder_email'),('booking_attempts','email'))) = 4 AS ok`,
       )))[0]?.ok === true;
     } catch {
       schema = false;
