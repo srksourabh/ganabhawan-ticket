@@ -41,6 +41,7 @@ The buttons along the top depend on your role. Each section is also protected by
 | **Check tickets** (button) | Owner (and gate staff from their own login) | Opens the gate scanner |
 | **Festival & theatre** | Owner, Inventory | Festival name (English and Bengali), venue, address, contact email, **Publication status** (Draft / Published / Paused / Closed), **Hold minutes** (how long a customer's tickets are kept while they pay), **Max tickets per checkout**, auditorium photo, terms |
 | **Dramas** | Owner, Inventory | Create and edit performances: title (English and Bengali), troupe, **date & time (IST)**, runtime, genre, language, synopsis, poster, and **Status** (Draft / Published / Cancelled). Only the owner can cancel a performance; cancelling is final, voids its tickets and starts refunds automatically. **Delete** (owner, inventory) removes a performance permanently, but only one that never had a booking or hold, purchase attempt, inventory change, scan, or season-ticket coverage; otherwise the dashboard explains why and suggests unpublishing (Draft) or cancelling. Bookings, payments and tickets are never deleted |
+| **Availability** | Owner, Inventory | Choose a performance: its state (On sale, Sold out, Sales closed, Scheduled, Draft, Ended, Cancelled) and, per zone, capacity, daily seats, sold, held, remaining, the state (Available, Sold out, Sales closed, Unavailable, Cancelled) and the reason. **Open / Close sales for this performance**, or for one zone. See below |
 | **Seasons** | Owner, Inventory | Season tickets (one per zone): list with performances, sales state and why it is closed; create, edit (names, price, On sale, performances before any sale) and delete (only if never booked). Shows whether season-ticket sales are switched on (read-only) |
 | **Ticket prices** | Owner, Inventory | Whether **season-ticket sales** are Open or Closed (read-only; see below), then for each ticket type (daily ticket per performance and zone, season ticket per zone): display name, **Price (₹)** and **On sale** on/off |
 | **Inventory** | Owner, Inventory | Seats per performance and zone: total capacity, season allocation, daily tickets sold online, season tickets sold online; set the season allocation for a zone across all upcoming performances; create a season ticket; add a performance to a season ticket |
@@ -54,6 +55,13 @@ Important rules the system enforces:
 
 - A new performance does **not** join an existing season ticket automatically. Add it under Inventory → "Add a performance to a season ticket". This is possible only before any season ticket of that zone is sold.
 - Allocations can never be set below what is already sold or held, and daily + season allocation can never exceed a zone's capacity.
+
+### Availability (one performance at a time)
+
+* **Close sales** turns **On sale** off for that performance's daily tickets (all zones, or the zone you choose). Customers then see **Sales closed** for it; other performances and season tickets are not changed. Nothing is cancelled: tickets already bought stay valid, and anyone still paying for a hold placed earlier cannot start a new payment (the hold expires and the seats come back).
+* **Open sales** turns it back on. Customers can buy only if every other rule also allows it: the performance is Published, the festival is Published, public sales are on, booking has opened, the online close time has not passed, and seats remain. The reason shown for each zone says which rule is stopping it.
+* **Sold out** means every daily seat is sold or held; held seats return if their payment is not completed. **Unavailable** means the zone has no daily ticket or no daily seats (set seats under Inventory). A **Cancelled** performance can never be reopened.
+* Every open and close is recorded in the audit log with who did it.
 
 ### Seasons (season tickets)
 

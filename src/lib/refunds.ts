@@ -1,6 +1,7 @@
 import { one, pool, query, withSerialLock, type Client } from './db';
 import { audit } from './audit';
-import { usingDevelopmentPayments, developmentAdaptersAllowed } from './env';
+import { usingDevelopmentPayments, developmentAdaptersAllowed, paymentMode } from './env';
+import { attemptModeSql, isOtherPaymentMode } from './payment-mode';
 import {
   razorpayFetchRefund,
   razorpayListPaymentRefunds,
@@ -66,10 +67,11 @@ export async function applyRefundState(db: Queryable, refundId: string, provider
  */
 export async function executeRefund(refundId: string) {
   return withSerialLock('refund:' + refundId, async (c) => {
-    const refund = await one<{ id: string; amount: number; state: string; provider_refund_id: string | null; provider_payment_id: string }>(
+    const refund = await one<{ id: string; amount: number; state: string; provider_refund_id: string | null; provider_payment_id: string; mode: 'test' | 'live' | null }>(
       c,
-      `SELECT r.id, r.amount, r.state, r.provider_refund_id, p.provider_payment_id
-       FROM refunds r JOIN payments p ON p.id=r.payment_id WHERE r.id=$1`,
+      `SELECT r.id, r.amount, r.state, r.provider_refund_id, p.provider_payment_id, ${attemptModeSql()} mode
+       FROM refunds r JOIN payments p ON p.id=r.payment_id
+       LEFT JOIN payment_attempts pa ON pa.provider_order_id=p.provider_order_id WHERE r.id=$1`,
       [refundId],
     );
     if (!refund || (refund.state !== 'REQUESTED' && refund.state !== 'PROCESSING')) return refund?.state ?? 'MISSING';
@@ -81,6 +83,13 @@ export async function executeRefund(refundId: string) {
       return 'SUCCEEDED';
     }
 
+    // A payment made in the other Razorpay environment (test vs live) cannot be refunded with the
+    // current keys: leave the refund REQUESTED (never marked done) and open a case for the operator.
+    if (isOtherPaymentMode(refund.mode)) {
+      await c.query('INSERT INTO reconciliation_cases(key,kind,detail) VALUES($1,$2,$3) ON CONFLICT(key) DO NOTHING',
+        ['refund-mode:' + refund.id, 'REFUND', JSON.stringify({ refundId: refund.id, paymentMode: refund.mode, serverMode: paymentMode(), reason: 'Refund needs the Razorpay keys of the environment the payment was made in' })]);
+      return 'REQUESTED';
+    }
     await c.query("UPDATE refunds SET state='PROCESSING', updated_at=now() WHERE id=$1 AND state='REQUESTED'", [refund.id]);
     const existing = await razorpayListPaymentRefunds(refund.provider_payment_id);
     const match =
@@ -120,13 +129,17 @@ export async function pollProcessingRefunds(limit = 20) {
       console.error('[alert] refund still not sent to the provider', row.id, error instanceof Error ? error.message : error);
     }
   }
+  // Polled with the current keys, so only refunds of payments made in the current environment.
   const rows = await query<{ id: string; provider_refund_id: string }>(
     `UPDATE refunds SET last_checked_at=now() WHERE id IN (
-       SELECT id FROM refunds WHERE state='PROCESSING' AND provider_refund_id IS NOT NULL
-         AND (last_checked_at IS NULL OR last_checked_at < now() - interval '10 minutes')
-       ORDER BY last_checked_at NULLS FIRST, id LIMIT $1 FOR UPDATE SKIP LOCKED)
+       SELECT r.id FROM refunds r JOIN payments p ON p.id=r.payment_id
+         LEFT JOIN payment_attempts pa ON pa.provider_order_id=p.provider_order_id
+       WHERE r.state='PROCESSING' AND r.provider_refund_id IS NOT NULL
+         AND (r.last_checked_at IS NULL OR r.last_checked_at < now() - interval '10 minutes')
+         AND (${attemptModeSql()} IS NULL OR ${attemptModeSql()} = $2)
+       ORDER BY r.last_checked_at NULLS FIRST, r.id LIMIT $1 FOR UPDATE OF r SKIP LOCKED)
      RETURNING id, provider_refund_id`,
-    [limit],
+    [limit, paymentMode() ?? 'none'],
   );
   let changed = 0;
   for (const row of rows) {

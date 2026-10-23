@@ -1,5 +1,5 @@
 import { query } from '@/lib/db';
-import { appMode, configurationProblems, coreConfigurationProblems, deployEnv, developmentAdaptersAllowed, mobileFeaturesEnabled, seasonTicketSalesEnabled } from '@/lib/env';
+import { appMode, configurationProblems, coreConfigurationProblems, deployEnv, developmentAdaptersAllowed, mobileFeaturesEnabled, paymentMode, seasonTicketSalesEnabled } from '@/lib/env';
 import { jsonOk } from '@/lib/http';
 
 /**
@@ -47,5 +47,6 @@ export async function GET(): Promise<Response> {
   const ok = db && config && schema;
   // New season-ticket sales: public sales AND the operator's SEASON_TICKET_SALES_ENABLED.
   const seasonSales = publicSales && seasonTicketSalesEnabled();
-  return jsonOk({ ok, db, config, publicSales, seasonSales, staff, mobile, schema, mode: appMode(), env: deployEnv() ?? 'local' }, ok ? 200 : 503);
+  // Razorpay environment of new payments: "test" (no real money) or "live" (from the server's keys).
+  return jsonOk({ ok, db, config, publicSales, seasonSales, staff, mobile, schema, paymentMode: paymentMode(), mode: appMode(), env: deployEnv() ?? 'local' }, ok ? 200 : 503);
 }

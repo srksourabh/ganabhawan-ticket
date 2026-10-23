@@ -1,6 +1,7 @@
 import { query } from './db';
 import { STALE_JOB_MINUTES } from './jobs';
-import { clerkDevelopmentInstanceAllowed, coreConfigurationProblems, customerOtpEnabled, mobileFeaturesEnabled, publicSalesOpen, salesConfigurationProblems, seasonTicketSalesEnabled } from './env';
+import { clerkDevelopmentInstanceAllowed, coreConfigurationProblems, customerOtpEnabled, mobileFeaturesEnabled, paymentConfigurationProblems, paymentMode, publicSalesOpen, salesConfigurationProblems, seasonTicketSalesEnabled, type PaymentMode } from './env';
+import { paymentModeRecorded } from './payment-mode';
 
 /**
  * Operational signals for the owner/finance dashboard and an external uptime
@@ -22,6 +23,12 @@ export interface OpsStatus {
   configuration: {
     coreProblems: string[];
     salesProblems: string[];
+    /** The payment part of salesProblems: stops purchases only, never sign-in or accounts. */
+    paymentProblems: string[];
+    /** Razorpay environment of new payments: test (no real money) or live. */
+    paymentMode: PaymentMode | null;
+    /** Whether each payment's environment is recorded (migration 0011). */
+    paymentModeRecorded: boolean;
     publicSalesSwitch: boolean;
     publicSales: boolean;
     /** SEASON_TICKET_SALES_ENABLED (new season-ticket sales also need publicSales). */
@@ -61,7 +68,7 @@ export async function opsStatus(): Promise<OpsStatus> {
     refunds: { failed: n('refunds_failed'), processingOver7d: n('refunds_slow'), requestedOver1h: n('refunds_stalled') },
     gate: { denied24h: n('denied'), unknown24h: n('unknown') },
     auth: { staffPasswordFailures24h: n('pw_fail') },
-    configuration: configurationStatus(),
+    configuration: await configurationStatus(),
     critical: [],
     warnings: [],
   };
@@ -75,17 +82,26 @@ export async function opsStatus(): Promise<OpsStatus> {
   } else if (!config.publicSalesSwitch) {
     status.warnings.push('customer sales paused by the operator (ALLOW_PUBLIC_SALES is not "true")');
   }
+  if (config.paymentMode === 'test') {
+    status.warnings.push('payments are in Razorpay TEST mode: no real money is taken, and test tickets are refused at the gate once the server runs live');
+  }
+  if (!config.paymentModeRecorded) {
+    status.warnings.push('migration 0011 not applied: the Razorpay environment (test/live) of each payment is not recorded');
+  }
   if (status.jobs.failed7d) status.warnings.push(`${status.jobs.failed7d} background job(s) permanently failed in the last 7 days (see worker logs)`);
   return status;
 }
 
-function configurationStatus(): OpsStatus['configuration'] {
+async function configurationStatus(): Promise<OpsStatus['configuration']> {
   const coreProblems = coreConfigurationProblems();
   const salesProblems = salesConfigurationProblems();
   const publicSalesSwitch = publicSalesOpen();
   return {
     coreProblems,
     salesProblems,
+    paymentProblems: paymentConfigurationProblems(),
+    paymentMode: paymentMode(),
+    paymentModeRecorded: await paymentModeRecorded(),
     publicSalesSwitch,
     // The same rule as /api/health publicSales and the purchase gates.
     publicSales: coreProblems.length === 0 && salesProblems.length === 0 && publicSalesSwitch,

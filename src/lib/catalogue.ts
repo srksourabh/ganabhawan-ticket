@@ -22,14 +22,16 @@ type CoverageRow = Record<string, unknown> & CoveredPerformance & { product_id: 
  * by the same rule as placeHold (availability.ts). `coverage` still lists only the
  * performances a customer can see (published, not yet ended); a product with none
  * is not listed. A product that cannot be sold is returned as CLOSED / SOLD_OUT
- * with available 0, never as purchasable.
+ * with available 0, never as purchasable. A daily ticket an admin took off sale
+ * (Admin → Availability, "On sale" off) is listed as CLOSED, so customers see
+ * "Sales closed" for that performance and zone; a disabled season ticket stays hidden.
  */
 export async function publicProducts(festivalId: string, nowMs = Date.now()) {
  const rows=await query<CoverageRow>(`SELECT p.*, p.id product_id, pc.show_id, s.title, s.title_bn, s.starts_at, s.ends_at, s.status, s.sales_closes_at, i.allocation, i.held, i.committed,
   f.booking_opens_at, f.season_closes_at,
   (SELECT COALESCE(sum(quantity),0)::int FROM bookings b WHERE b.product_id=p.id AND b.status IN ('HELD','PAYMENT_PENDING','CONFIRMED')) cap_used
   FROM products p JOIN festivals f ON f.id=p.festival_id JOIN product_coverage pc ON pc.product_id=p.id JOIN pools i ON i.id=pc.pool_id JOIN shows s ON s.id=pc.show_id
-  WHERE p.festival_id=$1 AND p.enabled=true ORDER BY p.price, p.id, s.starts_at`,[festivalId]);
+  WHERE p.festival_id=$1 AND (p.enabled=true OR p.kind='DAILY') ORDER BY p.price, p.id, s.starts_at`,[festivalId]);
  const byProduct=new Map<string,CoverageRow[]>();
  for(const row of rows) byProduct.set(row.product_id,[...(byProduct.get(row.product_id)??[]),row]);
  const products:Product[]=[];
@@ -38,7 +40,7 @@ export async function publicProducts(festivalId: string, nowMs = Date.now()) {
   if(visible.length===0) continue;
   const first=coverage[0];
   const kind=first.kind==='SEASON'?'SEASON':'DAILY';
-  const {state,available}=productSellState(kind,coverage,first.cap===null?null:Number(first.cap),Number(first.cap_used),nowMs,undefined,saleWindow(kind,{booking_opens_at:first.booking_opens_at,season_closes_at:first.season_closes_at}));
+  const {state,available}=!first.enabled?{state:'CLOSED' as const,available:0}:productSellState(kind,coverage,first.cap===null?null:Number(first.cap),Number(first.cap_used),nowMs,undefined,saleWindow(kind,{booking_opens_at:first.booking_opens_at,season_closes_at:first.season_closes_at}));
   const product:Record<string,unknown>={};
   for(const [key,value] of Object.entries(first)) {
    if(!['product_id','show_id','title','title_bn','starts_at','ends_at','status','allocation','held','committed','cap_used','sales_closes_at','booking_opens_at','season_closes_at'].includes(key)) product[key]=value;

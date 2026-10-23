@@ -34,6 +34,7 @@ const required = [
 
 const optional = [
   'ALLOW_PUBLIC_SALES',
+  'RAZORPAY_MODE',
   'CUSTOMER_OTP_ENABLED',
   'SEASON_TICKET_SALES_ENABLED',
   'TICKET_COPY_EMAIL',
@@ -87,9 +88,21 @@ if (!['staging', 'production'].includes(values.DEPLOY_ENV)) {
   console.error('Refusing to deploy: DEPLOY_ENV must be "staging" or "production".');
   process.exit(1);
 }
-const keyPrefix = values.DEPLOY_ENV === 'production' ? 'rzp_live_' : 'rzp_test_';
-if (!(values.RAZORPAY_KEY_ID || '').startsWith(keyPrefix)) {
-  console.error(`Refusing to deploy: ${values.DEPLOY_ENV} requires a ${keyPrefix}… Razorpay key.`);
+// Same rule as src/lib/env.ts paymentConfigurationProblems: a Razorpay key id from either environment
+// (rzp_test_… no real money, rzp_live_… real payments); staging takes test keys only; RAZORPAY_MODE,
+// when set, must match the key.
+const keyMode = /^rzp_(test|live)_/.exec(values.RAZORPAY_KEY_ID || '')?.[1] ?? null;
+const razorpayMode = (values.RAZORPAY_MODE || '').trim().toLowerCase();
+if (!keyMode) {
+  console.error('Refusing to deploy: RAZORPAY_KEY_ID must be a Razorpay key id (rzp_test_… or rzp_live_…).');
+  process.exit(1);
+}
+if (values.DEPLOY_ENV === 'staging' && keyMode !== 'test') {
+  console.error('Refusing to deploy: staging requires a rzp_test_… Razorpay key.');
+  process.exit(1);
+}
+if (razorpayMode && razorpayMode !== keyMode) {
+  console.error(`Refusing to deploy: RAZORPAY_MODE=${razorpayMode} needs a rzp_${razorpayMode}_… key.`);
   process.exit(1);
 }
 

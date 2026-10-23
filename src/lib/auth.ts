@@ -2,7 +2,7 @@ import { randomInt } from 'node:crypto';
 import { cookies, headers } from 'next/headers';
 import { auth, currentUser as clerkCurrentUser } from '@clerk/nextjs/server';
 import { query, transaction, one } from './db';
-import { assertLiveConfiguration, assertStaffConfiguration, customerOtpEnabled, developmentAdaptersAllowed, mobileConfigurationProblems, mobileFeaturesEnabled } from './env';
+import { assertCustomerConfiguration, assertStaffConfiguration, customerOtpEnabled, developmentAdaptersAllowed, mobileConfigurationProblems, mobileFeaturesEnabled } from './env';
 import { keyedHash, normalizeContact, token, hash, safeEqual, hashPassword, verifyPassword } from './security';
 import type { Client } from './db';
 import { AppError, requireValue } from './errors';
@@ -137,7 +137,8 @@ function assertCustomerOtpAvailable() {
  */
 export async function requestOtp(raw: string, ip: string, purpose: 'sign-in' | 'add-mobile' = 'sign-in') {
   if (purpose === 'sign-in') assertCustomerOtpAvailable();
-  assertLiveConfiguration();
+  // Sign-in codes need email (and the other customer settings), never the payment settings.
+  assertCustomerConfiguration();
   let contact: string;
   try {
     contact = normalizeContact(raw);

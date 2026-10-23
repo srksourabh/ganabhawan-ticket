@@ -121,7 +121,8 @@ test('email 2: checkout confirmation — reference, zone, quantity, amounts, IST
   const bookingId = (await query<{ id: string }>('SELECT id FROM bookings WHERE checkout_id=$1', [co.id]))[0].id;
   const [mail] = mailTo(user.contact);
   assert.equal(fake.emails.length, 1);
-  assert.equal(mail.subject, `Your Samatat Sanskriti tickets - ${co.reference}`);
+  // The fixtures use Razorpay TEST keys, so the confirmation is marked as a test booking.
+  assert.equal(mail.subject, `[TEST] Your Samatat Sanskriti tickets - ${co.reference}`);
   assert.equal(mail.idempotencyKey, `checkout:${co.id}`);
   for (const expected of [
     'This email is your ticket.',

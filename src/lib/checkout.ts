@@ -26,7 +26,8 @@ import type { User } from './types';
 import { CONFIRMED_LEAD, LINK_SIGN_IN_NOTE, NO_REFUND, PICKUP_INSTRUCTION, appBaseUrl, smsShowLabel, ticketsLink, type ConfirmationMessage } from './confirmation';
 import { DEFAULT_VENUE } from './brand';
 import { assertCanPurchase, contactsOf } from './account-contacts';
-import { issuedTickets, renderTicketEmailHtml, ticketTextLines } from './ticket-email';
+import { TEST_BOOKING_NOTE, issuedTickets, renderTicketEmailHtml, ticketTextLines } from './ticket-email';
+import { bookingPaymentMode } from './payment-mode';
 
 export const MAX_CHECKOUT_LINES = 10;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -450,15 +451,18 @@ export async function checkoutConfirmation(checkoutId: string): Promise<Confirma
   const email = String(co.holder_email || '').includes('@') ? String(co.holder_email) : account.email;
   const confirmedLines = receipt.lines.filter((l) => l.status === 'CONFIRMED');
   const tickets = await issuedTickets(confirmedLines.map((l) => l.bookingId));
+  // Paid in Razorpay TEST mode: marked as a test booking (subject, text and HTML).
+  const testMode = confirmedLines.length > 0 && (await bookingPaymentMode(confirmedLines[0].bookingId)) === 'test';
   const support = (await query<Row>('SELECT contact_email FROM festivals ORDER BY created_at LIMIT 1'))[0]?.contact_email ?? null;
   return {
     confirmed: (receipt.status === 'CONFIRMED' || receipt.status === 'PARTIALLY_CANCELLED') && receipt.payment !== null,
     email,
     mobile: account.mobile,
-    subject: `Your ${ORGANISATION} tickets - ${receipt.reference}`,
-    emailText: receiptText(receipt, base, ticketTextLines(tickets, base)),
+    subject: `${testMode ? '[TEST] ' : ''}Your ${ORGANISATION} tickets - ${receipt.reference}`,
+    emailText: (testMode ? TEST_BOOKING_NOTE + '\n\n' : '') + receiptText(receipt, base, ticketTextLines(tickets, base)),
     emailHtml: renderTicketEmailHtml({
       base,
+      testMode,
       customerName: receipt.customer.name,
       orderReference: receipt.reference,
       venue: receipt.venue || DEFAULT_VENUE,

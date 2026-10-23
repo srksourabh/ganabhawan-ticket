@@ -95,6 +95,15 @@ test('guest buys 2 tickets: unique ticket numbers, HTML + text email with a QR p
   assert.match(mail.html!, /name="viewport"/);
   assert.match(mail.html!, /Raktakarabi/);
   assert.match(mail.html!, /Payment status/);
+  // The right performance, date and time (IST), venue, zone and quantity.
+  const facts = (await query<{ starts_at: Date; venue: string }>('SELECT s.starts_at, f.venue FROM shows s JOIN festivals f ON f.id=s.festival_id WHERE s.id=$1', [show.showId]))[0];
+  const when = new Date(facts.starts_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' });
+  for (const body of [mail.html!, mail.text]) {
+    assert.ok(body.includes(when), `performance time ${when}`);
+    assert.ok(body.includes(facts.venue.replace(/&/g, '&amp;')) || body.includes(facts.venue), 'venue');
+    assert.match(body, /Premier/);
+  }
+  assert.match(mail.html!, /2 &times; /, 'quantity');
   assert.ok(!mail.html!.includes(ORG) && !mail.text.includes(ORG), 'the organisation address is not shown to the customer');
   // Retry the delivery (job re-run and a re-queued job): no new email, no new tickets, same numbers.
   await query("UPDATE jobs SET state='PENDING', run_at=now() WHERE kind='DELIVERY'");

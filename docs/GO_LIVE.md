@@ -6,13 +6,13 @@ Three environments. Never mix their databases or keys.
 |---|---|---|---|---|---|
 | local | `development` | — | none (dev adapter) | embedded Postgres (`npm run db:local`) | developers |
 | staging | `live` | `staging` | `rzp_test_…` | separate Neon project/branch | drills, rehearsals |
-| production | `live` | `production` | `rzp_live_…` | production Neon | the public |
+| production | `live` | `production` | `rzp_test_…` while testing, then `rzp_live_…` | production Neon | the public |
 
 **Fail-closed rules (enforced in code, `src/lib/env.ts`):**
 * Development adapters (OTP code in the response, free "payments", sales-switch bypass) run **only** when `APP_MODE=development` **and** `APP_URL` is explicitly `localhost`/`127.0.0.1` **and** the process is not a Cloudflare Worker. An unset `APP_URL`, or any unknown `APP_MODE` value, counts as live.
-* In live mode, every API call returns `503 CONFIG_INVALID`, and `/api/health` returns 503, until all of these are set: `DATABASE_URL`, `SESSION_SECRET`, `CREDENTIAL_KEY` (32+ chars each), `CRON_SECRET`, an https `APP_URL`, `DEPLOY_ENV`, `PAYMENT_PROVIDER=razorpay`, `RAZORPAY_KEY_ID` (`rzp_test_` on staging, `rzp_live_` on production), `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, a real `OTP_PROVIDER`, email delivery (`RESEND_API_KEY`+`EMAIL_FROM`, or Composio), and Clerk (`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` + `CLERK_SECRET_KEY`; the site cannot render pages without them).
+* In live mode, the configuration is checked in parts (`src/lib/config-gate.ts`): a core problem (database, secrets, URL) refuses every API; a customer problem (Clerk, OTP provider, email) refuses customer APIs; a **payment** problem (Razorpay settings) only refuses the purchase APIs (`/api/holds`, `/api/checkouts`, `/api/payments/`) and shows tickets as "Sales closed", while sign-in codes, accounts and bookings keep working. Before this split, every API call returned `503 CONFIG_INVALID`, and `/api/health` returns 503, until all of these are set: `DATABASE_URL`, `SESSION_SECRET`, `CREDENTIAL_KEY` (32+ chars each), `CRON_SECRET`, an https `APP_URL`, `DEPLOY_ENV`, `PAYMENT_PROVIDER=razorpay`, `RAZORPAY_KEY_ID` (`rzp_test_` on staging; `rzp_test_` or `rzp_live_` on production, see "Razorpay test and live mode"), `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, a real `OTP_PROVIDER`, email delivery (`RESEND_API_KEY`+`EMAIL_FROM`, or Composio), and Clerk (`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` + `CLERK_SECRET_KEY`; the site cannot render pages without them).
 * On `DEPLOY_ENV=production`, customer sales also stay closed until Clerk uses a **production instance** (`pk_live_…` and `sk_live_…`). A development instance (`pk_test_…`) shows Clerk's orange "Development mode" badge, caps its users and uses Clerk's shared Google credentials. The two keys must also come from the same kind of instance (`clerkInstanceProblems`). Staff sign-in, admin and gate scanning are not affected.
-* `npm run deploy:secrets` refuses to push a development config, a non-https/localhost `APP_URL`, a Razorpay key that doesn't match `DEPLOY_ENV`, or development Clerk keys for production.
+* `npm run deploy:secrets` refuses to push a development config, a non-https/localhost `APP_URL`, a Razorpay key that is not `rzp_test_`/`rzp_live_`, a live key on staging, a key that does not match `RAZORPAY_MODE`, or development Clerk keys for production.
 * `npm run db:seed` refuses any non-local database, and any database that has payments or confirmed bookings.
 
 ## 1. Accounts and environment files
@@ -73,6 +73,73 @@ The owner (or `OPS_MONITOR_TOKEN`) can see exactly which settings block sales, b
 6. Check: `/login` loads `clerk.browser.js` from your domain (not `*.clerk.accounts.dev`), `/sign-in` has no "Development mode" badge, and `/api/health` shows `config: true`.
 
 Google accounts created in the development instance do not move to production. Customers sign in again, and their festival account is matched by verified email (`ensureUserFromClerk`), so bookings are kept.
+
+### Razorpay test and live mode
+
+One production deployment runs in either Razorpay mode. The mode is decided only by server settings (Worker secrets), never by a request:
+
+* `RAZORPAY_MODE` (optional, `test` or `live`) is an interlock. When set, the key id must match it (`rzp_test_…` for `test`, `rzp_live_…` for `live`); a mismatch, an unknown value or a non-Razorpay key keeps sales closed ("Sales closed" on the seat map, `publicSales:false`) and lists the problem in Admin → Ops. Unset, the mode is read from the key id.
+* `/api/health` shows `paymentMode` (`test`, `live` or `null`).
+* Every Razorpay order records the mode it was created in (`payment_attempts.provider_mode`, migration 0011). Switching keys later never reinterprets an earlier payment:
+  * test payments are not counted as income in Admin → Accounts (shown separately as "Test payments", rows marked TEST);
+  * test-mode ticket emails say **[TEST]** in the subject and carry a "TEST BOOKING" banner;
+  * once the deployment is live, a ticket paid in test mode is refused at the gate ("Test ticket … not valid for entry");
+  * refunds and payment reconciliation only call Razorpay with the keys of the payment's own mode. A test-mode refund requested after going live stays `REQUESTED` and opens a reconciliation case `refund-mode:<refund id>`; it is never marked refunded without Razorpay's confirmation.
+* Migration 0011 must be applied before taking payments you want tracked by mode. Without it the app still works, but every payment is treated as the current mode, and Admin → Ops warns.
+* **Payments from before 0011** keep `provider_mode` NULL ("not recorded"). Nothing guesses test or live for them: Razorpay order and payment ids do not say which environment they belong to, and the live-key rule for production only dates from 5 October 2026. They count as income and admit at the gate as before. Their refunds and reconciliation use the current keys, and Razorpay itself checks the mode: an environment that does not know the payment rejects the call, so the refund stays `REQUESTED` (retried, alert logged) and is never marked refunded or failed. To settle one, switch to the keys of the environment that took it, or refund it in that Razorpay Dashboard and record it under Admin → Cases.
+
+Apply 0011 (additive: one nullable column and a CHECK; no row is changed) only with a verified backup:
+
+```
+# 1. Neon console → the production branch → Backup & restore: create a branch/snapshot now; note its name.
+# 2. A fresh direct (non-pooled) connection string for the production branch, in the shell only:
+export DIRECT_DATABASE_URL='postgresql://…'          # never in a committed file
+npm run db:migrate -- --dry-run                       # shows host, database and "Pending: 0011_payment_mode.sql"
+npm run db:migrate -- --confirm-host=<host printed above>
+# 3. Check:
+#    SELECT column_name, data_type, is_nullable FROM information_schema.columns
+#     WHERE table_name='payment_attempts' AND column_name='provider_mode';      -- text, YES
+#    SELECT name, applied_at FROM schema_migrations WHERE name='0011_payment_mode.sql';
+#    SELECT count(*), count(provider_mode) FROM payment_attempts;               -- same total as before, 0 recorded
+unset DIRECT_DATABASE_URL
+```
+
+Reverse with `db/rollback/0011_down.sql` (drops only the column and its record).
+
+**Test mode** (Worker secrets, Settings → Variables and Secrets; no rebuild):
+
+```
+PAYMENT_PROVIDER=razorpay
+RAZORPAY_MODE=test
+RAZORPAY_KEY_ID=rzp_test_…           # Razorpay Dashboard in Test Mode → Account & Settings → API Keys
+RAZORPAY_KEY_SECRET=…                # the matching test key secret
+RAZORPAY_WEBHOOK_SECRET=…            # secret of the webhook created in Test Mode
+```
+
+Create the webhook (section 6) in the Razorpay Dashboard **with Test Mode on**. Pay with Razorpay's test cards/UPI; no real money moves.
+
+**Live mode**: replace the same four values in Cloudflare and nothing else (no code change, rebuild or data change):
+
+```
+RAZORPAY_MODE=live
+RAZORPAY_KEY_ID=rzp_live_…           # Dashboard in Live Mode → API Keys (needs KYC/activation)
+RAZORPAY_KEY_SECRET=…                # the matching live key secret
+RAZORPAY_WEBHOOK_SECRET=…            # secret of the webhook created in Live Mode
+```
+
+Create the webhook again in Live Mode (test and live webhooks are separate in Razorpay). Then check `/api/health` shows `paymentMode: "live"` and `publicSales: true`, and make one small real purchase and refund. Before opening to the public, cancel or refund any test bookings that still hold seats (Admin), because test holds and test bookings use real inventory.
+
+### Sending email from tickets@samatat.org
+
+All app email (sign-in codes, ticket confirmations, notices) goes through `sendEmail`: Composio Gmail first when its secrets are set, otherwise Resend. To send from tickets@samatat.org with Resend:
+
+1. In Resend → Domains, add `samatat.org` and create the SPF (TXT/MX on `send.samatat.org`) and DKIM (`resend._domainkey`) DNS records it shows at the domain's DNS host. Wait for "Verified". Add a DMARC record (`_dmarc.samatat.org`, e.g. `v=DMARC1; p=none;`) if there is none.
+2. Create a Resend API key with "Sending access" for samatat.org.
+3. Worker secrets: `RESEND_API_KEY=re_…`, `EMAIL_FROM=Samatat Tickets <tickets@samatat.org>`. Leave `OTP_FROM_EMAIL` unset (codes then also come from tickets@samatat.org) or set it to another verified samatat.org address.
+4. Delete the Worker secrets `COMPOSIO_API_KEY`, `COMPOSIO_USER_ID`, `COMPOSIO_CONNECTED_ACCOUNT_ID`; while they exist, Composio Gmail is used instead.
+5. Check `/api/health` (`config: true`) and request a sign-in code to a test mailbox. Email settings are independent of the Razorpay mode.
+
+To keep Composio Gmail instead, tickets@samatat.org must be a verified "Send mail as" alias of the connected Gmail account and samatat.org's SPF must include Google.
 
 ### Sign-in code sender (e.g. otp@samatat.org)
 
@@ -149,7 +216,7 @@ npm run deploy:vinext
 
 ## 6. Razorpay dashboard
 
-* Webhook URL: `https://<worker>/api/payments/webhook/razorpay`, secret = `RAZORPAY_WEBHOOK_SECRET`.
+* Webhook URL: `https://<worker>/api/payments/webhook/razorpay`, secret = `RAZORPAY_WEBHOOK_SECRET`. Create one in Test Mode and one in Live Mode; use the secret of the mode in use.
 * Events: `payment.captured`, `payment.authorized`, `order.paid`, `refund.processed`, `refund.failed`.
 * Payment capture: automatic (the app also captures authorized payments itself).
 
