@@ -3,6 +3,8 @@
  * With customer-sales settings missing (here: email delivery, then Razorpay), staff
  * still sign in, administer and scan; every customer purchase path stays
  * blocked; and once sales are configured the purchase flow works as before.
+ * A PAYMENT problem alone (Razorpay) blocks only the purchase APIs: customers can still
+ * sign in with a code and use their account (it must not depend on the payment settings).
  * Real staff login, real purchase functions and the real proxy decision
  * (config-gate.ts); only the payment/SMS/email providers are the in-process fakes.
  */
@@ -92,29 +94,38 @@ for (const [label, missing] of [['email delivery not configured', EMAIL], ['Razo
       for (const attempt of [
         () => checkout.createCheckout(customer, [{ productId: show.productId, quantity: 1, version: 1 }], randomUUID()),
         () => commerce.reserve(customer, { productId: show.productId, quantity: 1, version: 1 }, randomUUID()),
-        () => auth.requestOtp(customer.contact, '10.9.0.2'),
       ]) {
         const error = await attempt().catch((e) => e);
         assert.equal(error.code, 'CONFIG_INVALID', String(error.message));
         assert.match(error.message, /not configured for sales/);
       }
+      // Sign-in codes need email, never the payment settings.
+      const otp = await auth.requestOtp(customer.contact, '10.9.0.2').catch((e) => e);
+      if (label === 'email delivery not configured') assert.equal(otp.code, 'CONFIG_INVALID', String(otp.message));
+      else assert.ok(otp.challengeId, 'a Razorpay problem does not stop sign-in codes');
     });
     assert.equal((await query('SELECT count(*)::int n FROM bookings'))[0].n, 0);
     assert.equal((await query('SELECT count(*)::int n FROM checkouts'))[0].n, 0);
     assert.equal(fake.count('POST /orders'), 0);
-    assert.equal(fake.sms.length + fake.emails.length, 0);
+    assert.equal(fake.sms.length, 0);
+    assert.equal(fake.emails.length, label === 'email delivery not configured' ? 0 : 1, 'only the sign-in code email, when email works');
   });
 
-  test(`sales not ready (${label}): the proxy allows only staff/internal APIs; customer APIs get CONFIG_INVALID`, { skip }, async () => {
+  test(`sales not ready (${label}): the proxy allows staff/internal APIs; customer APIs are refused as far as the problem reaches`, { skip }, async () => {
+    const purchase = ['/api/checkouts', '/api/holds', '/api/payments/order', '/api/payments/confirm', '/api/payments/sync'];
+    const customer = ['/api/cart', '/api/cart/merge', '/api/account/mobile', '/api/auth/otp/request', '/api/auth/otp/verify', '/api/auth/clerk/sync',
+      '/api/booking-attempts', '/api/bookings', '/api/checkouts/abc', '/api/tickets/x/resend', '/api/cron/worker', '/api/auth/password-reset', '/api/adminx'];
     await without(missing, async () => {
       for (const path of ['/api/auth/password', '/api/auth/logout', '/api/auth/me', '/api/admin/me', '/api/admin/staff', '/api/admin/inventory',
         '/api/admin/metrics', '/api/admission/scan', '/api/ops/status', '/api/posters/abc']) {
         assert.equal(gate.apiRefusal(path), null, `${path} allowed for staff`);
       }
-      for (const path of ['/api/checkouts', '/api/holds', '/api/payments/order', '/api/payments/confirm', '/api/payments/sync', '/api/cart',
-        '/api/cart/merge', '/api/account/mobile', '/api/auth/otp/request', '/api/auth/otp/verify', '/api/auth/clerk/sync',
-        '/api/booking-attempts', '/api/bookings', '/api/tickets/x/resend', '/api/cron/worker', '/api/auth/password-reset', '/api/adminx']) {
-        assert.match(String(gate.apiRefusal(path)), /not configured for sales/, `${path} blocked`);
+      if (label === 'email delivery not configured') {
+        for (const path of [...purchase, ...customer]) assert.match(String(gate.apiRefusal(path)), /not configured for sales/, `${path} blocked`);
+      } else {
+        // A payment problem: purchases refused, everything else a customer does keeps working.
+        for (const path of purchase) assert.match(String(gate.apiRefusal(path)), /Ticket sales are not open/, `${path} blocked`);
+        for (const path of customer) assert.equal(gate.apiRefusal(path), null, `${path} not blocked by a payment problem`);
       }
     });
   });

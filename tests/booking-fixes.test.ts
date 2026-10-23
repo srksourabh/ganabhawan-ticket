@@ -124,7 +124,8 @@ test('live mode lists every missing production requirement by name only', () => 
   withEnv({ ...LIVE_STAGING, PAYMENT_PROVIDER: 'development' }, () => assert.ok(configurationProblems().includes('PAYMENT_PROVIDER=razorpay')));
   withEnv({ ...LIVE_STAGING, OTP_PROVIDER: 'development' }, () => assert.ok(configurationProblems().some((p) => p.startsWith('OTP_PROVIDER'))));
   withEnv({ ...LIVE_STAGING, DEPLOY_ENV: undefined }, () => assert.ok(configurationProblems().some((p) => p.startsWith('DEPLOY_ENV'))));
-  withEnv({ ...LIVE_STAGING, DEPLOY_ENV: 'production' }, () => assert.ok(configurationProblems().some((p) => /live key/.test(p))));
+  // Production takes a test or a live key; RAZORPAY_MODE=live refuses a test key (the interlock).
+  withEnv({ ...LIVE_STAGING, DEPLOY_ENV: 'production', RAZORPAY_MODE: 'live' }, () => assert.ok(configurationProblems().some((p) => /RAZORPAY_MODE=live needs an rzp_live_ key/.test(p))));
   withEnv({ ...LIVE_STAGING, RAZORPAY_KEY_ID: 'rzp_live_abc' }, () => assert.ok(configurationProblems().some((p) => /test key/.test(p))));
   withEnv({ ...LIVE_STAGING, RESEND_API_KEY: undefined }, () => assert.ok(configurationProblems().some((p) => p.startsWith('email'))));
   withEnv({ ...LIVE_STAGING, CLERK_SECRET_KEY: undefined }, () => assert.ok(configurationProblems().includes('CLERK_SECRET_KEY')));
@@ -193,7 +194,7 @@ test('CLERK_DEVELOPMENT_INSTANCE_ALLOWED: off by default (strict); "true" accept
   withEnv({ ...OVERRIDE, CLERK_SECRET_KEY: 'sk_live_x' }, () => assert.ok(configurationProblems().some((p) => p.startsWith('Clerk keys')), 'mixed instance kinds'));
   withEnv({ ...OVERRIDE, CLERK_SECRET_KEY: 'not-a-key' }, () => assert.ok(configurationProblems().some((p) => p.startsWith('CLERK_SECRET_KEY'))));
   withEnv({ ...OVERRIDE, CLERK_SECRET_KEY: undefined }, () => assert.ok(configurationProblems().includes('CLERK_SECRET_KEY')));
-  withEnv({ ...OVERRIDE, RAZORPAY_KEY_ID: 'rzp_test_abc' }, () => assert.ok(configurationProblems().some((p) => /live key/.test(p)), 'Razorpay live key still required'));
+  withEnv({ ...OVERRIDE, RAZORPAY_MODE: 'live', RAZORPAY_KEY_ID: 'rzp_test_abc' }, () => assert.ok(configurationProblems().some((p) => /RAZORPAY_MODE=live/.test(p)), 'the Razorpay mode interlock still applies'));
   for (const name of ['RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET', 'CRON_SECRET', 'DATABASE_URL', 'SESSION_SECRET', 'CREDENTIAL_KEY', 'APP_URL']) {
     withEnv({ ...OVERRIDE, [name]: undefined }, () => assert.ok(configurationProblems().some((p) => p.startsWith(name)), name));
   }

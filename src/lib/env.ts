@@ -103,23 +103,70 @@ export function coreConfigurationProblems(): string[] {
 }
 
 /**
- * Settings only CUSTOMER SALES need: payments, customer sign-in codes, SMS and
- * email confirmations, and the background worker that settles payments.
- * Missing ones block every customer purchase path, never staff administration.
+ * Settings only CUSTOMER SALES need: payments (paymentConfigurationProblems) plus everything
+ * customers need even without buying (customerConfigurationProblems: sign-in codes, email, Clerk,
+ * the background worker). Missing ones block every customer purchase path, never staff
+ * administration. Payment problems alone do not stop sign-in, accounts or tickets (config-gate.ts).
  */
 export function salesConfigurationProblems(): string[] {
+  return [...paymentConfigurationProblems(), ...customerConfigurationProblems()];
+}
+
+/** Razorpay's environment: test (no real money) or live. */
+export type PaymentMode = 'test' | 'live';
+
+/** The environment a Razorpay key id belongs to (rzp_test_… / rzp_live_…), or null when it is not one. */
+export function razorpayKeyMode(keyId = process.env.RAZORPAY_KEY_ID): PaymentMode | null {
+  return (/^rzp_(test|live)_/.exec(keyId?.trim() ?? '')?.[1] as PaymentMode | undefined) ?? null;
+}
+
+/**
+ * The Razorpay environment this server uses, from trusted server settings only (never a request):
+ * RAZORPAY_MODE ("test" or "live") when set, else the configured key id's own prefix. Switching
+ * modes = replacing RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET and RAZORPAY_WEBHOOK_SECRET (and
+ * RAZORPAY_MODE when set) in the Worker settings; no code, rebuild or data change.
+ */
+export function paymentMode(): PaymentMode | null {
+  const explicit = (process.env.RAZORPAY_MODE ?? '').trim().toLowerCase();
+  if (explicit === 'test' || explicit === 'live') return explicit;
+  return razorpayKeyMode();
+}
+
+/**
+ * Razorpay settings for taking payments, valid in either environment: test keys (rzp_test_…,
+ * no real money) or live keys (rzp_live_…). RAZORPAY_MODE, when set, is an interlock: a key from
+ * the other environment is refused. Staging never takes real money (test keys only). The key
+ * secret and webhook secret cannot be checked locally; they must come from the same Razorpay
+ * environment as the key id (a mismatch fails at the provider, never succeeds).
+ */
+export function paymentConfigurationProblems(env = deployEnv()): string[] {
   const problems: string[] = [];
   if (devMode()) return problems; // development mode is judged entirely by coreConfigurationProblems
-  if (!long('CRON_SECRET', 16)) problems.push('CRON_SECRET (16+ chars)');
-  const env = deployEnv();
-
   if (process.env.PAYMENT_PROVIDER !== 'razorpay') problems.push('PAYMENT_PROVIDER=razorpay');
   for (const name of ['RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET']) {
     if (!present(name)) problems.push(name);
   }
   const keyId = process.env.RAZORPAY_KEY_ID?.trim() ?? '';
-  if (keyId && env === 'production' && !keyId.startsWith('rzp_live_')) problems.push('RAZORPAY_KEY_ID (production needs a live key)');
-  if (keyId && env === 'staging' && !keyId.startsWith('rzp_test_')) problems.push('RAZORPAY_KEY_ID (staging needs a test key)');
+  const keyMode = razorpayKeyMode(keyId);
+  const explicitRaw = (process.env.RAZORPAY_MODE ?? '').trim().toLowerCase();
+  const explicit = explicitRaw === 'test' || explicitRaw === 'live' ? explicitRaw : null;
+  if (explicitRaw && !explicit) problems.push('RAZORPAY_MODE ("test" or "live")');
+  if (keyId && !keyMode) problems.push('RAZORPAY_KEY_ID (a Razorpay key id: rzp_test_… or rzp_live_…)');
+  if (keyMode && explicit && keyMode !== explicit) problems.push(`RAZORPAY_KEY_ID (RAZORPAY_MODE=${explicit} needs an rzp_${explicit}_ key)`);
+  if (keyMode === 'live' && env === 'staging') problems.push('RAZORPAY_KEY_ID (staging needs a test key)');
+  return problems;
+}
+
+/**
+ * Everything customers need besides payments: sign-in codes, email delivery and senders, Clerk
+ * (Google sign-in) and the background worker that sends confirmations and settles payments.
+ * Missing ones stop customer sign-in and purchases; staff administration is unaffected.
+ */
+export function customerConfigurationProblems(): string[] {
+  const problems: string[] = [];
+  if (devMode()) return problems; // development mode is judged entirely by coreConfigurationProblems
+  if (!long('CRON_SECRET', 16)) problems.push('CRON_SECRET (16+ chars)');
+  const env = deployEnv();
 
   problems.push(...clerkInstanceProblems(env));
 
@@ -268,7 +315,18 @@ export function assertStaffConfiguration() {
   throw new AppError(503, 'This service is not configured yet. Please try again later.', 'CONFIG_INVALID');
 }
 
-/** Customer sales (holds, checkouts, payment orders, customer codes): every setting. */
+/**
+ * Customer sign-in codes and other customer services that take no payment: core and customer
+ * settings, never the payment settings (a payment problem must not stop sign-in).
+ */
+export function assertCustomerConfiguration() {
+  const problems = [...coreConfigurationProblems(), ...customerConfigurationProblems()];
+  if (problems.length === 0) return;
+  console.error('[config] refusing customer service; missing or unsafe:', problems.join('; '));
+  throw new AppError(503, 'This service is not available yet. Please try again later.', 'CONFIG_INVALID');
+}
+
+/** Customer sales (holds, checkouts, payment orders): every setting. */
 export function assertLiveConfiguration() {
   const problems = configurationProblems();
   if (problems.length === 0) return;
