@@ -27,7 +27,10 @@ export default function proxy(request: NextRequest, event: NextFetchEvent) {
   return clerk(request, event);
 }
 
-/** Vinext's matcher validator rejects complex Clerk defaults — keep paths simple. */
+/**
+ * Vinext's matcher validator rejects complex Clerk defaults — keep paths simple. api/ticket-qr
+ * (signed ticket QR images in emails) needs no session and must work even while sales are closed.
+ */
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|images/|uploads/|api/catalogue|api/health|api/payments/webhook).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|images/|uploads/|api/catalogue|api/health|api/payments/webhook|api/ticket-qr).*)'],
 };

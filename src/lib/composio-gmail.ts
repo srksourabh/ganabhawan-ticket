@@ -18,22 +18,22 @@ function composioHeaders() {
   };
 }
 
-export function buildGmailSendArguments(to: string, subject: string, body: string, from = process.env.EMAIL_FROM?.trim()) {
+export function buildGmailSendArguments(to: string, subject: string, body: string, from = process.env.EMAIL_FROM?.trim(), isHtml = false) {
   return {
     recipient_email: to,
     subject,
     body,
-    is_html: false,
+    is_html: isHtml,
     user_id: 'me',
     from_email: from || undefined,
   };
 }
 
-export async function sendComposioGmail(to: string, subject: string, body: string, from?: string) {
+export async function sendComposioGmail(to: string, subject: string, body: string, from?: string, isHtml = false) {
   requireValue(process.env.COMPOSIO_API_KEY?.trim(), 'Email delivery is not configured (COMPOSIO_API_KEY).', 503);
 
   const payload: Record<string, unknown> = {
-    arguments: buildGmailSendArguments(to, subject, body, from),
+    arguments: buildGmailSendArguments(to, subject, body, from, isHtml),
   };
   if (process.env.COMPOSIO_CONNECTED_ACCOUNT_ID?.trim()) {
     payload.connected_account_id = process.env.COMPOSIO_CONNECTED_ACCOUNT_ID.trim();

@@ -56,6 +56,8 @@ export default function CheckoutPage() {
   const runningRef = useRef(false);
   /** One key per checkout attempt: a retried request reuses it; after a failure the next attempt gets a new one. */
   const checkoutKey = useRef(newCheckoutKey());
+  /** Booking attempts already recorded for this buyer and line: a retry reuses them instead of recording (and rate-counting) again. */
+  const recordedAttempts = useRef(new Map<string, string>());
   const [serverTotal, setServerTotal] = useState<number | null>(null);
 
   useEffect(() => {
@@ -133,6 +135,9 @@ export default function CheckoutPage() {
       setLines((prev) => updateAll(prev, { status: 'processing', message: undefined }));
       // Lead capture per line (the checkout name becomes each booking's holder).
       const attempts = await Promise.all(lines.map(async (line) => {
+        const attemptKey = [line.item.productId, line.item.quantity, name, email, phone].join('|');
+        const known = recordedAttempts.current.get(attemptKey);
+        if (known) return { productId: line.item.productId, attemptId: known };
         const res = await fetch('/api/booking-attempts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -140,6 +145,7 @@ export default function CheckoutPage() {
         });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(body.error || 'Enter your name and mobile or email before checkout.');
+        if (body.id) recordedAttempts.current.set(attemptKey, body.id as string);
         return { productId: line.item.productId, attemptId: body.id as string | undefined };
       }));
       const checkout = await createClientCheckout(

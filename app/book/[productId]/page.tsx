@@ -301,9 +301,10 @@ function BookPageInner() {
         <section className="container" style={{ maxWidth: 520 }}>
           <div className="card stack" style={{ textAlign: 'center' }}>
             <h1 className="h2">{t('book.confirmed')}</h1>
-            <p className="muted">{t('book.ready')}</p>
+            {/* A guest (no account) gets the tickets by email; My tickets needs an account. */}
+            <p className="muted">{me.contact ? t('book.ready') : t('book.emailed', { email: email.trim() })}</p>
             <p style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700 }}>{hold?.reference}</p>
-            <Link href="/tickets" className="btn btn--primary">{t('book.viewTickets')}</Link>
+            {me.contact && <Link href="/tickets" className="btn btn--primary">{t('book.viewTickets')}</Link>}
           </div>
         </section>
       </main>

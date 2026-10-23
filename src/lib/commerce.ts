@@ -100,7 +100,8 @@ export async function reserve(user:User,input:HoldInput,key:string) {
   }
   await expireIn(c);
   const product=await loadProductForHold(c,input);
-  let open=await one(c,"SELECT * FROM bookings WHERE user_id=$1 AND product_id=$2 AND status IN ('HELD','PAYMENT_PENDING') AND expires_at>now() ORDER BY created_at DESC LIMIT 1",[user.id,product.id]);
+  // A guest session touches only holds it created (never the account owner's own).
+  let open=await one(c,"SELECT * FROM bookings WHERE user_id=$1 AND product_id=$2 AND status IN ('HELD','PAYMENT_PENDING') AND expires_at>now() AND ($3::timestamptz IS NULL OR created_at >= $3) ORDER BY created_at DESC LIMIT 1",[user.id,product.id,user.guestSince??null]);
   if(open && (Number(open.quantity)!==input.quantity || open.checkout_id)) {
    // The cart changed (or this ticket is part of a cart checkout): the old hold is
    // superseded. Its order may still be open in a dismissed Razorpay modal; if it

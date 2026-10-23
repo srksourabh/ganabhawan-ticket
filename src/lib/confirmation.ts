@@ -23,6 +23,8 @@ export interface ConfirmationMessage {
   mobile: string | null;
   subject: string;
   emailText: string;
+  /** The HTML ticket email (ticket-email.ts); emailText is its plain-text alternative. */
+  emailHtml?: string;
   /** Values for the SMS template (sms.ts renders SMS_CONFIRMATION_TEXT / MSG91 variables). */
   sms: SmsValues;
 }

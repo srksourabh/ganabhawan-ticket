@@ -1,11 +1,11 @@
-import { authenticated } from '@/lib/auth';
+import { assertBuyerScope, authenticatedBuyer } from '@/lib/auth';
 import { confirmDevelopmentPayment, syncRazorpayPayment, verifyRazorpayCallback } from '@/lib/payments';
 import { jsonOk, jsonError, readJson } from '@/lib/http';
 import { usingDevelopmentPayments } from '@/lib/env';
 
 export async function POST(request: Request): Promise<Response> {
   try {
-    const user = await authenticated();
+    const user = await authenticatedBuyer(); // a Razorpay callback is verified by signature and with Razorpay itself
     const body = await readJson<{
       bookingId?: string;
       orderId?: string;
@@ -15,6 +15,7 @@ export async function POST(request: Request): Promise<Response> {
     }>(request);
 
     if (usingDevelopmentPayments()) {
+      await assertBuyerScope(user, body.bookingId ?? '');
       const result = await confirmDevelopmentPayment(user, body.bookingId ?? '', body.orderId ?? '');
       return jsonOk(result);
     }
@@ -31,6 +32,7 @@ export async function POST(request: Request): Promise<Response> {
       return jsonOk(result);
     }
 
+    await assertBuyerScope(user, body.bookingId ?? '');
     const result = await syncRazorpayPayment(user, body.bookingId ?? '');
     return jsonOk(result);
   } catch (error) {

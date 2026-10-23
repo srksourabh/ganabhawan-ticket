@@ -12,7 +12,7 @@ export function jsonError(error: unknown): Response {
     return Response.json({ error: error.message, code: error.code, ...(error.productId ? { productId: error.productId } : {}) }, { status: error.status });
   }
   console.error('[unhandled]', error);
-  return Response.json({ error: 'An unexpected error occurred.', code: 'INTERNAL_ERROR' }, { status: 500 });
+  return Response.json({ error: 'Something went wrong while processing your request. Please try again.', code: 'INTERNAL_ERROR' }, { status: 500 });
 }
 
 export async function readJson<T = unknown>(request: Request): Promise<T> {

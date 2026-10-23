@@ -26,6 +26,7 @@ import type { User } from './types';
 import { CONFIRMED_LEAD, LINK_SIGN_IN_NOTE, NO_REFUND, PICKUP_INSTRUCTION, appBaseUrl, smsShowLabel, ticketsLink, type ConfirmationMessage } from './confirmation';
 import { DEFAULT_VENUE } from './brand';
 import { assertCanPurchase, contactsOf } from './account-contacts';
+import { issuedTickets, renderTicketEmailHtml, ticketTextLines } from './ticket-email';
 
 export const MAX_CHECKOUT_LINES = 10;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -115,11 +116,13 @@ export async function createCheckout(user: User, rawLines: unknown, key: string)
     }
     await expireIn(c);
 
-    // The customer's still-open checkouts: reuse an identical one, supersede the rest.
+    // The customer's still-open checkouts: reuse an identical one, supersede the rest. A guest
+    // session touches only what it created (never the account owner's own open checkouts).
+    const since = user.guestSince ?? null;
     const openIds = (await c.query<{ checkout_id: string }>(
       `SELECT DISTINCT checkout_id FROM bookings WHERE user_id=$1 AND checkout_id IS NOT NULL
-       AND status IN ('HELD','PAYMENT_PENDING') AND expires_at>now()`,
-      [user.id],
+       AND status IN ('HELD','PAYMENT_PENDING') AND expires_at>now() AND ($2::timestamptz IS NULL OR created_at >= $2)`,
+      [user.id, since],
     )).rows.map((r) => r.checkout_id);
     for (const openId of openIds) {
       const bookings = (await c.query<Row>('SELECT * FROM bookings WHERE checkout_id=$1 ORDER BY id FOR UPDATE', [openId])).rows;
@@ -138,8 +141,8 @@ export async function createCheckout(user: User, rawLines: unknown, key: string)
     // Stray single-ticket holds on these products (older flow) are superseded too.
     const stray = (await c.query<Row>(
       `SELECT * FROM bookings WHERE user_id=$1 AND checkout_id IS NULL AND product_id = ANY($2::uuid[])
-       AND status IN ('HELD','PAYMENT_PENDING') AND expires_at>now() ORDER BY id FOR UPDATE`,
-      [user.id, lines.map((l) => l.productId)],
+       AND status IN ('HELD','PAYMENT_PENDING') AND expires_at>now() AND ($3::timestamptz IS NULL OR created_at >= $3) ORDER BY id FOR UPDATE`,
+      [user.id, lines.map((l) => l.productId), since],
     )).rows;
     for (const b of stray) await supersedeBooking(c, b, user.id);
 
@@ -390,7 +393,7 @@ const rupees = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN')}`;
 const ist = (iso: string) => new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' });
 
 /** Plain-text consolidated receipt (the confirmation email body). No secrets; customer's own data only. */
-export function receiptText(r: Receipt, appUrl: string) {
+export function receiptText(r: Receipt, appUrl: string, ticketLines: string[] = []) {
   const base = appUrl.replace(/\/$/, '');
   const items = r.lines.map((l, i) => [
     `${i + 1}. ${l.product}${l.status !== 'CONFIRMED' ? ` [${l.status.replace('_', ' ')}]` : ''}`,
@@ -418,6 +421,7 @@ export function receiptText(r: Receipt, appUrl: string) {
     `Total paid: ${rupees(r.total)}`,
     '',
     `Your tickets: ${ticketsLink(base, r.lines.filter((l) => l.status === 'CONFIRMED').map((l) => l.bookingId))}`,
+    ...(ticketLines.length ? ['', ...ticketLines] : []),
     '',
     NO_REFUND,
     PICKUP_INSTRUCTION,
@@ -445,12 +449,26 @@ export async function checkoutConfirmation(checkoutId: string): Promise<Confirma
   const account = contactsOf(co.account_contact, co.account_mobile);
   const email = String(co.holder_email || '').includes('@') ? String(co.holder_email) : account.email;
   const confirmedLines = receipt.lines.filter((l) => l.status === 'CONFIRMED');
+  const tickets = await issuedTickets(confirmedLines.map((l) => l.bookingId));
+  const support = (await query<Row>('SELECT contact_email FROM festivals ORDER BY created_at LIMIT 1'))[0]?.contact_email ?? null;
   return {
     confirmed: (receipt.status === 'CONFIRMED' || receipt.status === 'PARTIALLY_CANCELLED') && receipt.payment !== null,
     email,
     mobile: account.mobile,
     subject: `Your ${ORGANISATION} tickets - ${receipt.reference}`,
-    emailText: receiptText(receipt, base),
+    emailText: receiptText(receipt, base, ticketTextLines(tickets, base)),
+    emailHtml: renderTicketEmailHtml({
+      base,
+      customerName: receipt.customer.name,
+      orderReference: receipt.reference,
+      venue: receipt.venue || DEFAULT_VENUE,
+      total: receipt.total,
+      payment: receipt.payment ? { reference: receipt.payment.reference, paidAt: receipt.payment.paidAt } : null,
+      lines: receipt.lines.map((l) => ({ ...l, confirmed: l.status === 'CONFIRMED' })),
+      tickets,
+      supportEmail: support,
+      receiptUrl: `${base}/receipts/${receipt.checkoutId}`,
+    }),
     sms: {
       REFERENCE: receipt.reference,
       SHOW: smsShowLabel(confirmedLines.map((l) => l.performances[0]?.title ?? l.product)),

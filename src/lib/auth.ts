@@ -19,7 +19,7 @@ export async function rateLimit(key: string, limit: number, seconds: number) {
  reset_at=CASE WHEN rate_limits.reset_at<now() THEN excluded.reset_at ELSE rate_limits.reset_at END RETURNING count`,
     [key, seconds],
   );
-  if (rows[0].count > limit) throw new AppError(429, 'Too many attempts. Please wait before trying again.');
+  if (rows[0].count > limit) throw new AppError(429, 'Too many attempts. Please wait a few minutes and try again.', 'RATE_LIMITED');
 }
 
 /**
@@ -29,9 +29,11 @@ export async function rateLimit(key: string, limit: number, seconds: number) {
  * at the provider instead of a second email. No-op in local development.
  * `from` defaults to EMAIL_FROM; sign-in codes pass otpEmailSender().
  */
-export async function sendEmail(to: string, subject: string, message: string, idempotencyKey?: string, from = process.env.EMAIL_FROM?.trim()) {
+export async function sendEmail(to: string, subject: string, message: string, idempotencyKey?: string, from = process.env.EMAIL_FROM?.trim(), html?: string) {
+  // `message` is the plain text; `html` (ticket emails) the rich version. Resend sends both parts;
+  // the Composio Gmail tool takes one body, so it gets the HTML when there is one.
   if (composioGmailConfigured()) {
-    await sendComposioGmail(to, subject, message, from);
+    await sendComposioGmail(to, subject, html ?? message, from, Boolean(html));
     return;
   }
   if (developmentAdaptersAllowed() && otpProvider() === 'development') return;
@@ -43,7 +45,7 @@ export async function sendEmail(to: string, subject: string, message: string, id
       'Content-Type': 'application/json',
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey.slice(0, 256) } : {}),
     },
-    body: JSON.stringify({ from, to: [to], subject, text: message }),
+    body: JSON.stringify({ from, to: [to], subject, text: message, ...(html ? { html } : {}) }),
     signal: AbortSignal.timeout(10000),
   });
   requireValue(response.ok, 'Email delivery is temporarily unavailable.', 503);
@@ -168,11 +170,22 @@ export async function requestOtp(raw: string, ip: string, purpose: 'sign-in' | '
 }
 
 /**
- * Guest checkout: no sign-up code. The email they type becomes the customer
- * record the booking is paid against, and the confirmation is sent there.
- * A staff account is never reused.
+ * Guest checkout sessions. A guest types a name, email and mobile at checkout; nothing proves
+ * the email is theirs, so a guest session must never open the account behind that email (its
+ * booking history, tickets, cart or details). Guest tokens start with GUEST_TOKEN_PREFIX
+ * (account tokens are base64url and never contain "."): sessionUser() refuses them, so every
+ * account route treats a guest as signed out, and only the purchase routes accept them through
+ * currentBuyer(), limited to what that guest session created (assertBuyerScope).
  */
-export async function openGuestSession(name: string, emailRaw: string, phoneRaw: string) {
+export const GUEST_TOKEN_PREFIX = 'g.';
+const GUEST_SESSION_HOURS = 3;
+
+/**
+ * Opens (or, for the same email, reuses) a guest checkout session. The bookings belong to the
+ * customer record of the email typed (created if new), so the owner sees them after signing in;
+ * the record's name and details are never changed by a guest. A staff account is never used.
+ */
+export async function openGuestSession(name: string, emailRaw: string, phoneRaw: string, presentedToken = '') {
   let email: string;
   let phone: string;
   try {
@@ -185,6 +198,11 @@ export async function openGuestSession(name: string, emailRaw: string, phoneRaw:
   requireValue(!phone.includes('@'), 'Enter your mobile number.', 400);
   const cleanName = name.trim().slice(0, 120);
   requireValue(cleanName.length > 0, 'Enter your name.', 400);
+  // The same guest retrying (refresh, a failed payment): keep the session it already has.
+  const current = await guestSessionUser(presentedToken);
+  if (current && current.contact.toLowerCase() === email.toLowerCase()) {
+    return { sessionToken: presentedToken, user: { id: current.id, contact: current.contact, name: cleanName, role: 'customer' as const }, reused: true };
+  }
   const result = await transaction(async (c) => {
     const staff = await one(
       c,
@@ -195,14 +213,51 @@ export async function openGuestSession(name: string, emailRaw: string, phoneRaw:
     let user = await one<User>(c, 'SELECT * FROM users WHERE lower(contact)=lower($1) FOR UPDATE', [email]);
     if (user && user.role !== 'customer') return { error: 'Use a personal email address to book.' };
     if (!user) user = (await one<User>(c, 'INSERT INTO users(contact, name) VALUES($1,$2) RETURNING *', [email, cleanName]))!;
-    else await c.query('UPDATE users SET name=$1 WHERE id=$2', [cleanName, user.id]);
-    const sessionToken = token();
-    await c.query("INSERT INTO sessions(digest,user_id,expires_at) VALUES($1,$2,now()+interval '12 hours')", [hash(sessionToken), user!.id]);
+    const sessionToken = GUEST_TOKEN_PREFIX + token();
+    await c.query(`INSERT INTO sessions(digest,user_id,expires_at) VALUES($1,$2,now()+$3*interval '1 hour')`, [hash(sessionToken), user!.id, GUEST_SESSION_HOURS]);
     await audit(c, user!.id, 'auth.guest', user!.id);
-    return { sessionToken, user: { id: user!.id, contact: email, name: cleanName, role: 'customer' as const } };
+    return { sessionToken, user: { id: user!.id, contact: user!.contact, name: cleanName, role: 'customer' as const }, reused: false };
   });
   if ('error' in result) throw new AppError(400, result.error!);
   return result;
+}
+
+/** The guest session's customer record and start time, or null (not a guest token, unknown or expired). */
+export async function guestSessionUser(sessionToken: string): Promise<User | null> {
+  if (!sessionToken.startsWith(GUEST_TOKEN_PREFIX)) return null;
+  const rows = await query<User & { started: string }>(
+    "SELECT u.id,u.contact,u.name,u.role,s.created_at started FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.digest=$1 AND s.expires_at>now() AND u.role='customer'",
+    [hash(sessionToken)],
+  );
+  const row = rows[0];
+  return row ? { id: row.id, contact: row.contact, name: row.name, role: row.role, guestSince: new Date(row.started).toISOString() } : null;
+}
+
+/** Purchase routes only: the signed-in customer, else the guest checkout session (marked guestSince). */
+export async function currentBuyer(): Promise<User | null> {
+  return (await currentUser()) ?? guestSessionUser(await presentedSessionToken());
+}
+
+export async function authenticatedBuyer(): Promise<User> {
+  const user = await currentBuyer();
+  if (!user) throw new AppError(401, 'Please sign in or continue as a guest.');
+  return user;
+}
+
+/**
+ * A guest session may act only on the checkout or booking it created: the same customer record,
+ * created after the guest session started. Signed-in customers are unaffected (each function
+ * checks ownership itself). Not found and not yours answer the same.
+ */
+export async function assertBuyerScope(user: User, checkoutOrBookingId: string) {
+  if (!user.guestSince) return;
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  requireValue(UUID.test(checkoutOrBookingId), 'Not found.', 404);
+  const row = (await query<{ user_id: string; created_at: string }>(
+    'SELECT user_id, created_at FROM checkouts WHERE id=$1 UNION ALL SELECT user_id, created_at FROM bookings WHERE id=$1 LIMIT 1',
+    [checkoutOrBookingId],
+  ))[0];
+  requireValue(row && row.user_id === user.id && new Date(row.created_at).getTime() >= new Date(user.guestSince).getTime(), 'Not found.', 404);
 }
 
 export async function verifyOtp(challengeId: string, code: string) {
@@ -358,7 +413,8 @@ export async function presentedSessionToken(): Promise<string> {
 
 /** The unexpired, unrevoked session's user. Revoked sessions are deleted rows. */
 export async function sessionUser(sessionToken: string): Promise<User | null> {
-  if (!sessionToken) return null;
+  // A guest checkout token never opens the account (see GUEST_TOKEN_PREFIX).
+  if (!sessionToken || sessionToken.startsWith(GUEST_TOKEN_PREFIX)) return null;
   const rows = await query<User>(
     'SELECT u.id,u.contact,u.name,u.role FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.digest=$1 AND s.expires_at>now()',
     [hash(sessionToken)],

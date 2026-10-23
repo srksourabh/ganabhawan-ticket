@@ -83,6 +83,13 @@ The customer sign-in code is generated and emailed by the app (`src/lib/auth.ts`
 
 To send codes from otp@samatat.org through Resend: verify samatat.org in Resend, then set the Worker secrets `RESEND_API_KEY` and `OTP_FROM_EMAIL=Samatat Natyamela <otp@samatat.org>`. Set `EMAIL_FROM` to a samatat.org address too, because Resend needs it for confirmations. Then remove the three `COMPOSIO_*` Worker secrets so Resend is used, and check `/api/health` shows `config: true`. These are runtime settings, so no rebuild is needed, and none of them is a GitHub secret. A malformed `OTP_FROM_EMAIL` closes customer sales (`config: false`) but not staff access.
 
+### Guest checkout and ticket emails
+
+* **Guest checkout** needs no setting. A guest types a name, email and mobile; nothing proves the email is theirs, so the guest session is *purchase-only*: it never signs anyone into the account behind that email (no booking history, tickets, cart or details), and it can act only on the checkout it created. Bookings are recorded under that email's customer record, so the real owner sees them after signing in with Google.
+* **Ticket email**: after the payment is verified, the customer gets an HTML email (with a plain-text alternative when sent through Resend; the Composio Gmail tool sends the HTML only) listing every ticket with its own ticket number and QR code. The QR images are served from `/api/ticket-qr/<signed code>` (no session; stops working when a ticket is cancelled).
+* **Organisation copy**: every ticket confirmation is also sent, as a separate email, to `samatat.sanskritiuttarpara2000@gmail.com`. Set the Worker variable `TICKET_COPY_EMAIL` to change it, or to `off` to stop it. That mailbox receives every ticket's QR code: keep it protected (2-step verification, few people).
+* **Before relying on it**: send one real test purchase and check both inboxes, the QR images and the spam folder. Email delivery was tested only with an in-process fake.
+
 ### Customer code sign-in (email only)
 
 Customers sign in with Google only while `CUSTOMER_OTP_ENABLED` is unset. To offer the **email** one-time code, first confirm code delivery works (see the sender section above). Then set the Worker secret `CUSTOMER_OTP_ENABLED=true`; no rebuild or migration is needed. This never enables mobile/SMS codes: a mobile number is refused and no SMS is sent while `MOBILE_PHONE_NUMBER_ENABLED` is unset or `false` (leave it so). MSG91 settings are then not needed. Check that `/login` shows the code form, and request a code to your own address. To turn it off again, delete the secret or set it to `false`.
