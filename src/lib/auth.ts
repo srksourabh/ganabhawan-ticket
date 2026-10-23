@@ -19,7 +19,7 @@ export async function rateLimit(key: string, limit: number, seconds: number) {
  reset_at=CASE WHEN rate_limits.reset_at<now() THEN excluded.reset_at ELSE rate_limits.reset_at END RETURNING count`,
     [key, seconds],
   );
-  if (rows[0].count > limit) throw new AppError(429, 'Too many attempts. Please wait before trying again.');
+  if (rows[0].count > limit) throw new AppError(429, 'Too many attempts. Please wait a few minutes and try again.', 'RATE_LIMITED');
 }
 
 /**

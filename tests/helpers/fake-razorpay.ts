@@ -29,6 +29,8 @@ export class FakeRazorpay {
   refundStatus: 'processed' | 'pending' | 'failed' = 'processed';
   failEmail = false;
   down = false;
+  /** Razorpay answering 429 (its own text: "Too Many Requests"). */
+  throttled = false;
   private original?: typeof fetch;
 
   install() {
@@ -43,7 +45,7 @@ export class FakeRazorpay {
 
   reset() {
     this.orders.clear(); this.payments.clear(); this.refunds.clear(); this.calls = []; this.emails = [];
-    this.latencyMs = 0; this.refundStatus = 'processed'; this.failEmail = false; this.down = false;
+    this.latencyMs = 0; this.refundStatus = 'processed'; this.failEmail = false; this.down = false; this.throttled = false;
     this.sms = []; this.failSms = false;
   }
 
@@ -87,6 +89,7 @@ export class FakeRazorpay {
     this.calls.push(`${method} ${path.replace(/[a-z]+_[0-9a-f]{14}/g, ':id')}`);
     if (this.latencyMs) await new Promise((resolve) => setTimeout(resolve, this.latencyMs));
     if (this.down) return json({ error: { description: 'Service unavailable' } }, 503);
+    if (this.throttled) return json({ error: { code: 'BAD_REQUEST_ERROR', description: 'Too Many Requests' } }, 429);
     const body = init?.body ? JSON.parse(String(init.body)) : {};
     let m: RegExpMatchArray | null;
 

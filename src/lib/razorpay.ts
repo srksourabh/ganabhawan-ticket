@@ -93,7 +93,10 @@ async function razorpayRequest<T>(path: string, init?: RequestInit): Promise<T> 
   } & T;
 
   if (!response.ok) {
-    throw new AppError(502, body.error?.description || 'Could not reach the payment provider. Please try again.');
+    // The provider's own text (e.g. "Too Many Requests", validation details) is for the logs only.
+    console.error('[razorpay] request failed', response.status, path.split('?')[0].replace(/[A-Za-z]+_[A-Za-z0-9]{8,}/g, ':id'), body.error?.description ?? '');
+    if (response.status === 429) throw new AppError(503, 'The payment service is busy. Please wait a moment and try again.', 'PROVIDER_BUSY');
+    throw new AppError(502, 'The payment service is unavailable right now. Please try again in a moment.', 'PROVIDER_ERROR');
   }
   return body;
 }

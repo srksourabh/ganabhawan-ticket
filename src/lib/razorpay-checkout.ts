@@ -184,8 +184,15 @@ export function assertBookingIssued(body: unknown) {
   if (status === 'REFUND_REQUIRED' || status === 'CANCELLED' || status === 'REFUNDED') {
     throw new Error('REFUND_REQUIRED');
   }
-  throw new Error('Your payment is being checked. Open My tickets in a minute to see the result.');
+  throw new Error(PAYMENT_BEING_CHECKED);
 }
+
+/**
+ * After Razorpay reported the payment as made, the outcome is not known until the server verifies
+ * it (callback, webhook or reconciliation). Never say "failed" then: say it is being checked, and
+ * not to pay again (the booking is confirmed and emailed automatically if money was taken).
+ */
+export const PAYMENT_BEING_CHECKED = 'Your payment is being checked. If money was taken, your booking will be confirmed automatically and your tickets emailed to you within a few minutes. Please do not pay again.';
 
 export async function confirmDevelopmentPayment(order: RazorpayOrder) {
   const res = await fetch('/api/payments/confirm', {
@@ -224,7 +231,9 @@ export async function payExistingOrder(
     try {
       return await syncBookingPayment(order.bookingId);
     } catch {
-      throw error;
+      // Paid in Razorpay but not confirmed here yet: the outcome is unknown, never "failed".
+      if (error instanceof Error && error.message === 'REFUND_REQUIRED') throw error;
+      throw new Error(PAYMENT_BEING_CHECKED);
     }
   }
 }
