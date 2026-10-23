@@ -1,4 +1,5 @@
 import { AppError } from './errors';
+import { DEFAULT_SUPPORT_EMAIL } from './brand';
 
 /**
  * Two runtime modes. Anything other than an explicit APP_MODE=development is
@@ -65,6 +66,16 @@ export function secret(name: string) {
 }
 
 /** "otp@samatat.org" or "Samatat <otp@samatat.org>": one address, no spaces or angle brackets inside it. */
+/**
+ * The customer support address (ticket emails, receipt and ticket pages): the SUPPORT_EMAIL Worker
+ * variable when it is one plain address, otherwise the organisation's official address. Not a
+ * secret, but read only here so every place shows the same address; never logged.
+ */
+export function supportEmail(): string {
+  const value = (process.env.SUPPORT_EMAIL ?? '').trim();
+  return /^[^\s@<>"]+@[^\s@<>"]+\.[a-z]{2,}$/i.test(value) ? value : DEFAULT_SUPPORT_EMAIL;
+}
+
 export function isEmailSender(value: string): boolean {
   const address = /^[^<>]*<([^<>]+)>$/.exec(value.trim())?.[1] ?? value.trim();
   return /^[^\s@<>"]+@[^\s@<>"]+\.[a-z]{2,}$/i.test(address);

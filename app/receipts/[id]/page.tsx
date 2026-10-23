@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation';
 import { assertBuyerScope, currentBuyer } from '@/lib/auth';
 import { checkoutReceipt, type Receipt } from '@/lib/checkout';
 import ReceiptView from '@/components/ReceiptView';
+import { supportEmail } from '@/lib/env';
 
 /** Consolidated receipt for one cart payment (owner only; a guest session only for the checkout it made). */
 export default async function ReceiptPage({ params }: { params: Promise<{ id: string }> }) {
@@ -18,5 +19,5 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
   }
   if (!receipt) notFound();
 
-  return <ReceiptView receipt={receipt} guest={Boolean(user.guestSince)} />;
+  return <ReceiptView receipt={receipt} guest={Boolean(user.guestSince)} supportEmail={supportEmail()} />;
 }

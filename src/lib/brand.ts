@@ -8,8 +8,12 @@ export const FESTIVAL_DATES = '19–30 December 2026';
 export const FESTIVAL_DATES_BN = '১৯–৩০ ডিসেম্বর ২০২৬';
 /** Default venue label — may be changed by committee without renaming the organisation. */
 export const DEFAULT_VENUE = 'Ganabhawan';
+/** The organisation's official mailbox: customer support and the copy of every ticket confirmation. */
+export const ORGANISATION_EMAIL = 'samatatsanskritiuttarpara2000@gmail.com';
 /** The organisation receives a copy of every ticket confirmation (notify.ts). TICKET_COPY_EMAIL overrides it; "off" disables. */
-export const DEFAULT_TICKET_COPY_EMAIL = 'samatatsanskritiuttarpara2000@gmail.com';
+export const DEFAULT_TICKET_COPY_EMAIL = ORGANISATION_EMAIL;
+/** Support address shown to customers when the SUPPORT_EMAIL Worker variable is unset or invalid (env.ts supportEmail). */
+export const DEFAULT_SUPPORT_EMAIL = ORGANISATION_EMAIL;
 export const DEFAULT_VENUE_BN = 'গণভবন';
 export const DEFAULT_VENUE_PLACE = 'Uttarpara';
 export const DEFAULT_VENUE_PLACE_BN = 'উত্তরপাড়া';

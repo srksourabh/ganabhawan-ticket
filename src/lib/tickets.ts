@@ -6,7 +6,8 @@ import { decrypt } from './security';
 import { sendEmail, sendMessage } from './auth';
 import { renderSms, sendSms } from './sms';
 import { DEFAULT_VENUE, ORGANISATION } from './brand';
-import { CONFIRMED_LEAD, LINK_SIGN_IN_NOTE, NO_REFUND, PICKUP_INSTRUCTION, appBaseUrl, smsShowLabel, ticketsLink, type ConfirmationMessage } from './confirmation';
+import { CONFIRMED_LEAD, LINK_SIGN_IN_NOTE, NO_REFUND, PICKUP_INSTRUCTION, appBaseUrl, smsShowLabel, supportLine, ticketsLink, type ConfirmationMessage } from './confirmation';
+import { supportEmail } from './env';
 import { verifiedContacts } from './account-contacts';
 import { TEST_BOOKING_NOTE, issuedTickets, renderTicketEmailHtml, ticketTextLines } from './ticket-email';
 import { bookingPaymentMode } from './payment-mode';
@@ -233,7 +234,8 @@ export async function bookingConfirmation(bookingId: string): Promise<Confirmati
   const name = booking.holder_name || booking.user_name;
   const s = booking.snapshot ?? {};
   const rupees = (paise: number) => `₹${(Number(paise) / 100).toLocaleString('en-IN')}`;
-  const festival = (await query<{ venue: string; contact_email: string | null }>('SELECT venue, contact_email FROM festivals ORDER BY created_at LIMIT 1'))[0];
+  const festival = (await query<{ venue: string }>('SELECT venue FROM festivals ORDER BY created_at LIMIT 1'))[0];
+  const support = supportEmail();
   const venue = festival?.venue || DEFAULT_VENUE;
   const emailTo = booking.holder_email?.includes('@') ? booking.holder_email : null;
   const emailText = [
@@ -260,6 +262,8 @@ export async function bookingConfirmation(bookingId: string): Promise<Confirmati
     NO_REFUND,
     PICKUP_INSTRUCTION,
     LINK_SIGN_IN_NOTE,
+    '',
+    supportLine(support),
   ].filter((line, i, all) => line !== '' || (i > 0 && all[i - 1] !== '')).join('\n');
   const account = await verifiedContacts(booking.user_id);
   const email = emailTo || account.email;
@@ -284,7 +288,7 @@ export async function bookingConfirmation(bookingId: string): Promise<Confirmati
         quantity: Number(booking.quantity), unitPrice: Number(booking.unit_price), lineTotal: Number(booking.total), confirmed: booking.status === 'CONFIRMED',
       }],
       tickets,
-      supportEmail: festival?.contact_email ?? null,
+      supportEmail: support,
     }),
     sms: { REFERENCE: booking.reference, SHOW: smsShowLabel([s.coverage?.[0]?.title ?? s.name ?? '']), LINK: ticketsLink(base, [bookingId]), NAME: name || 'Guest' },
   };

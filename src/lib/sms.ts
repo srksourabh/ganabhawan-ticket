@@ -66,8 +66,9 @@ export function otpSmsConfigured() {
 export type SmsMessage = { text: string; variables: Record<string, string> };
 type SmsValues = { REFERENCE: string; SHOW: string; LINK: string; NAME: string };
 
-export const PHYSICAL_CARDS_SMS = 'Please collect your physical cards before the show.';
-/** Default wording for free-text gateways; the MSG91 DLT template must carry the same text. */
+/** Entry policy (confirmation.ts ENTRY_OPTIONS / ONE_ENTRY), short enough for one SMS. */
+export const PHYSICAL_CARDS_SMS = 'Entry: QR scan or a physical ticket from the hall, one entry per ticket.';
+/** Default wording for free-text gateways; the MSG91 DLT template must carry the same text (re-register it when this changes). */
 export const DEFAULT_SMS_TEXT = `Your booking for {SHOW} is confirmed. View your QR tickets: {LINK}. ${PHYSICAL_CARDS_SMS} Booking: {REFERENCE}`;
 const DLT_VALUE_MAX = 30; // DLT variables are short; long show names are trimmed
 

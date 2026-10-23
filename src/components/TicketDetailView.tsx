@@ -29,7 +29,7 @@ export type BookingDetail = {
   tickets: Ticket[];
 };
 
-export default function TicketDetailView({ booking, contact }: { booking: BookingDetail; contact?: string }) {
+export default function TicketDetailView({ booking, contact, supportEmail }: { booking: BookingDetail; contact?: string; supportEmail?: string }) {
   const { locale, t } = useLocale();
   const dl = dateLocale(locale);
   const isConfirmed = booking.status === 'CONFIRMED';
@@ -111,6 +111,11 @@ export default function TicketDetailView({ booking, contact }: { booking: Bookin
               contact={contact}
             />
           </div>
+        )}
+
+        <p className="muted">{t('checkout.pickup')}</p>
+        {supportEmail && (
+          <p className="muted">{t('support.line', { email: '' }).trim()} <a href={`mailto:${supportEmail}`}>{supportEmail}</a></p>
         )}
       </section>
     </main>

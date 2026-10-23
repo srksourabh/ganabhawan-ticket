@@ -143,7 +143,12 @@ test('verified payment: one customer ticket email + one organisation copy to the
   assert.equal(customer.length, 1);
   assert.equal(copy.length, 1);
   assert.match(copy[0].subject, /^\[Copy\] /);
-  assert.ok(!customer[0].html!.includes(ORG_DEFAULT) && !customer[0].text.includes(ORG_DEFAULT));
+  // The official mailbox is also the support address: the customer sees it only as the Support
+  // line, never as a copy recipient.
+  assert.equal(customer[0].html!.split(ORG_DEFAULT).length - 1, 2, 'only in the Support mailto link (href + text)');
+  assert.ok(customer[0].html!.includes(`Support: <a href="mailto:${ORG_DEFAULT}"`));
+  assert.equal(customer[0].text.split(ORG_DEFAULT).length - 1, 1, 'only in the Support line');
+  assert.ok(customer[0].text.split('\n').includes(`Support: ${ORG_DEFAULT}`));
   assert.equal((customer[0].html!.match(/alt="QR code for ticket/g) ?? []).length, 2, 'a QR per ticket');
   process.env.TICKET_COPY_EMAIL = 'office@tickets.test';
   const { order: o2 } = await order(buyer, show, 1);

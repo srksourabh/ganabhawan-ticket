@@ -192,7 +192,7 @@ export function renderTicketEmailHtml(m: TicketEmailModel) {
           </td></tr>
         </table>
         ${m.receiptUrl ? `<p style="${FONT}margin:16px 0 0;color:${C.muted};font-size:13px;">Full receipt: <a href="${esc(m.receiptUrl)}" style="color:${C.maroon};">${esc(m.receiptUrl)}</a></p>` : ''}
-        ${m.supportEmail ? `<p style="${FONT}margin:8px 0 0;color:${C.muted};font-size:13px;">Questions? Write to <a href="mailto:${esc(m.supportEmail)}" style="color:${C.maroon};">${esc(m.supportEmail)}</a>.</p>` : ''}
+        ${m.supportEmail ? `<p style="${FONT}margin:8px 0 0;color:${C.ink};font-size:13px;">Support: <a href="mailto:${esc(m.supportEmail)}" style="color:${C.maroon};">${esc(m.supportEmail)}</a></p>` : ''}
       </td></tr>
       <tr><td align="center" style="background:${C.white};border:1px solid ${C.line};border-top:0;border-radius:0 0 12px 12px;padding:14px 16px;">
         <p style="${FONT}margin:0;color:${C.muted};font-size:12px;">${esc(ORGANISATION)} &middot; ${esc(FESTIVAL)}</p>
