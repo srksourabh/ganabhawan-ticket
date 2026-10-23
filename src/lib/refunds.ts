@@ -110,16 +110,21 @@ export async function executeRefund(refundId: string) {
  *    30 min, e.g. the REFUND job exhausted its retries while Razorpay was down).
  *    Safe: executeRefund adopts a provider refund already carrying our note.
  * 2. Polls refunds the provider still reports as pending.
+ * Returns how many refunds changed state; `work.claimed` receives how many it worked on (each
+ * costs provider calls: the Worker tick spends fewer job slots after refund upkeep, jobs.ts).
  */
-export async function pollProcessingRefunds(limit = 20) {
+export async function pollProcessingRefunds(limit = 20, work: { claimed: number } = { claimed: 0 }) {
   if (usingDevelopmentPayments()) return 0;
+  // Both claims pick through a MATERIALIZED CTE so LIMIT holds: as `IN (SELECT … LIMIT … SKIP
+  // LOCKED)` a rescanned subquery could claim far more than the limit (see the job claim in jobs.ts).
   const stalled = await query<{ id: string }>(
-    `UPDATE refunds SET last_checked_at=now() WHERE id IN (
+    `WITH picked AS MATERIALIZED (
        SELECT id FROM refunds WHERE state IN ('REQUESTED','PROCESSING') AND provider_refund_id IS NULL
          AND created_at < now() - interval '30 minutes'
          AND (last_checked_at IS NULL OR last_checked_at < now() - interval '15 minutes')
        ORDER BY last_checked_at NULLS FIRST, id LIMIT $1 FOR UPDATE SKIP LOCKED)
-     RETURNING id`,
+     UPDATE refunds SET last_checked_at=now() FROM picked WHERE refunds.id=picked.id
+     RETURNING refunds.id`,
     [limit],
   );
   for (const row of stalled) {
@@ -131,16 +136,18 @@ export async function pollProcessingRefunds(limit = 20) {
   }
   // Polled with the current keys, so only refunds of payments made in the current environment.
   const rows = await query<{ id: string; provider_refund_id: string }>(
-    `UPDATE refunds SET last_checked_at=now() WHERE id IN (
+    `WITH picked AS MATERIALIZED (
        SELECT r.id FROM refunds r JOIN payments p ON p.id=r.payment_id
          LEFT JOIN payment_attempts pa ON pa.provider_order_id=p.provider_order_id
        WHERE r.state='PROCESSING' AND r.provider_refund_id IS NOT NULL
          AND (r.last_checked_at IS NULL OR r.last_checked_at < now() - interval '10 minutes')
          AND (${attemptModeSql()} IS NULL OR ${attemptModeSql()} = $2)
        ORDER BY r.last_checked_at NULLS FIRST, r.id LIMIT $1 FOR UPDATE OF r SKIP LOCKED)
-     RETURNING id, provider_refund_id`,
+     UPDATE refunds SET last_checked_at=now() FROM picked WHERE refunds.id=picked.id
+     RETURNING refunds.id, refunds.provider_refund_id`,
     [limit, paymentMode() ?? 'none'],
   );
+  work.claimed = stalled.length + rows.length;
   let changed = 0;
   for (const row of rows) {
     try {

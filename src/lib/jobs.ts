@@ -54,9 +54,10 @@ export function workerTickLimits(): TickLimits {
     const value = Number(process.env[name]);
     return Number.isInteger(value) && value > 0 ? value : fallback;
   };
-  // A confirmation (receipt, verified contacts, delivery ledger, SMS queue, cart cleanup)
-  // costs ~11 subrequests and a settled reconciliation ~6; 2 jobs + 3 reconciliations keep
-  // the worst mix under the budget (3 jobs / 5 reconciliations exceeded it in the budget test).
+  // Measured (tests/integration-worker-budget.test.ts): a tick's fixed steps ~8 subrequests, a cart
+  // confirmation job up to ~16, a settled reconciliation ~4, a refund re-driven or polled ~2-3.
+  // 2 jobs alone stay at ~40; 2 jobs + 3 settled reconciliations would be ~52, so processJobs gives
+  // up one job slot in a tick that already did payment/refund upkeep (~42 at worst).
   return { jobs: read('WORKER_JOB_BATCH', 2), reconcile: read('WORKER_RECONCILE_BATCH', 3), refunds: read('WORKER_REFUND_BATCH', 2) };
 }
 
@@ -118,8 +119,9 @@ export async function processJobs(limits: number | TickLimits = 20): Promise<Tic
     console.error('[jobs] reconcile payments error', err);
   }
 
+  const refundWork = { claimed: 0 };
   try {
-    summary.refundsPolled = await pollProcessingRefunds(refundLimit);
+    summary.refundsPolled = await pollProcessingRefunds(refundLimit, refundWork);
   } catch (err) {
     summary.errors.push('refunds');
     console.error('[jobs] refund poll error', err);
@@ -132,20 +134,32 @@ export async function processJobs(limits: number | TickLimits = 20): Promise<Tic
     console.error('[jobs] cart cleanup error', err);
   }
 
+  // Worker tick budget (workerTickLimits): after payment/refund upkeep this tick, one job slot fewer
+  // (2 → 1 by default), so the costliest mix stays under the subrequest limit. At least one job
+  // still runs; unclaimed jobs stay PENDING for the next tick. Node callers (a number) are unchanged.
+  const upkeep = summary.reconcile.checked + refundWork.claimed;
+  const jobSlots = typeof limits !== 'number' && upkeep > 0 && limit > 1 ? limit - 1 : limit;
+
   // Claim pending/runnable jobs. A failed claim is reported like any other step.
   let jobs: { id: string; kind: string; key: string; payload: Record<string, unknown>; attempts: number; state: string }[] = [];
   try {
+    // MATERIALIZED: the LIMIT/SKIP LOCKED pick runs exactly once. As `WHERE id IN (SELECT … LIMIT
+    // … SKIP LOCKED)` the planner may rescan it once per row (nested loop without Materialize, e.g.
+    // after statistics of a near-empty table); each rescan skips the rows this UPDATE already
+    // changed and returns the next ones, so one tick claimed EVERY pending job (13 for LIMIT 2)
+    // and blew the Worker subrequest limit.
     jobs = await query(
-      `UPDATE jobs SET state='RUNNING', locked_at=now(), attempts=attempts+1
-       WHERE id IN (
+      `WITH picked AS MATERIALIZED (
          SELECT id FROM jobs
          WHERE state='PENDING' AND run_at<=now()
          ORDER BY run_at
          LIMIT $1
          FOR UPDATE SKIP LOCKED
        )
-       RETURNING *`,
-      [limit],
+       UPDATE jobs SET state='RUNNING', locked_at=now(), attempts=jobs.attempts+1
+       FROM picked WHERE jobs.id=picked.id
+       RETURNING jobs.*`,
+      [jobSlots],
     );
   } catch (err) {
     summary.errors.push('claim');
