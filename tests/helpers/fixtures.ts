@@ -68,23 +68,37 @@ export async function resetDatabase() {
     webhook_events, audit_events, notification_deliveries, users RESTART IDENTITY CASCADE`);
 }
 
+/**
+ * The test festival. Its season-ticket close is set explicitly a year ahead: the column's
+ * production default is a calendar date (19 Dec 2026, migration 0010), and a fixture must not
+ * depend on today's date. Tests of the season close set it themselves.
+ */
 export async function makeFestival() {
   return (await query<{ id: string }>(
-    `INSERT INTO festivals(name,name_bn,venue,address,status,contact_email,terms,capacity_approved,policies_approved)
-     VALUES('Test Festival','টেস্ট','Ganabhawan','Uttarpara','PUBLISHED','tickets@tickets.test','Terms',true,true) RETURNING id`,
+    `INSERT INTO festivals(name,name_bn,venue,address,status,contact_email,terms,capacity_approved,policies_approved,season_closes_at)
+     VALUES('Test Festival','টেস্ট','Ganabhawan','Uttarpara','PUBLISHED','tickets@tickets.test','Terms',true,true,now() + interval '365 days') RETURNING id`,
   ))[0];
 }
 
-export async function makeShow(opts: { startsInMinutes?: number; allocation?: number; price?: number; title?: string } = {}) {
+/**
+ * A published performance with daily tickets ON SALE now. Its online sales close is set
+ * explicitly (default: when the show ends) so the fixture never depends on the time of day:
+ * the production default (sales_closes_at NULL = 7pm IST on the show's calendar day) closed
+ * shows starting within the hour whenever the suite ran after 19:00 IST, and every hold failed
+ * with "Sales for this performance have closed". salesClosesAt: null keeps the production
+ * default (tests of that rule); tests of a closed sale set a past time themselves.
+ */
+export async function makeShow(opts: { startsInMinutes?: number; allocation?: number; price?: number; title?: string; salesClosesAt?: Date | null } = {}) {
   const festival = (await query<{ id: string }>('SELECT id FROM festivals LIMIT 1'))[0] ?? (await makeFestival());
   const startsAt = new Date(Date.now() + (opts.startsInMinutes ?? 7 * 24 * 60) * 60_000);
   const endsAt = new Date(startsAt.getTime() + 120 * 60_000);
+  const salesClosesAt = opts.salesClosesAt === undefined ? endsAt : opts.salesClosesAt;
   return transaction(async (c) => {
     const show = (await one<{ id: string }>(
       c,
-      `INSERT INTO shows(festival_id,title,title_bn,troupe,synopsis,synopsis_bn,starts_at,ends_at,runtime,genre,status)
-       VALUES($1,$2,$2,'Troupe','Synopsis','Synopsis',$3,$4,120,'Drama','PUBLISHED') RETURNING id`,
-      [festival.id, opts.title ?? 'Play ' + randomUUID().slice(0, 6), startsAt.toISOString(), endsAt.toISOString()],
+      `INSERT INTO shows(festival_id,title,title_bn,troupe,synopsis,synopsis_bn,starts_at,ends_at,runtime,genre,status,sales_closes_at)
+       VALUES($1,$2,$2,'Troupe','Synopsis','Synopsis',$3,$4,120,'Drama','PUBLISHED',$5) RETURNING id`,
+      [festival.id, opts.title ?? 'Play ' + randomUUID().slice(0, 6), startsAt.toISOString(), endsAt.toISOString(), salesClosesAt?.toISOString() ?? null],
     ))!;
     const capacity = (await one<{ id: string }>(c, "INSERT INTO capacities(show_id,zone,ceiling) VALUES($1,'Premier',$2) RETURNING id", [show.id, 500]))!;
     const pool = (await one<{ id: string }>(
