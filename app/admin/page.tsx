@@ -6,15 +6,17 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AUDITORIUM_PHOTO } from '@/lib/brand';
 import { defaultDailyClose } from '@/lib/availability';
 import InventoryPanel from '@/components/admin/InventoryPanel';
+import AvailabilityPanel from '@/components/admin/AvailabilityPanel';
 import SeasonsPanel from '@/components/admin/SeasonsPanel';
 import StaffPanel from '@/components/admin/StaffPanel';
 import MetricsPanel from '@/components/admin/MetricsPanel';
 
-type Tab = 'festival' | 'shows' | 'seasons' | 'prices' | 'zones' | 'inventory' | 'staff' | 'metrics';
+type Tab = 'festival' | 'shows' | 'availability' | 'seasons' | 'prices' | 'zones' | 'inventory' | 'staff' | 'metrics';
 /** What each role can open. The UI only mirrors this: every admin API checks the role itself. */
 const TABS: { id: Tab; label: string; roles: string[] }[] = [
   { id: 'festival', label: 'Festival & theatre', roles: ['owner', 'inventory'] },
   { id: 'shows', label: 'Dramas', roles: ['owner', 'inventory'] },
+  { id: 'availability', label: 'Availability', roles: ['owner', 'inventory'] },
   { id: 'seasons', label: 'Seasons', roles: ['owner', 'inventory'] },
   { id: 'prices', label: 'Ticket prices', roles: ['owner', 'inventory'] },
   { id: 'inventory', label: 'Inventory', roles: ['owner', 'inventory'] },
@@ -676,6 +678,7 @@ export default function AdminPage() {
       )}
 
       {tab === 'seasons' && <SeasonsPanel onChanged={() => { void load(); }} />}
+      {tab === 'availability' && <AvailabilityPanel onChanged={() => { void load(); }} />}
       {tab === 'inventory' && <InventoryPanel onChanged={() => { void load(); }} />}
       {tab === 'staff' && profile?.role === 'owner' && <StaffPanel />}
       {tab === 'metrics' && <MetricsPanel shows={shows} />}

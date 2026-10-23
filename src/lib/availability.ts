@@ -119,3 +119,78 @@ export function sellState(coverage: CoveredPerformance[], cap: number | null, ca
   const available = remainingTickets(coverage, cap, capUsed);
   return { state: (available > 0 ? 'SELLABLE' : 'SOLD_OUT') as SellState, available };
 }
+
+/**
+ * Admin view of one performance × zone (daily tickets): the state a customer gets and why.
+ * Distinct states, never "sold out" for a closed sale:
+ *  - CANCELLED: the performance was cancelled (never sold again);
+ *  - UNAVAILABLE: no daily ticket or no daily seats exist for this zone;
+ *  - SALES_CLOSED: seats exist but cannot be bought now (draft, closed by an admin, public sales
+ *    off, booking not open yet, close time passed);
+ *  - SOLD_OUT: open, and every daily seat is sold or held;
+ *  - AVAILABLE: can be bought.
+ * Display only: a purchase re-checks every rule under the commerce lock (placeHold).
+ */
+export type ZoneAvailability = 'AVAILABLE' | 'SOLD_OUT' | 'SALES_CLOSED' | 'UNAVAILABLE' | 'CANCELLED';
+
+export interface ZoneAvailabilityInput {
+  showStatus: string;
+  festivalStatus: string;
+  startsAt: string | Date;
+  salesClosesAt?: string | Date | null;
+  bookingOpensAt?: string | Date | null;
+  productId: string | null;
+  enabled: boolean | null;
+  allocation: number | null;
+  held: number;
+  committed: number;
+  cap?: number | null;
+  capUsed?: number;
+  /** Why customer sales are off everywhere (settings or ALLOW_PUBLIC_SALES), or null when they are on. */
+  salesBlocked: string | null;
+}
+
+const istTime = (value: string | Date) =>
+  new Date(value).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' });
+
+export function zoneAvailability(z: ZoneAvailabilityInput, nowMs = Date.now()): { state: ZoneAvailability; reason: string; remaining: number } {
+  const allocation = Number(z.allocation ?? 0), used = Number(z.held) + Number(z.committed);
+  const coverage: CoveredPerformance[] = [{ status: z.showStatus, starts_at: z.startsAt, allocation, held: z.held, committed: z.committed, sales_closes_at: z.salesClosesAt }];
+  const remaining = remainingTickets(coverage, z.cap ?? null, Number(z.capUsed ?? 0));
+  const closed = (reason: string) => ({ state: 'SALES_CLOSED' as const, reason, remaining });
+  if (z.showStatus === 'CANCELLED') return { state: 'CANCELLED', reason: 'This performance was cancelled. It is never sold again.', remaining: 0 };
+  if (!z.productId || z.allocation === null) return { state: 'UNAVAILABLE', reason: 'No daily ticket exists for this zone.', remaining: 0 };
+  if (allocation <= 0 && used === 0) return { state: 'UNAVAILABLE', reason: 'No seats are allocated to daily tickets in this zone (Inventory).', remaining: 0 };
+  if (z.showStatus !== 'PUBLISHED') return closed('The performance is a draft (not published).');
+  if (z.festivalStatus !== 'PUBLISHED') return closed('The festival is not published.');
+  if (!z.enabled) return closed('Sales closed by an admin for this zone.');
+  if (z.salesBlocked) return closed(z.salesBlocked);
+  if (z.bookingOpensAt && new Date(z.bookingOpensAt).getTime() > nowMs) return closed(`Booking opens ${istTime(z.bookingOpensAt)}.`);
+  if (!salesOpen(coverage, nowMs, { kind: 'DAILY' })) {
+    return closed(`Sales closed at ${istTime(z.salesClosesAt ?? defaultDailyClose(z.startsAt))} (close time passed).`);
+  }
+  if (remaining <= 0) {
+    const held = Number(z.held);
+    return { state: 'SOLD_OUT', reason: held > 0 ? `All daily seats are sold or held (${held} held in checkouts; they return if not paid).` : 'All daily seats are sold.', remaining: 0 };
+  }
+  return { state: 'AVAILABLE', reason: `${remaining} of ${allocation} daily seats can be bought.`, remaining };
+}
+
+export type PerformanceAvailability = 'ON_SALE' | 'SOLD_OUT' | 'SALES_CLOSED' | 'SCHEDULED' | 'DRAFT' | 'ENDED' | 'CANCELLED';
+
+/** One performance's overall state from its zones (admin view). */
+export function performanceAvailability(
+  show: { status: string; ends_at: string | Date },
+  zones: ZoneAvailability[],
+  bookingOpensAt?: string | Date | null,
+  nowMs = Date.now(),
+): PerformanceAvailability {
+  if (show.status === 'CANCELLED') return 'CANCELLED';
+  if (show.status !== 'PUBLISHED') return 'DRAFT';
+  if (new Date(show.ends_at).getTime() <= nowMs) return 'ENDED';
+  if (zones.includes('AVAILABLE')) return 'ON_SALE';
+  const offered = zones.filter((s) => s !== 'UNAVAILABLE');
+  if (offered.length > 0 && offered.every((s) => s === 'SOLD_OUT')) return 'SOLD_OUT';
+  if (bookingOpensAt && new Date(bookingOpensAt).getTime() > nowMs) return 'SCHEDULED';
+  return 'SALES_CLOSED';
+}
