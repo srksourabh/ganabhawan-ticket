@@ -27,6 +27,8 @@ type PaymentRow = {
   name: string;
   contact: string;
   reason?: string;
+  /** Razorpay environment of the payment (null: not recorded). */
+  mode?: 'test' | 'live' | null;
 };
 
 type CaseRow = {
@@ -43,6 +45,8 @@ type Ledger = {
   refunded: number;
   balance: number;
   pending: number;
+  /** Captured in Razorpay TEST mode: not income. */
+  testIncome?: number;
   attempts: Attempt[];
   payments: PaymentRow[];
   refunds: PaymentRow[];
@@ -135,10 +139,13 @@ export default function AccountsPage() {
       </div>
 
       <div className="ledger-cards">
-        <article className="card"><p className="eyebrow">Income</p><strong>{money(ledger.income)}</strong><p className="muted">Captured payments</p></article>
+        <article className="card"><p className="eyebrow">Income</p><strong>{money(ledger.income)}</strong><p className="muted">Captured payments{ledger.testIncome ? ' (excluding test-mode payments)' : ''}</p></article>
         <article className="card"><p className="eyebrow">Refunds</p><strong>{money(ledger.refunded)}</strong><p className="muted">Succeeded refunds</p></article>
         <article className="card"><p className="eyebrow">Balance</p><strong>{money(ledger.balance)}</strong><p className="muted">Income minus refunds</p></article>
         <article className="card"><p className="eyebrow">On hold</p><strong>{money(ledger.pending)}</strong><p className="muted">Reserved, not yet paid</p></article>
+        {Boolean(ledger.testIncome) && (
+          <article className="card"><p className="eyebrow">Test payments</p><strong>{money(ledger.testIncome ?? 0)}</strong><p className="muted">Razorpay test mode: no real money</p></article>
+        )}
       </div>
 
       {ops && (
@@ -264,7 +271,7 @@ function MoneyTable({ rows, empty, showReason = false }: { rows: PaymentRow[]; e
               <td>{row.contact}</td>
               <td>{row.reference}</td>
               <td>{money(Number(row.amount))}</td>
-              <td>{row.state}</td>
+              <td>{row.state}{row.mode === 'test' ? ' · TEST' : ''}</td>
               {showReason && <td>{row.reason}</td>}
             </tr>
           ))}

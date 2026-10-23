@@ -1,6 +1,7 @@
 import { query, type Client } from './db';
 import { AppError, requireValue } from './errors';
 import { normalizeContact } from './security';
+import { attemptModeSql } from './payment-mode';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -85,11 +86,18 @@ export async function markAttemptsConfirmed(c: Client, bookingId: string) {
 }
 
 export async function accountsLedger() {
-  const [incomeRow] = await query<{ n: string | number }>(
-    `SELECT COALESCE(SUM(amount),0)::bigint AS n FROM payments WHERE state='CAPTURED'`,
+  // Money taken in Razorpay TEST mode is not income: it is reported apart (testIncome) and kept
+  // out of income, refunds and balance. Payments with no recorded mode count as before.
+  const isTest = `${attemptModeSql()} = 'test'`;
+  const [incomeRow] = await query<{ n: string | number; test: string | number }>(
+    `SELECT COALESCE(SUM(pay.amount) FILTER (WHERE NOT COALESCE(${isTest}, false)),0)::bigint AS n,
+            COALESCE(SUM(pay.amount) FILTER (WHERE ${isTest}),0)::bigint AS test
+     FROM payments pay LEFT JOIN payment_attempts pa ON pa.provider_order_id=pay.provider_order_id WHERE pay.state='CAPTURED'`,
   );
   const [refundRow] = await query<{ n: string | number }>(
-    `SELECT COALESCE(SUM(amount),0)::bigint AS n FROM refunds WHERE state='SUCCEEDED'`,
+    `SELECT COALESCE(SUM(r.amount),0)::bigint AS n FROM refunds r JOIN payments pay ON pay.id=r.payment_id
+     LEFT JOIN payment_attempts pa ON pa.provider_order_id=pay.provider_order_id
+     WHERE r.state='SUCCEEDED' AND NOT COALESCE(${isTest}, false)`,
   );
   const [pendingRow] = await query<{ n: string | number }>(
     `SELECT COALESCE(SUM(total),0)::bigint AS n FROM bookings WHERE status IN ('HELD','PAYMENT_PENDING')`,
@@ -107,8 +115,9 @@ export async function accountsLedger() {
   );
   const payments = await query(
     `SELECT pay.amount, pay.state, pay.created_at, COALESCE(b.reference, co.reference) AS reference,
-            COALESCE(b.holder_name, u.name) AS name, u.contact
+            COALESCE(b.holder_name, u.name) AS name, u.contact, ${attemptModeSql()} AS mode
      FROM payments pay
+     LEFT JOIN payment_attempts pa ON pa.provider_order_id = pay.provider_order_id
      LEFT JOIN bookings b ON b.id = pay.booking_id
      LEFT JOIN checkouts co ON co.id = pay.checkout_id
      JOIN users u ON u.id = COALESCE(b.user_id, co.user_id)
@@ -130,5 +139,5 @@ export async function accountsLedger() {
      ORDER BY created_at DESC
      LIMIT 50`,
   );
-  return { ...money, attempts, payments, refunds, cases };
+  return { ...money, testIncome: Number(incomeRow?.test ?? 0), attempts, payments, refunds, cases };
 }

@@ -4,11 +4,12 @@ import { hash } from './security';
 import { audit } from './audit';
 import type { User } from './types';
 import type { Client } from './db';
+import { bookingPaymentMode, isTestPaymentInLiveMode } from './payment-mode';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Reason codes stored with every scan for reporting (the customer-facing result is unchanged). */
-export type ScanCode = 'ADMITTED' | 'DUPLICATE' | 'NOT_SCOPED' | 'DEVICE_REVOKED' | 'SHOW_NOT_OPEN' | 'OUTSIDE_WINDOW' | 'UNKNOWN_CREDENTIAL' | 'TICKET_INACTIVE' | 'WRONG_SHOW';
+export type ScanCode = 'ADMITTED' | 'DUPLICATE' | 'NOT_SCOPED' | 'DEVICE_REVOKED' | 'SHOW_NOT_OPEN' | 'OUTSIDE_WINDOW' | 'UNKNOWN_CREDENTIAL' | 'TICKET_INACTIVE' | 'WRONG_SHOW' | 'TEST_PAYMENT';
 
 /** One row per scan request: who, where, which ticket and show, and the outcome. */
 async function logScan(c: Client, staff: User, input: AdmitInput, digest: string, result: AdmitResult, code: ScanCode, ticketId: string | null = null) {
@@ -125,7 +126,7 @@ export async function admit(staff: User, input: AdmitInput): Promise<AdmitResult
     const { ticket_id } = credential.rows[0];
 
     // Lock the ticket
-    const ticket = await c.query<{ id: string; status: string }>(
+    const ticket = await c.query<{ id: string; status: string; booking_id: string }>(
       'SELECT * FROM tickets WHERE id=$1 FOR UPDATE',
       [ticket_id],
     );
@@ -151,6 +152,14 @@ export async function admit(staff: User, input: AdmitInput): Promise<AdmitResult
         reason: 'No active entitlement for this show.',
       };
       await logScan(c, staff, input, tokenDigest, result, 'WRONG_SHOW', ticket_id);
+      return result;
+    }
+
+    // A ticket paid with Razorpay TEST credentials (no real money) never admits anyone once the
+    // server runs LIVE. While testing (server in test mode) it scans normally.
+    if (isTestPaymentInLiveMode(await bookingPaymentMode(ticket.rows[0].booking_id, c))) {
+      const result: AdmitResult = { result: 'DENIED', reason: 'Test ticket (paid in Razorpay test mode): not valid for entry.' };
+      await logScan(c, staff, input, tokenDigest, result, 'TEST_PAYMENT', ticket_id);
       return result;
     }
 

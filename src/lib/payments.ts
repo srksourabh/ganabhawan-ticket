@@ -2,10 +2,11 @@ import { query, transaction, one } from './db';
 import { ensureProviderOrder } from './provider-order';
 import { createCheckoutPaymentOrder, fulfillCheckout, confirmDevelopmentCheckout, findOwnedCheckout } from './checkout';
 import { AppError, requireValue } from './errors';
-import { assertLiveConfiguration, developmentAdaptersAllowed, usingDevelopmentPayments } from './env';
+import { assertLiveConfiguration, developmentAdaptersAllowed, paymentMode, usingDevelopmentPayments } from './env';
 import { applyRefundWebhook } from './refunds';
 import { assertHeldBookingsSellable, assertPublicSalesOpen, expireIn, fulfill, type CapturedPayment } from './commerce';
 import { audit } from './audit';
+import { attemptModeSql } from './payment-mode';
 import type { User } from './types';
 import { assertCanPurchase } from './account-contacts';
 import {
@@ -82,6 +83,8 @@ export function nextReconcileDelayMinutes(minutesSinceExpiry: number, live: bool
   return Math.min(Math.max(2, Math.ceil(Math.max(0, minutesSinceExpiry) / 4)), RECONCILE_MAX_BACKOFF_MINUTES);
 }
 
+// Orders are fetched with the current keys, so only orders created in the current Razorpay
+// environment (or not recorded) are claimed; the other environment's are left untouched.
 const CLAIM_RECONCILE_SQL = `UPDATE payment_attempts a
    SET next_reconcile_at = now() + interval '5 minutes', reconcile_checks = a.reconcile_checks + 1, last_reconciled_at = now()
    WHERE a.id IN (
@@ -89,6 +92,7 @@ const CLAIM_RECONCILE_SQL = `UPDATE payment_attempts a
      WHERE a2.state = 'READY' AND a2.provider_order_id IS NOT NULL
        AND a2.provider_order_id NOT LIKE 'dev-%' -- development-adapter orders never existed at Razorpay
        AND a2.next_reconcile_at IS NOT NULL AND a2.next_reconcile_at <= now()
+       AND (${attemptModeSql('a2')} IS NULL OR ${attemptModeSql('a2')} = $2)
        -- single-booking order, or a cart checkout order (bookings share checkout_id)
        AND EXISTS (SELECT 1 FROM bookings b
          WHERE (b.id = a2.booking_id OR (a2.checkout_id IS NOT NULL AND b.checkout_id = a2.checkout_id))
@@ -333,7 +337,7 @@ export async function reconcileOpenRazorpayPayments(limit = 20): Promise<{ check
     created_at: string;
     live_until: string | null;
     booking_expires_at: string;
-  }>(CLAIM_RECONCILE_SQL, [limit]);
+  }>(CLAIM_RECONCILE_SQL, [limit, paymentMode() ?? 'none']);
 
   let settled = 0;
   let failed = 0;

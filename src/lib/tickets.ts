@@ -8,7 +8,8 @@ import { renderSms, sendSms } from './sms';
 import { DEFAULT_VENUE, ORGANISATION } from './brand';
 import { CONFIRMED_LEAD, LINK_SIGN_IN_NOTE, NO_REFUND, PICKUP_INSTRUCTION, appBaseUrl, smsShowLabel, ticketsLink, type ConfirmationMessage } from './confirmation';
 import { verifiedContacts } from './account-contacts';
-import { issuedTickets, renderTicketEmailHtml, ticketTextLines } from './ticket-email';
+import { TEST_BOOKING_NOTE, issuedTickets, renderTicketEmailHtml, ticketTextLines } from './ticket-email';
+import { bookingPaymentMode } from './payment-mode';
 import type { User } from './types';
 
 export async function ticketPdf(user: User, ticketId: string): Promise<Uint8Array> {
@@ -227,6 +228,8 @@ export async function bookingConfirmation(bookingId: string): Promise<Confirmati
   ))[0];
   if (!booking) return null;
   const tickets = await issuedTickets([bookingId]);
+  // Paid in Razorpay TEST mode: marked as a test booking (subject, text and HTML).
+  const testMode = (await bookingPaymentMode(bookingId)) === 'test';
   const name = booking.holder_name || booking.user_name;
   const s = booking.snapshot ?? {};
   const rupees = (paise: number) => `₹${(Number(paise) / 100).toLocaleString('en-IN')}`;
@@ -234,6 +237,7 @@ export async function bookingConfirmation(bookingId: string): Promise<Confirmati
   const venue = festival?.venue || DEFAULT_VENUE;
   const emailTo = booking.holder_email?.includes('@') ? booking.holder_email : null;
   const emailText = [
+    ...(testMode ? [TEST_BOOKING_NOTE, ''] : []),
     name ? `Dear ${name},` : '',
     '',
     CONFIRMED_LEAD,
@@ -264,10 +268,11 @@ export async function bookingConfirmation(bookingId: string): Promise<Confirmati
     confirmed: booking.status === 'CONFIRMED' && tickets.length > 0,
     email,
     mobile,
-    subject: `Your ${ORGANISATION} tickets - ${booking.reference}`,
+    subject: `${testMode ? '[TEST] ' : ''}Your ${ORGANISATION} tickets - ${booking.reference}`,
     emailText,
     emailHtml: renderTicketEmailHtml({
       base,
+      testMode,
       customerName: name,
       orderReference: booking.reference,
       venue,

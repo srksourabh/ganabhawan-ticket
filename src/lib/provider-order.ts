@@ -1,6 +1,8 @@
 import { one, query, withSerialLock } from './db';
 import { AppError, requireValue } from './errors';
 import { razorpayCreateOrder, razorpayFindOrderByReceipt } from './razorpay';
+import { paymentMode } from './env';
+import { paymentModeRecorded } from './payment-mode';
 
 type AttemptRow = { id: string; state: string; provider_order_id: string | null };
 
@@ -16,6 +18,8 @@ type AttemptRow = { id: string; state: string; provider_order_id: string | null 
  *    overwrites a different stored order (a loser is recorded as an orphan case
  *    and the stored winner is returned).
  * On failure the attempt becomes UNCERTAIN (timeout) or FAILED.
+ * The Razorpay environment (test/live) the order was created in is recorded with it once
+ * (payment_attempts.provider_mode, when migration 0011 is applied) and never rewritten.
  */
 export async function ensureProviderOrder(opts: {
   attemptId: string;
@@ -38,11 +42,13 @@ export async function ensureProviderOrder(opts: {
         adoptable ??
         (await razorpayCreateOrder({ amount: opts.amount, currency: opts.currency, receipt: opts.receipt, notes: opts.notes }));
 
+      const mode = paymentMode();
+      const recordMode = mode !== null && (await paymentModeRecorded());
       const updated = await client.query<{ provider_order_id: string }>(
-        `UPDATE payment_attempts SET provider_order_id=$1, state='READY'
+        `UPDATE payment_attempts SET provider_order_id=$1, state='READY'${recordMode ? ', provider_mode=COALESCE(provider_mode, $3)' : ''}
          WHERE id=$2 AND (provider_order_id IS NULL OR provider_order_id=$1)
          RETURNING provider_order_id`,
-        [rzOrder.id, opts.attemptId],
+        recordMode ? [rzOrder.id, opts.attemptId, mode] : [rzOrder.id, opts.attemptId],
       );
       let orderId = rzOrder.id;
       if (!updated.rows[0]) {
@@ -60,7 +66,7 @@ export async function ensureProviderOrder(opts: {
           opts.actorId,
           'payment.order.razorpay',
           opts.auditEntity,
-          JSON.stringify({ orderId }),
+          JSON.stringify({ orderId, mode }),
         ]);
       } catch (error) {
         console.error('[payments] audit order', error);

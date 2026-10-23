@@ -76,8 +76,13 @@ export type TicketEmailLine = {
   confirmed: boolean;
 };
 
+/** First line of a confirmation paid in Razorpay TEST mode (no real money). */
+export const TEST_BOOKING_NOTE = 'TEST BOOKING: paid in Razorpay test mode, no real money was taken. Test tickets are not valid for entry once live sales start.';
+
 export type TicketEmailModel = {
   base: string;
+  /** Paid in Razorpay test mode: the email says so clearly. */
+  testMode?: boolean;
   customerName: string;
   orderReference: string;
   venue: string;
@@ -161,6 +166,7 @@ export function renderTicketEmailHtml(m: TicketEmailModel) {
         <img src="${esc(logo)}" width="240" height="100" alt="${esc(ORGANISATION)} logo" style="display:block;width:240px;max-width:100%;height:auto;border:0;">
       </td></tr>
       <tr><td style="background:${C.white};padding:24px 22px;border-left:1px solid ${C.line};border-right:1px solid ${C.line};">
+        ${m.testMode ? `<p style="${FONT}margin:0 0 14px;padding:10px 12px;border:2px dashed ${C.maroon};border-radius:8px;color:${C.maroon};font-size:13px;font-weight:700;">${esc(TEST_BOOKING_NOTE)}</p>` : ''}
         <p style="${FONT}margin:0 0 6px;color:${C.gold};font-size:12px;letter-spacing:.14em;text-transform:uppercase;">${esc(FESTIVAL)} &middot; ${esc(FESTIVAL_BN)}</p>
         <h1 style="${SERIF}margin:0 0 14px;color:${C.ink};font-size:28px;line-height:1.15;font-weight:normal;">Your booking is confirmed</h1>
         ${m.customerName ? `<p style="${FONT}margin:0 0 12px;color:${C.ink};font-size:15px;">Dear ${esc(m.customerName)},</p>` : ''}
