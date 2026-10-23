@@ -2,6 +2,7 @@ import { query } from './db';
 import { STALE_JOB_MINUTES } from './jobs';
 import { clerkDevelopmentInstanceAllowed, coreConfigurationProblems, customerOtpEnabled, mobileFeaturesEnabled, paymentConfigurationProblems, paymentMode, publicSalesOpen, salesConfigurationProblems, seasonTicketSalesEnabled, type PaymentMode } from './env';
 import { paymentModeRecorded } from './payment-mode';
+import { PROVIDER_FAILURE_ACTION } from './razorpay';
 
 /**
  * Operational signals for the owner/finance dashboard and an external uptime
@@ -13,6 +14,14 @@ export interface OpsStatus {
   generatedAt: string;
   jobs: { failed7d: number; stuckRunning: number; overduePending: number; lastDoneAt: string | null };
   payments: { openCases: number; unmatchedCaptures: number; livePending: number };
+  /**
+   * Razorpay API refusals (razorpay.ts recordProviderFailure): how many in 24 h and the latest,
+   * with Razorpay's own status/code/description (e.g. 401 "Authentication failed"). No secrets.
+   */
+  provider: {
+    failures24h: number;
+    last: { at: string; status: number; endpoint: string; code: string | null; description: string | null } | null;
+  };
   refunds: { failed: number; processingOver7d: number; requestedOver1h: number };
   gate: { denied24h: number; unknown24h: number };
   auth: { staffPasswordFailures24h: number };
@@ -57,14 +66,28 @@ export async function opsStatus(): Promise<OpsStatus> {
       (SELECT count(*) FROM refunds WHERE state IN ('REQUESTED','PROCESSING') AND provider_refund_id IS NULL AND created_at < now() - interval '1 hour')::int AS refunds_stalled,
       (SELECT count(*) FROM scan_requests WHERE created_at > now() - interval '24 hours' AND result->>'result'='DENIED')::int AS denied,
       (SELECT count(*) FROM scan_requests WHERE created_at > now() - interval '24 hours' AND result->>'result'='UNKNOWN')::int AS unknown,
-      (SELECT count(*) FROM audit_events WHERE action='auth.password.failed' AND created_at > now() - interval '24 hours')::int AS pw_fail`,
-    [STALE_JOB_MINUTES],
+      (SELECT count(*) FROM audit_events WHERE action='auth.password.failed' AND created_at > now() - interval '24 hours')::int AS pw_fail,
+      (SELECT count(*) FROM audit_events WHERE action=$2 AND created_at > now() - interval '24 hours')::int AS provider_fail,
+      (SELECT jsonb_build_object('at', created_at, 'detail', detail) FROM audit_events WHERE action=$2 AND created_at > now() - interval '24 hours'
+        ORDER BY created_at DESC LIMIT 1) AS provider_last`,
+    [STALE_JOB_MINUTES, PROVIDER_FAILURE_ACTION],
   );
+  const providerLast = row?.provider_last as unknown as { at: string; detail: { status?: number; endpoint?: string; code?: string | null; description?: string | null } } | null;
   const n = (key: string) => Number(row?.[key] ?? 0);
   const status: OpsStatus = {
     generatedAt: new Date().toISOString(),
     jobs: { failed7d: n('failed7d'), stuckRunning: n('stuck'), overduePending: n('overdue'), lastDoneAt: (row?.last_done as string | null) ?? null },
     payments: { openCases: n('open_cases'), unmatchedCaptures: n('unmatched'), livePending: n('live_pending') },
+    provider: {
+      failures24h: n('provider_fail'),
+      last: providerLast ? {
+        at: new Date(providerLast.at).toISOString(),
+        status: Number(providerLast.detail?.status ?? 0),
+        endpoint: String(providerLast.detail?.endpoint ?? ''),
+        code: providerLast.detail?.code ?? null,
+        description: providerLast.detail?.description ?? null,
+      } : null,
+    },
     refunds: { failed: n('refunds_failed'), processingOver7d: n('refunds_slow'), requestedOver1h: n('refunds_stalled') },
     gate: { denied24h: n('denied'), unknown24h: n('unknown') },
     auth: { staffPasswordFailures24h: n('pw_fail') },
@@ -76,6 +99,12 @@ export async function opsStatus(): Promise<OpsStatus> {
   if (status.refunds.failed) status.critical.push(`${status.refunds.failed} refund(s) failed at the provider`);
   if (status.refunds.requestedOver1h) status.critical.push(`${status.refunds.requestedOver1h} refund(s) not sent to the provider within 1 hour`);
   if (status.jobs.stuckRunning || status.jobs.overduePending) status.critical.push('background worker is behind or stuck');
+  const last = status.provider.last;
+  if (last?.status === 401) {
+    status.critical.push(`Razorpay refused the API keys (401 ${last.description ?? 'Authentication failed'}, ${last.at}): RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET must be one matching pair from the same Razorpay account and mode`);
+  } else if (last) {
+    status.warnings.push(`Razorpay refused ${status.provider.failures24h} request(s) in 24 h; latest ${last.status} on ${last.endpoint}: ${last.code ?? ''} ${last.description ?? ''}`.trim());
+  }
   const config = status.configuration;
   if (config.coreProblems.length || config.salesProblems.length) {
     status.warnings.push(`customer sales refused; missing or invalid: ${[...config.coreProblems, ...config.salesProblems].join('; ')}`);

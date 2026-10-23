@@ -134,6 +134,29 @@ test('every Worker tick stays within the subrequest budget, and a mixed backlog 
   console.log(`[budget] worst tick: ${max} subrequests (limit 50, budget ${BUDGET}), limits ${JSON.stringify(limits)}`);
 });
 
+test('a tick while Razorpay refuses every call (each refusal is also recorded for Ops) stays within the budget', { skip }, async () => {
+  for (let i = 0; i < 8; i += 1) await paidButUnsettledCheckout(await makeUser());
+  const cancelled = await makeShow({ startsInMinutes: 60 });
+  for (let i = 0; i < 4; i += 1) await paidBooking(await makeUser(), cancelled.productId);
+  await catalogue.updateShow(await makeUser('owner'), cancelled.showId, { status: 'CANCELLED', confirmCancellation: true });
+  fake.down = true;
+  // Refund jobs, stalled refunds re-driven, reconciliations: every provider call fails.
+  await query("UPDATE refunds SET created_at = now() - interval '2 hours', last_checked_at = NULL");
+  const limits = jobs.workerTickLimits();
+  let max = 0;
+  for (let tick = 0; tick < 5; tick += 1) {
+    await query("UPDATE payment_attempts SET next_reconcile_at = now() - interval '1 minute' WHERE state='READY'");
+    await query("UPDATE refunds SET last_checked_at = now() - interval '1 hour'");
+    await query("UPDATE jobs SET run_at = now() WHERE state='PENDING'");
+    const { total } = await countSubrequests(() => jobs.processJobs(limits));
+    max = Math.max(max, total);
+    assert.ok(total <= BUDGET, `tick ${tick} made ${total} subrequests while Razorpay was down (budget ${BUDGET})`);
+  }
+  assert.ok(Number((await query<{ n: number }>("SELECT count(*)::int n FROM audit_events WHERE action='payment.provider.error'"))[0].n) > 0, 'refusals recorded');
+  fake.down = false;
+  console.log(`[budget] worst tick with Razorpay down: ${max} subrequests (limit 50, budget ${BUDGET})`);
+});
+
 test('the scheduled (cron) tick runs the real /api/cron/worker route with the secret; failures are surfaced', { skip }, async () => {
   const { runScheduledTick } = await import('../worker/scheduled');
   const { POST } = await import('../app/api/cron/worker/route');

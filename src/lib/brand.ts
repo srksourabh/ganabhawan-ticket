@@ -9,7 +9,7 @@ export const FESTIVAL_DATES_BN = '১৯–৩০ ডিসেম্বর ২�
 /** Default venue label — may be changed by committee without renaming the organisation. */
 export const DEFAULT_VENUE = 'Ganabhawan';
 /** The organisation receives a copy of every ticket confirmation (notify.ts). TICKET_COPY_EMAIL overrides it; "off" disables. */
-export const DEFAULT_TICKET_COPY_EMAIL = 'samatat.sanskritiuttarpara2000@gmail.com';
+export const DEFAULT_TICKET_COPY_EMAIL = 'samatatsanskritiuttarpara2000@gmail.com';
 export const DEFAULT_VENUE_BN = 'গণভবন';
 export const DEFAULT_VENUE_PLACE = 'Uttarpara';
 export const DEFAULT_VENUE_PLACE_BN = 'উত্তরপাড়া';
