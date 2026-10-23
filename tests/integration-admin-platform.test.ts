@@ -328,7 +328,7 @@ test('notify matrix: email + mobile → exactly one consolidated email AND one S
   assert.equal(smsTo('+919800000002'), 1);
   const mail = fake.emails[0];
   assert.equal(mail.idempotencyKey, `checkout:${co.id}`, 'provider idempotency key = job key');
-  for (const expected of ['This email is your ticket.', 'Collect your tickets at the counter before the show.', 'Daily ticket · Premier', 'Quantity: 2', 'Your tickets:', `/receipts/${co.id}`, co.reference]) {
+  for (const expected of ['This email is your ticket.', 'Entry is available through either QR code scanning of your digital ticket or collection of a physical ticket from the hall.', 'Daily ticket · Premier', 'Quantity: 2', 'Your tickets:', `/receipts/${co.id}`, co.reference]) {
     assert.ok(mail.text.includes(expected), `email mentions ${expected}`);
   }
   const keys = (await query<{ key: string; channel: string }>('SELECT key, channel FROM notification_deliveries ORDER BY channel')).map((r) => [r.channel, r.key]);

@@ -19,7 +19,7 @@ import type { User } from '../src/lib/types';
 
 const skip = !DB_AVAILABLE;
 const fake = new FakeRazorpay();
-const CARDS = 'Collect your tickets at the counter before the show.';
+const CARDS = 'Entry is available through either QR code scanning of your digital ticket or collection of a physical ticket from the hall.';
 const BASE = 'https://staging.tickets.test';
 let auth: typeof import('../src/lib/auth');
 let checkout: typeof import('../src/lib/checkout');

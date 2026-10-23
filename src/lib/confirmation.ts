@@ -1,10 +1,16 @@
 /** What a post-payment confirmation says, independent of the channel that carries it. */
 export const NO_REFUND = 'A ticket, once booked, cannot be cancelled or refunded.';
-export const PICKUP_INSTRUCTION = 'Collect your tickets at the counter before the show. Bring this email and a photo ID. The name on the ID must match the name on this email. Only this email is accepted.';
+/** Entry policy: EITHER the digital ticket's QR code is scanned OR a physical ticket is collected from the hall. */
+export const ENTRY_OPTIONS = "Entry is available through either QR code scanning of your digital ticket or collection of a physical ticket from the hall. Please follow the venue's entry instructions.";
+/** Either method, never both: one ticket admits one person once. */
+export const ONE_ENTRY = 'Each ticket admits one person once: a ticket used for entry cannot be used again, by QR code or as a physical ticket.';
+export const PICKUP_INSTRUCTION = `${ENTRY_OPTIONS} To collect a physical ticket, bring this email and a photo ID; the name on the ID must match the name on this email. ${ONE_ENTRY}`;
 /** Opening of every confirmation email (the SMS template carries the same instruction: sms.ts). */
 export const CONFIRMED_LEAD = `Your booking is confirmed. This email is your ticket. ${PICKUP_INSTRUCTION} ${NO_REFUND}`;
-/** The email itself is what the counter accepts, together with a photo ID. */
-export const LINK_SIGN_IN_NOTE = 'Show this email at the counter with your photo ID. You do not need an account.';
+/** What to show: the QR code at the gate, or this email with a photo ID at the counter. */
+export const LINK_SIGN_IN_NOTE = 'Show the QR code in this email at the gate, or this email and your photo ID at the counter. You do not need an account.';
+/** The support line every confirmation carries (address from env.ts supportEmail). */
+export const supportLine = (email: string) => `Support: ${email}`;
 
 /**
  * The secure ticket link: the booking's own QR page when the order has one booking,

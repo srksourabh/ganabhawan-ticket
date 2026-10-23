@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation';
 import { currentUser } from '@/lib/auth';
 import { ownedBookings } from '@/lib/commerce';
 import TicketDetailView, { type BookingDetail } from '@/components/TicketDetailView';
+import { supportEmail } from '@/lib/env';
 
 export default async function TicketDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -17,5 +18,5 @@ export default async function TicketDetailPage({ params }: { params: Promise<{ i
   }
   if (!booking) notFound();
 
-  return <TicketDetailView booking={booking} contact={user.contact} />;
+  return <TicketDetailView booking={booking} contact={user.contact} supportEmail={supportEmail()} />;
 }

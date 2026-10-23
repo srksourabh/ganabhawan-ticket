@@ -405,6 +405,7 @@ export default function AdminPage() {
             <label className="field">
               <span>Contact email</span>
               <input name="contactEmail" type="email" defaultValue={festival.contact_email} required />
+              <small className="muted">Not shown to customers: ticket emails, receipts and ticket pages show the support address from the SUPPORT_EMAIL server setting (Cloudflare Worker variable).</small>
             </label>
             <label className="field">
               <span>Publication status</span>

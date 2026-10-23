@@ -13,7 +13,7 @@
 import { randomBytes } from 'node:crypto';
 import { one, query, transaction, type Client } from './db';
 import { AppError, requireValue } from './errors';
-import { assertLiveConfiguration, developmentAdaptersAllowed, usingDevelopmentPayments } from './env';
+import { assertLiveConfiguration, developmentAdaptersAllowed, supportEmail, usingDevelopmentPayments } from './env';
 import { audit, job } from './audit';
 import { hash } from './security';
 import {
@@ -23,7 +23,7 @@ import {
 import { ensureProviderOrder } from './provider-order';
 import { razorpayKeyId } from './razorpay';
 import type { User } from './types';
-import { CONFIRMED_LEAD, LINK_SIGN_IN_NOTE, NO_REFUND, PICKUP_INSTRUCTION, appBaseUrl, smsShowLabel, ticketsLink, type ConfirmationMessage } from './confirmation';
+import { CONFIRMED_LEAD, LINK_SIGN_IN_NOTE, NO_REFUND, PICKUP_INSTRUCTION, appBaseUrl, smsShowLabel, supportLine, ticketsLink, type ConfirmationMessage } from './confirmation';
 import { DEFAULT_VENUE } from './brand';
 import { assertCanPurchase, contactsOf } from './account-contacts';
 import { TEST_BOOKING_NOTE, issuedTickets, renderTicketEmailHtml, ticketTextLines } from './ticket-email';
@@ -430,6 +430,7 @@ export function receiptText(r: Receipt, appUrl: string, ticketLines: string[] = 
     ...r.refunds.map((x) => `Refund: ${rupees(x.amount)} (${x.reason}) — ${x.state.toLowerCase()}`),
     '',
     `Full receipt: ${base}/receipts/${r.checkoutId}`,
+    supportLine(supportEmail()),
   ].filter((line, i, all) => line !== '' || (i > 0 && all[i - 1] !== '')).join('\n');
 }
 
@@ -453,7 +454,6 @@ export async function checkoutConfirmation(checkoutId: string): Promise<Confirma
   const tickets = await issuedTickets(confirmedLines.map((l) => l.bookingId));
   // Paid in Razorpay TEST mode: marked as a test booking (subject, text and HTML).
   const testMode = confirmedLines.length > 0 && (await bookingPaymentMode(confirmedLines[0].bookingId)) === 'test';
-  const support = (await query<Row>('SELECT contact_email FROM festivals ORDER BY created_at LIMIT 1'))[0]?.contact_email ?? null;
   return {
     confirmed: (receipt.status === 'CONFIRMED' || receipt.status === 'PARTIALLY_CANCELLED') && receipt.payment !== null,
     email,
@@ -470,7 +470,7 @@ export async function checkoutConfirmation(checkoutId: string): Promise<Confirma
       payment: receipt.payment ? { reference: receipt.payment.reference, paidAt: receipt.payment.paidAt } : null,
       lines: receipt.lines.map((l) => ({ ...l, confirmed: l.status === 'CONFIRMED' })),
       tickets,
-      supportEmail: support,
+      supportEmail: supportEmail(),
       receiptUrl: `${base}/receipts/${receipt.checkoutId}`,
     }),
     sms: {

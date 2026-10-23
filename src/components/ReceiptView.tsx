@@ -8,7 +8,7 @@ import type { Receipt } from '@/lib/checkout';
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
 
 /** guest: a guest checkout session (no account): tickets are reached through the email, not My tickets. */
-export default function ReceiptView({ receipt, guest = false }: { receipt: Receipt; guest?: boolean }) {
+export default function ReceiptView({ receipt, guest = false, supportEmail }: { receipt: Receipt; guest?: boolean; supportEmail?: string }) {
   const { locale, t } = useLocale();
   const dl = dateLocale(locale);
   const when = (iso: string) => new Date(iso).toLocaleString(dl, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' });
@@ -76,6 +76,11 @@ export default function ReceiptView({ receipt, guest = false }: { receipt: Recei
               <p key={i} style={{ margin: 0 }}>{money(r.amount, dl)} · {r.state} · {r.reason}</p>
             ))}
           </div>
+        )}
+
+        <p className="muted">{t('checkout.pickup')}</p>
+        {supportEmail && (
+          <p className="muted">{t('support.line', { email: '' }).trim()} <a href={`mailto:${supportEmail}`}>{supportEmail}</a></p>
         )}
       </section>
     </main>
