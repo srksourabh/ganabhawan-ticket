@@ -4,9 +4,9 @@ import { zoneStatus } from '@/lib/zone-status';
 import { useState, type KeyboardEvent } from 'react';
 import { useLocale } from './LocaleProvider';
 import { dateLocale, zoneLabel, zoneWhere } from '@/lib/i18n';
-import { AUDITORIUM_PHOTO } from '@/lib/brand';
+import { AUDITORIUM_HOUSE, AUDITORIUM_PHOTO } from '@/lib/brand';
 
-export { AUDITORIUM_PHOTO };
+export { AUDITORIUM_PHOTO, AUDITORIUM_HOUSE };
 export type AuditoriumCategory = 'Premier' | 'Superior' | 'Balcony';
 
 export type AuditoriumZone = {
@@ -29,42 +29,35 @@ type Props = {
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
 
-type ZoneShape = { hit: string; labelY: number; subY: number };
-
-/**
- * Filled zones on the hall photo (viewBox 0 0 100 56.25).
- * The photo looks out from the stage, so the stage sits at the bottom.
- * Premier is the front stalls, Superior the rear stalls, Balcony the gallery.
- * A click selects the whole zone. Chairs are not sold one by one.
- * Each zone is one full-width band so the name sits on the color.
- */
-const ZONE_FILL: Record<AuditoriumCategory, string> = {
-  Balcony: '#2468c4',
-  Superior: '#e2ac22',
-  Premier: '#d1263a',
+/** Hit areas match the seats in public/images/auditorium-house.svg (viewBox 0 0 680 960). */
+const HITS: Record<AuditoriumCategory, { hit: string; priceY: number }> = {
+  Balcony: { hit: '100,72 580,72 590,248 90,248', priceY: 178 },
+  Superior: { hit: '168,308 512,308 546,488 134,488', priceY: 430 },
+  Premier: { hit: '118,582 562,582 604,752 76,752', priceY: 708 },
 };
 
-const DIVISIONS: Record<AuditoriumCategory, ZoneShape> = {
-  Balcony: {
-    hit: 'M 5 2.6 H 95 V 16.2 H 5 Z',
-    labelY: 8.2,
-    subY: 12.2,
-  },
-  Superior: {
-    hit: 'M 5 17.6 H 95 V 32.4 H 5 Z',
-    labelY: 23.4,
-    subY: 27.6,
-  },
-  Premier: {
-    hit: 'M 5 33.8 H 95 V 48.6 H 5 Z',
-    labelY: 39.6,
-    subY: 43.8,
-  },
-};
+function asCategory(category?: string | null): AuditoriumCategory | null {
+  if (category === 'Premier' || category === 'Superior' || category === 'Balcony') return category;
+  return null;
+}
+
+/** Small copy of the hall plan. Pass a zone to wash that block, as on a cart line or a receipt. */
+export function AuditoriumSketch({ category }: { category?: string | null }) {
+  const zone = asCategory(category);
+  return (
+    <figure className="auditorium__sketch">
+      <img src={AUDITORIUM_HOUSE} alt="" />
+      {zone && (
+        <svg viewBox="0 0 680 960" className="auditorium__overlay" aria-hidden="true">
+          <polygon className="auditorium__sketch-mark" points={HITS[zone].hit} />
+        </svg>
+      )}
+    </figure>
+  );
+}
 
 export default function AuditoriumMap({
   zones,
-  photoUrl = AUDITORIUM_PHOTO,
   selectedProductId,
   onSelectZone,
 }: Props) {
@@ -109,21 +102,21 @@ export default function AuditoriumMap({
       </div>
 
       <div className="auditorium__frame">
-        <img className="auditorium__photo" src={photoUrl} alt="" />
+        <img className="auditorium__photo" src={AUDITORIUM_HOUSE} alt="" />
         <svg
-          viewBox="0 0 100 56.25"
+          viewBox="0 0 680 960"
           className="auditorium__overlay"
           role="group"
           aria-label={t('map.aria')}
           preserveAspectRatio="xMidYMid meet"
         >
-          <rect className="auditorium__scrim" x="0" y="0" width="100" height="56.25" pointerEvents="none" />
           {zones.map((zone) => {
             const soldOut = isBlocked(zone);
             const isSelected = zone.productId !== null && zone.productId === selectedProductId;
             const isActive = activeCategory === zone.category;
             const label = zoneLabel(locale, zone.category);
             const availability = soldOut ? statusText(zone) : t('map.available', { count: zone.available });
+            const priceLine = soldOut ? statusText(zone) : `${money(zone.price, dl)} · ${zone.available}`;
             const className = [
               'auditorium__division',
               `auditorium__division--${zone.category.toLowerCase()}`,
@@ -131,7 +124,7 @@ export default function AuditoriumMap({
               isActive ? 'auditorium__division--active' : '',
               isSelected ? 'auditorium__division--selected' : '',
             ].filter(Boolean).join(' ');
-            const shape = DIVISIONS[zone.category];
+            const shape = HITS[zone.category];
 
             return (
               <g
@@ -150,19 +143,14 @@ export default function AuditoriumMap({
                 onClick={() => { setActiveCategory(zone.category); activate(zone); }}
                 onKeyDown={(event) => handleKeyDown(event, zone)}
               >
-                <path className="auditorium__hit" d={shape.hit} fill={soldOut ? '#6e675f' : ZONE_FILL[zone.category]} />
-                <text x="50" y={shape.labelY} textAnchor="middle" className="auditorium__division-label">
-                  {label}
-                </text>
-                <text x="50" y={shape.subY} textAnchor="middle" className="auditorium__division-sub">
-                  {soldOut ? statusText(zone) : `${money(zone.price, dl)} · ${zone.available}`}
+                <polygon className="auditorium__hit" points={shape.hit} />
+                <rect className="auditorium__price-plate" x="230" y={shape.priceY - 18} width="220" height="26" rx="5" />
+                <text x="340" y={shape.priceY} textAnchor="middle" className="auditorium__price">
+                  {priceLine}
                 </text>
               </g>
             );
           })}
-
-          <rect className="auditorium__stage-band" x="0" y="51.8" width="100" height="4.45" />
-          <text x="50" y="54.6" textAnchor="middle" className="auditorium__stage-chip">{t('map.stage')}</text>
         </svg>
       </div>
 
@@ -187,6 +175,11 @@ export default function AuditoriumMap({
                 ? statusText(activeZone)
                 : `${t('catalogue.daily')} · ${money(activeZone.price, dl)} · ${t('map.available', { count: activeZone.available })}`}
             </span>
+            {activeZone.seasonPrice != null && (
+              <span className="auditorium__tip-line">
+                {t('catalogue.season')} · {money(activeZone.seasonPrice, dl)}
+              </span>
+            )}
           </>
         ) : (
           <span className="muted">{t('catalogue.mapHint')}</span>

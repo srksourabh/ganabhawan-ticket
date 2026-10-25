@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AUDITORIUM_HOUSE } from '@/lib/brand';
 
 type Performance = { id: string; title: string; startsAt: string; status: string };
 type Season = {
@@ -101,6 +102,7 @@ export default function SeasonsPanel({ onChanged }: { onChanged?: () => void }) 
         A season ticket is sold per zone and admits to every performance it covers. Cancelled performances are not part of new sales.
         Seats come from each performance&apos;s season allocation (Inventory).
       </p>
+      <img className="auditorium__plan" src={AUDITORIUM_HOUSE} alt="Auditorium plan showing Premier, Superior, and Balcony" />
       {message && <p className="banner banner--ok" role="status">{message}</p>}
       {error && <p className="banner banner--err" role="alert">{error}</p>}
 

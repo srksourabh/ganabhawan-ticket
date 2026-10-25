@@ -226,6 +226,7 @@ function Hall({ show, token, onBack }: { show: Show; token: string; onBack: () =
   const [data, setData] = useState<Catalogue | null>(null);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [plan, setPlan] = useState(true);
 
   useEffect(() => {
     api<Catalogue>('/api/catalogue', null).then(setData).catch((err: Error) => setMessage(err.message));
@@ -254,6 +255,13 @@ function Hall({ show, token, onBack }: { show: Show; token: string; onBack: () =
       <Pressable onPress={onBack}><Text style={styles.link}>Back to plays</Text></Pressable>
       <Text style={styles.h1}>{show.title}</Text>
       <Text style={styles.muted}>Three sections. The stage is marked at the front.</Text>
+      {plan && <Image
+        source={{ uri: mediaUrl('/images/auditorium-house.svg') }}
+        style={styles.plan}
+        resizeMode="contain"
+        accessibilityLabel="Auditorium plan. Premier is in front of the stage, Superior is behind it, Balcony is above."
+        onError={() => setPlan(false)}
+      />}
       <View style={styles.hall}>
         {ZONES.map((category) => {
           const product = products.find((item) => item.category === category);
@@ -417,6 +425,7 @@ const styles = StyleSheet.create({
   posterEmpty: { backgroundColor: '#e7d7c3' },
   playTitle: { fontSize: 16, fontWeight: '700', color: '#1c1714' },
   link: { color: '#722f37', fontWeight: '700' },
+  plan: { width: '100%', aspectRatio: 680 / 960, marginBottom: 12, borderRadius: 12, backgroundColor: '#efe2c8' },
   hall: { backgroundColor: '#fff', borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: '#e4ddd2' },
   zone: { padding: 12, gap: 6, borderBottomWidth: 1, borderBottomColor: '#f0ebe3' },
   zoneName: { fontSize: 18, fontWeight: '700', color: '#1c1714' },

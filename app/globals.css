@@ -1208,16 +1208,59 @@ input:focus, select:focus, textarea:focus {
   overflow: hidden;
   box-shadow: var(--shadow-card);
   border: 1.5px solid var(--border);
-  background: #1a120e;
-  aspect-ratio: 16 / 9;
+  background: #efe2c8;
+  aspect-ratio: 680 / 960;
+  max-width: 440px;
+  margin-inline: auto;
 }
 .auditorium__photo {
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  object-position: center 40%;
+  object-fit: contain;
   display: block;
-  filter: saturate(0.7) brightness(0.72);
+}
+.auditorium__plan {
+  width: min(100%, 420px);
+  height: auto;
+  display: block;
+  margin-inline: auto;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--border);
+  background: #efe2c8;
+}
+.auditorium__sketch {
+  position: relative;
+  width: 96px;
+  aspect-ratio: 680 / 960;
+  margin: 0;
+  flex: none;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1.5px solid var(--border);
+  background: #efe2c8;
+}
+.auditorium__sketch img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.auditorium__sketch .auditorium__overlay {
+  pointer-events: none;
+}
+.auditorium__sketch-mark {
+  fill: rgba(255, 227, 168, 0.42);
+  stroke: #fff6e0;
+  stroke-width: 8;
+  stroke-linejoin: round;
+}
+.cart-line {
+  grid-template-columns: 96px 1fr auto;
+}
+.book-plan {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
 }
 .auditorium__overlay {
   position: absolute;
@@ -1246,39 +1289,32 @@ input:focus, select:focus, textarea:focus {
   outline: none;
 }
 .auditorium__hit {
-  stroke: rgba(255, 248, 236, 0.85);
-  stroke-width: 0.45;
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 3;
   stroke-linejoin: round;
 }
-.auditorium__division--premier .auditorium__hit { fill: rgba(193, 49, 63, 0.88); }
-.auditorium__division--superior .auditorium__hit { fill: rgba(212, 154, 28, 0.9); }
-.auditorium__division--balcony .auditorium__hit { fill: rgba(36, 104, 196, 0.9); }
 .auditorium__division--soldout .auditorium__hit {
-  fill: rgba(90, 84, 78, 0.78);
-  stroke: rgba(255, 255, 255, 0.35);
+  fill: rgba(28, 32, 40, 0.28);
 }
 .auditorium__division--active .auditorium__hit,
 .auditorium__division:focus .auditorium__hit,
 .auditorium__division--selected .auditorium__hit {
-  stroke: #fff8e8;
-  stroke-width: 1.15;
+  fill: rgba(255, 227, 168, 0.34);
+  stroke: #fff6e0;
+  stroke-width: 4;
 }
-.auditorium__division--selected .auditorium__hit { fill-opacity: 1; }
-.auditorium__division-label {
-  fill: #ffffff;
-  font-size: 3.5px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
+.auditorium__price-plate {
+  fill: #10141c;
+  stroke: #f0e2bc;
+  stroke-width: 1.2;
   pointer-events: none;
 }
-.auditorium__division--superior .auditorium__division-label,
-.auditorium__division--superior .auditorium__division-sub {
-  fill: #2a1c08;
-}
-.auditorium__division-sub {
-  fill: #fff6e4;
-  font-size: 2.35px;
+.auditorium__price {
+  fill: #fff8ea;
+  font-size: 15px;
   font-weight: 700;
+  font-family: Georgia, 'Times New Roman', serif;
   pointer-events: none;
 }
 .auditorium__floors {
@@ -1320,9 +1356,9 @@ input:focus, select:focus, textarea:focus {
   display: inline-block;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
 }
-.auditorium__dot--premier { background: linear-gradient(135deg, #7a1e28, #b0525e); }
-.auditorium__dot--superior { background: linear-gradient(135deg, #8f6d14, #d9b64a); }
-.auditorium__dot--balcony { background: linear-gradient(135deg, #1f3a5f, #5b87b8); }
+.auditorium__dot--premier { background: linear-gradient(135deg, #245e9c, #7eb6ea); }
+.auditorium__dot--superior { background: linear-gradient(135deg, #1a4574, #5a92c8); }
+.auditorium__dot--balcony { background: linear-gradient(135deg, #0c2444, #4a7eb4); }
 .auditorium__tooltip {
   margin-top: 0.6rem;
   font-size: 0.9rem;
@@ -1357,9 +1393,9 @@ input:focus, select:focus, textarea:focus {
 .auditorium__zone-btn:hover:not(:disabled) {
   border-color: var(--gold);
 }
-.auditorium__zone-btn--premier { border-left: 5px solid #7a1e28; }
-.auditorium__zone-btn--superior { border-left: 5px solid #8f6d14; }
-.auditorium__zone-btn--balcony { border-left: 5px solid #1f3a5f; }
+.auditorium__zone-btn--premier { border-left: 5px solid #245e9c; }
+.auditorium__zone-btn--superior { border-left: 5px solid #1a4574; }
+.auditorium__zone-btn--balcony { border-left: 5px solid #0c2444; }
 .auditorium__zone-btn--selected {
   border-color: var(--burgundy);
   box-shadow: 0 0 0 2px rgba(122, 30, 40, 0.25);

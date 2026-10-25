@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { AUDITORIUM_HOUSE } from '@/lib/brand';
 
 type ZoneRow = {
   show_id: string;
@@ -79,6 +80,7 @@ export default function InventoryPanel({ onChanged }: { onChanged?: () => void }
         how many season tickets the website may sell. Daily and season tickets use separate stock, so neither can
         oversell the other. A season ticket uses one seat in every performance it covers.
       </p>
+      <img className="auditorium__plan" src={AUDITORIUM_HOUSE} alt="Auditorium plan: Premier in front, Superior behind, Balcony above, stage at the front" />
       {message && <p className="banner banner--ok" role="status">{message}</p>}
       {error && <p className="banner banner--err" role="alert">{error}</p>}
 

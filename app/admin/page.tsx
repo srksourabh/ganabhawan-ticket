@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AUDITORIUM_PHOTO } from '@/lib/brand';
+import { AUDITORIUM_HOUSE, AUDITORIUM_PHOTO } from '@/lib/brand';
 import { defaultDailyClose } from '@/lib/availability';
 import InventoryPanel from '@/components/admin/InventoryPanel';
 import AvailabilityPanel from '@/components/admin/AvailabilityPanel';
@@ -640,7 +640,8 @@ export default function AdminPage() {
               </>
             )}
           </section>
-          <p className="muted">View from the stage. Ground floor: Premier in front, Superior at the back under the balcony. First floor: Balcony. Season passes cover the festival; Daily covers one show.</p>
+          <p className="muted">Prices follow the hall: Premier is the front of the ground floor, Superior the back, Balcony the gallery. The stage is not for sale.</p>
+          <img className="auditorium__plan" src={AUDITORIUM_HOUSE} alt="Auditorium plan with Premier, Superior, Balcony, and the stage" />
           <div className="grid">
             {products.map((product) => (
               <form
@@ -688,8 +689,7 @@ export default function AdminPage() {
         <div className="card stack admin__panel">
           <h2 className="h3">Auditorium zones (guest map)</h2>
           <p className="muted">
-            Guests see a photo taken from the stage. Hovering a band reveals Premier, Superior, or Balcony —
-            with Daily and Season pricing for that zone.
+            Guests choose a zone on this plan. Hovering Premier, Superior, or Balcony lights that block and shows its price. Chairs are not sold one by one.
           </p>
           <div className="admin__zone-legend">
             <div><strong>Stage</strong> — bottom of the picture (not for sale)</div>
@@ -698,10 +698,7 @@ export default function AdminPage() {
             <div><strong>Balcony</strong> — first floor</div>
             <div><strong>Season</strong> — festival pass for the chosen zone</div>
           </div>
-          <div className="admin__photo-preview">
-            { }
-            <img src={theaterPhoto} alt="Auditorium seating reference" />
-          </div>
+          <img className="auditorium__plan" src={AUDITORIUM_HOUSE} alt="Auditorium seating plan" />
           <ul className="admin__zone-prices">
             {seasonProducts.map((p) => (
               <li key={p.id}>{p.category} Season · {money(p.price)}</li>
