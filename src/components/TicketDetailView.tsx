@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { AuditoriumSketch } from '@/components/AuditoriumMap';
 import { useLocale } from '@/components/LocaleProvider';
 import { dateLocale, kindLabel, zoneLabel } from '@/lib/i18n';
 import PayBookingButton from '@/components/PayBookingButton';
@@ -41,9 +42,12 @@ export default function TicketDetailView({ booking, contact, supportEmail }: { b
           <Link href="/tickets" className="btn btn--ghost btn--sm" style={{ display: 'inline-flex' }}>{t('tickets.back')}</Link>
         </p>
 
-        <p className="eyebrow">
-          {kindLabel(locale, booking.snapshot?.kind)} · {zoneLabel(locale, booking.snapshot?.category)}
-        </p>
+        <div className="book-plan" style={{ marginBottom: '1rem' }}>
+          <AuditoriumSketch category={booking.snapshot?.category} />
+          <p className="eyebrow" style={{ margin: 0 }}>
+            {kindLabel(locale, booking.snapshot?.kind)} · {zoneLabel(locale, booking.snapshot?.category)}
+          </p>
+        </div>
         <h1 style={{ fontFamily: 'Georgia, serif', fontSize: 'clamp(1.6rem, 5vw, 2.5rem)', lineHeight: 1.1, margin: '0 0 .5rem' }}>
           {booking.snapshot?.name}
         </h1>

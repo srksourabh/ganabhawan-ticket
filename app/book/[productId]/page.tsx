@@ -3,10 +3,11 @@
 import { useParams, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { AuditoriumSketch } from '@/components/AuditoriumMap';
 import { useCart } from '@/components/CartProvider';
 import { useLocale } from '@/components/LocaleProvider';
 import { FESTIVAL, FESTIVAL_BN } from '@/lib/brand';
-import { dateLocale, localized } from '@/lib/i18n';
+import { dateLocale, kindLabel, localized, zoneLabel } from '@/lib/i18n';
 import { createClientPaymentOrder, payExistingOrder, prefillFromContact, type RazorpayOrder } from '@/lib/razorpay-checkout';
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
@@ -320,6 +321,15 @@ function BookPageInner() {
         <div className="card stack">
           <p className="eyebrow">{t('book.eyebrow')}</p>
           <h1 className="h2">{t('book.title')}</h1>
+          {product && (
+            <div className="book-plan">
+              <AuditoriumSketch category={product.category} />
+              <div>
+                <p className="eyebrow" style={{ margin: 0 }}>{kindLabel(locale, product.kind)} · {zoneLabel(locale, product.category)}</p>
+                <p style={{ margin: '.25rem 0 0', fontWeight: 700 }}>{money(product.price, dl)}</p>
+              </div>
+            </div>
+          )}
 
           {stage === 'select' && (
             <>

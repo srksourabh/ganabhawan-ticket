@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { AuditoriumSketch } from '@/components/AuditoriumMap';
 import { useLocale } from '@/components/LocaleProvider';
 import { dateLocale, kindLabel, zoneLabel } from '@/lib/i18n';
 import type { Receipt } from '@/lib/checkout';
@@ -42,6 +43,9 @@ export default function ReceiptView({ receipt, guest = false, supportEmail }: { 
         <ol className="stack" style={{ paddingLeft: '1.25rem' }}>
           {receipt.lines.map((line) => (
             <li key={line.bookingId} className="card stack stack--sm">
+              <div className="book-plan">
+                <AuditoriumSketch category={line.category} />
+                <div>
               <p className="eyebrow">{kindLabel(locale, line.kind)} · {zoneLabel(locale, line.category)}</p>
               <h3 className="h3" style={{ margin: 0 }}>{line.product}</h3>
               {line.performances.map((p) => (
@@ -61,6 +65,8 @@ export default function ReceiptView({ receipt, guest = false, supportEmail }: { 
               {line.status === 'CONFIRMED' && !guest && (
                 <Link href={`/tickets/${line.bookingId}`}>{t('receipt.viewTickets')} · {line.bookingReference}</Link>
               )}
+                </div>
+              </div>
             </li>
           ))}
         </ol>

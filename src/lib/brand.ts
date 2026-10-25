@@ -23,6 +23,8 @@ export const SITE_DESCRIPTION = `${FESTIVAL} (${FESTIVAL_DATES}) at ${DEFAULT_VE
 export const SOURCE_SITE = 'https://samatat.org';
 /** Hall photo taken from the stage looking at the audience (ground + first floor). */
 export const AUDITORIUM_PHOTO = '/images/auditorium-two-floors.jpg';
+/** Seating plan used wherever a guest chooses a zone or sees its price. */
+export const AUDITORIUM_HOUSE = '/images/auditorium-house.svg';
 export const BRAND_LOGO = '/images/samatat/logo.png';
 export const STORY_PHOTO = '/images/samatat/story-swapnomoy.jpg';
 /** Festival announcement hero for the 2026 Natyomela. */

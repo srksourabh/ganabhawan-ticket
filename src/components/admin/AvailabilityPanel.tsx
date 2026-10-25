@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { AUDITORIUM_HOUSE } from '@/lib/brand';
 
 type ZoneSales = {
   zone: string;
@@ -87,6 +88,7 @@ export default function AvailabilityPanel({ onChanged }: { onChanged?: () => voi
         tickets (Seasons tab) are not changed. Closing never cancels bookings: tickets already bought stay valid.
         Capacity is set under <strong>Inventory</strong>; cancelling a performance is done under <strong>Dramas</strong>.
       </p>
+      <img className="auditorium__plan" src={AUDITORIUM_HOUSE} alt="Auditorium plan showing Premier, Superior, and Balcony" />
       {message && <p className="banner banner--ok" role="status">{message}</p>}
       {error && <p className="banner banner--err" role="alert">{error}</p>}
 

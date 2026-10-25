@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
+import { AuditoriumSketch } from '@/components/AuditoriumMap';
 import { useCart, type CartItem } from '@/components/CartProvider';
 import { useLocale } from '@/components/LocaleProvider';
 import { FESTIVAL, FESTIVAL_BN } from '@/lib/brand';
@@ -265,7 +266,9 @@ export default function CheckoutPage() {
           {lines.map((line) => (
             <article key={line.item.productId} className="card stack stack--sm">
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '.75rem', flexWrap: 'wrap' }}>
-                <div>
+                <div className="book-plan">
+                  <AuditoriumSketch category={line.item.category} />
+                  <div>
                   <p className="eyebrow">{kindLabel(locale, line.item.kind)} · {zoneLabel(locale, line.item.category)}</p>
                   <h3 className="h3">{line.item.name}</h3>
                   {line.item.showTitle && (
@@ -274,6 +277,7 @@ export default function CheckoutPage() {
                     </p>
                   )}
                   <p>{line.item.quantity} × {money(line.item.unitPrice, dl)}</p>
+                  </div>
                 </div>
                 <span
                   className={`banner ${line.status === 'error' ? 'banner--err' : line.status === 'confirmed' ? 'banner--ok' : ''}`}
