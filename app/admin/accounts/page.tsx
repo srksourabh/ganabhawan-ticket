@@ -133,7 +133,7 @@ export default function AccountsPage() {
           <p className="muted">Income, refunds, and everyone who tried to book.</p>
         </div>
         <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
-          <Link className="btn btn--primary" href="/admin/sheet">Booking sheet</Link>
+          <Link className="btn btn--primary" href="/admin/sheet">Sold tickets</Link>
           <Link className="btn btn--ghost" href="/admin">Festival settings</Link>
         </div>
       </div>

@@ -356,6 +356,7 @@ function BookPageInner() {
               )}
               {error && <p role="alert" className="banner banner--err">{error}</p>}
               {added && <p className="banner banner--ok" role="status">{t('book.added')}</p>}
+              <p className="muted"><strong>{t('terms.title')}.</strong> {t('checkout.pickup')}</p>
               <p className="muted">{t('book.who')}</p>
               <button type="button" className={added ? 'btn btn--ghost btn--block' : 'btn btn--primary btn--block'} disabled={loading || !product || (product.state !== undefined && product.state !== 'SELLABLE')} onClick={() => { void addToCart(); }}>
                 {loading ? t('book.reserving') : t('catalogue.addToCart')}

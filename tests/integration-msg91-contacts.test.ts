@@ -14,7 +14,7 @@ import type { User } from '../src/lib/types';
 
 const skip = !DB_AVAILABLE;
 const fake = new FakeRazorpay();
-const CARDS = 'Entry: QR scan or a physical ticket from the hall, one entry per ticket.';
+const CARDS = 'Arrive before the show. Show this SMS or your ticket email and a valid photo ID, and collect the physical ticket before the show. Season tickets: all of them on the first day.';
 let auth: typeof import('../src/lib/auth');
 let checkout: typeof import('../src/lib/checkout');
 let payments: typeof import('../src/lib/payments');
@@ -229,7 +229,7 @@ test('contact 11/22: email-only customer buys, gets ONE email with the secure li
   const mail = emailsTo(user.contact);
   assert.equal(mail.length, 1);
   assert.ok(mail[0].text.includes(`Your tickets: https://staging.tickets.test/tickets/${bookingId}`), 'link to that booking’s ticket page');
-  assert.ok(mail[0].text.includes('Entry is available through either QR code scanning of your digital ticket or collection of a physical ticket from the hall.'));
+  assert.ok(mail[0].text.includes('Come to the auditorium before the show starts.'));
   assert.ok(mail[0].text.includes('This email is your ticket.'));
   assert.equal(fake.sms.length, 0);
   assert.equal((await query("SELECT count(*)::int n FROM jobs WHERE kind='NOTIFY'"))[0].n, 0, 'no SMS job for an email-only account');
@@ -295,7 +295,7 @@ test('notify 29: the card instruction is in the email and in the SMS wording (te
   const user = await makeUser('customer', undefined, { mobile: '+919876500029' });
   await buy(user, [1]);
   await deliver();
-  assert.ok(emailsTo(user.contact)[0].text.includes('Entry is available through either QR code scanning of your digital ticket or collection of a physical ticket from the hall.'));
+  assert.ok(emailsTo(user.contact)[0].text.includes('Come to the auditorium before the show starts.'));
 });
 
 test('notify 30: MSG91 and Resend both down → booking stays CONFIRMED; each channel recovers on retry exactly once', { skip }, async () => {

@@ -259,7 +259,8 @@ export default function CheckoutPage() {
         <p className="eyebrow">{locale === 'bn' ? FESTIVAL_BN : FESTIVAL}</p>
         <h1 className="h2">{t('checkout.title')}</h1>
         <p className="muted">{t('checkout.intro')}</p>
-        <p className="banner" role="note">{t('checkout.guest')}. {t('checkout.pickup')}</p>
+        <p className="muted">{t('checkout.guest')}</p>
+        <p className="banner" role="note"><strong>{t('terms.title')}.</strong> {t('checkout.pickup')}</p>
         <p className="banner banner--err" role="note">{t('checkout.noRefunds')}</p>
 
         <div className="stack">

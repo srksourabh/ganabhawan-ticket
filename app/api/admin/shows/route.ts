@@ -30,6 +30,9 @@ export async function POST(request: Request): Promise<Response> {
       language: body.language,
       artwork: body.artwork,
       status: body.status,
+      salesClosesAt: body.salesClosesAt,
+      venue: body.venue,
+      prices: body.prices,
     });
     return jsonOk(show, 201);
   } catch (error) {

@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { query } from './db';
 import { secret } from './env';
 import { BRAND_LOGO, FESTIVAL, FESTIVAL_BN, ORGANISATION } from './brand';
-import { CONFIRMED_LEAD, LINK_SIGN_IN_NOTE, NO_REFUND, PICKUP_INSTRUCTION } from './confirmation';
+import { CONFIRMED_LEAD, LINK_SIGN_IN_NOTE, NO_REFUND, PICKUP_INSTRUCTION, SEASON_HANDOVER } from './confirmation';
 
 /**
  * The ticket confirmation email (HTML + the plain-text alternative's ticket section).
@@ -119,6 +119,7 @@ function ticketCard(t: EmailTicket, index: number, count: number, line: TicketEm
       <p style="${SERIF}margin:0 0 6px;color:${C.ink};font-size:18px;">${esc(line?.product ?? 'Ticket')}</p>
       <p style="${FONT}margin:0 0 10px;color:${C.muted};font-size:13px;">${esc(line?.kind === 'SEASON' ? 'Season ticket' : 'Daily ticket')}${line?.category ? ` &middot; ${esc(line.category)}` : ''}</p>
       ${shows ? `<p style="${FONT}margin:0 0 10px;color:${C.ink};font-size:13px;line-height:1.5;">${shows}</p>` : ''}
+      ${line?.kind === 'SEASON' ? `<p style="${FONT}margin:0 0 10px;color:${C.ink};font-size:13px;line-height:1.5;">${esc(SEASON_HANDOVER)}</p>` : ''}
       <p style="${FONT}margin:0;color:${C.muted};font-size:12px;">Ticket number</p>
       <p style="font-family:'Courier New',Courier,monospace;margin:0;color:${C.maroon};font-size:20px;font-weight:700;letter-spacing:.04em;">${esc(t.reference)}</p>
     </td>

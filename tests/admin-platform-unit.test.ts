@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { defaultDailyClose, salesOpen, sellState } from '../src/lib/availability';
-import { summariseSheet, type SheetRow } from '../src/lib/booking-sheet';
+import { handoverNote, physicalTicketCsv, selectPhysicalTickets, summariseSheet, type PhysicalTicketRow, type SheetRow } from '../src/lib/booking-sheet';
 import { receiptText, type Receipt } from '../src/lib/checkout';
 import { validateCapacityConfig } from '../src/lib/inventory-admin';
 import { ACCOUNT_CART_PING_KEY, GUEST_CART_KEY, cleanupStaleCartStorage, forgetAccountLocally, guestCartId, pendingKey, readGuestItems, resetGuestCart, writeGuestItems, type CartStorage } from '../src/lib/cart-storage';
@@ -106,6 +106,25 @@ test('confirmation email names the buyer, theatre, ticket type, and the counter 
   assert.match(text, /Daily ticket · Balcony/);
   assert.match(text, /cannot be cancelled or refunded/);
   assert.match(text, /photo ID/);
+  assert.match(text, /before the show/);
+  assert.match(text, /Season tickets are given together/);
+});
+
+test('sold-ticket download: one ticket, one booking, or every ticket, with name email and phone', () => {
+  const rows: PhysicalTicketRow[] = [
+    { ticket: 'GF-1-1', name: 'Rina Das', email: 'rina@example.com', phone: '+919876543210', category: 'Premier', kind: 'Daily', show: 'Macbeth', handover: handoverNote('Daily'), booking: 'GF-1', venue: 'Ganabhawan' },
+    { ticket: 'GF-2-1', name: 'Rina Das', email: 'rina@example.com', phone: '+919876543210', category: 'Premier', kind: 'Season', show: 'Macbeth; Goraibabu', handover: handoverNote('Season'), booking: 'GF-2', venue: 'Ganabhawan' },
+    { ticket: 'GF-2-2', name: 'Rina Das', email: 'rina@example.com', phone: '+919876543210', category: 'Premier', kind: 'Season', show: 'Macbeth; Goraibabu', handover: handoverNote('Season'), booking: 'GF-2', venue: 'Ganabhawan' },
+  ];
+  assert.equal(handoverNote('Season'), 'All season tickets together on the first day, before the first show');
+  assert.equal(selectPhysicalTickets(rows, {}).length, 3);
+  assert.deepEqual(selectPhysicalTickets(rows, { ticket: 'GF-1-1' }).map((row) => row.ticket), ['GF-1-1']);
+  assert.deepEqual(selectPhysicalTickets(rows, { booking: 'GF-2' }).map((row) => row.ticket), ['GF-2-1', 'GF-2-2']);
+  const csv = physicalTicketCsv(selectPhysicalTickets(rows, { booking: 'GF-2' }));
+  assert.match(csv, /Name,Email,Phone/);
+  assert.match(csv, /Rina Das,rina@example.com,\+919876543210/);
+  assert.match(csv, /first day/);
+  assert.equal(selectPhysicalTickets(rows, { ticket: 'missing' }).length, 0);
 });
 
 test('availability: the scarcest pool and the product cap decide; zero left is SOLD_OUT, not CLOSED', () => {

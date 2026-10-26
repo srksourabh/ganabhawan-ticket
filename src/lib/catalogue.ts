@@ -5,7 +5,7 @@ import { audit } from './audit';
 import { developmentAdaptersAllowed, seasonTicketSalesEnabled } from './env';
 import { assertShowCancellable, cancelShowSales } from './commerce';
 import { defaultDailyClose, productSellState, type CoveredPerformance, type SaleWindow } from './availability';
-import { zoneTemplate } from './inventory-admin';
+import { ZONES, zoneTemplate, type Zone } from './inventory-admin';
 import { ADMIN_POLICY } from './admin-policy';
 export async function catalogue() {
  const festival=(await query<Festival>('SELECT * FROM festivals ORDER BY created_at LIMIT 1'))[0];
@@ -182,6 +182,36 @@ export interface ShowInput {
  title:string; titleBn:string; troupe:string; synopsis:string; synopsisBn:string;
  startsAt:string; runtime:number; genre:string; language?:string; artwork?:string; status?:string;
  salesClosesAt?:string;
+ /** Any theatre name. Saved on the festival, which is what customers see. */
+ venue?:string;
+ /** Daily ticket price in paise for this programme's zones. Omitted zones keep the copied price. */
+ prices?:Partial<Record<Zone, number>>;
+}
+function programmePrices(raw: unknown): Partial<Record<Zone, number>> | null {
+ if (raw == null) return null;
+ requireValue(typeof raw === 'object' && !Array.isArray(raw), 'Programme prices must name Premier, Superior and Balcony.', 400);
+ const source = raw as Record<string, unknown>;
+ const prices: Partial<Record<Zone, number>> = {};
+ for (const zone of ZONES) {
+  if (source[zone] === undefined || source[zone] === null || source[zone] === '') continue;
+  const price = Number(source[zone]);
+  requireValue(Number.isInteger(price) && price >= 0, `${zone} price must be a whole number of paise.`, 400);
+  prices[zone] = price;
+ }
+ return prices;
+}
+/** Theatre name and this programme's zone prices. Does not create season tickets. */
+async function applyProgrammeDetails(c: Client, festivalId: string, showId: string, venue: unknown, pricesRaw: unknown) {
+ if (typeof venue === 'string' && venue.trim()) {
+  requireValue(venue.trim().length <= 120, 'Theatre name is too long.', 400);
+  await c.query('UPDATE festivals SET venue=$1 WHERE id=$2', [venue.trim(), festivalId]);
+ }
+ const prices = programmePrices(pricesRaw);
+ if (!prices) return;
+ for (const zone of ZONES) {
+  if (prices[zone] === undefined) continue;
+  await c.query("UPDATE products SET price=$1, version=version+1 WHERE show_id=$2 AND kind='DAILY' AND category=$3", [prices[zone], showId, zone]);
+ }
 }
 export async function upsertShow(user:User, input:ShowInput) {
  return transaction(async c=>{
@@ -217,6 +247,7 @@ export async function upsertShow(user:User, input:ShowInput) {
     [festival!.id,`${input.title} \u2013 ${zone}`,`${input.titleBn} \u2013 ${zone}`,zone,price,show.id,enabled]))!;
    await c.query('INSERT INTO product_coverage(product_id,show_id,pool_id) VALUES($1,$2,$3)',[dailyProduct.id,show.id,dailyPool.id]);
   }
+  await applyProgrammeDetails(c, festival!.id, show.id, input.venue, input.prices);
   await c.query(`INSERT INTO devices(id,name) VALUES('gate-one','Main entrance'),('gate-two','Balcony entrance') ON CONFLICT(id) DO NOTHING`);
   await c.query(
     `INSERT INTO staff_scopes(user_id,show_id,gate,device_id)
@@ -325,6 +356,7 @@ export async function updateShow(user:User, id:string, input:Record<string,unkno
    WHERE id=$14 RETURNING *`,
    [title,titleBn,troupe,synopsis,synopsisBn,startsAt.toISOString(),endsAt.toISOString(),runtime,genre,language,status,artwork,salesClosesAt.toISOString(),id]))!;
   if (status === 'CANCELLED' && show!.status !== 'CANCELLED') await cancelShowSales(c, id, user.id);
+  await applyProgrammeDetails(c, (show as Show & { festival_id: string }).festival_id, id, input.venue, input.prices);
   await audit(c,user.id,'show.update',id,input);
   return updated;
  },true);

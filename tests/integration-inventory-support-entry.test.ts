@@ -175,7 +175,7 @@ test('ticket email shows "Support: <mailto>" from SUPPORT_EMAIL (HTML and text) 
   assert.match(mail.text, /^Support: help@tickets\.test$/m);
   assert.ok(!mail.html!.includes('admin-field@') && !mail.text.includes('admin-field@'), 'admin field not shown');
   for (const body of [mail.html!.replace(/&#39;/g, "'"), mail.text]) {
-    assert.ok(body.includes(ENTRY_OPTIONS), 'either QR or physical');
+    assert.ok(body.includes(ENTRY_OPTIONS), 'collect the physical ticket before the show');
     assert.ok(body.includes(ONE_ENTRY), 'one entry per ticket');
     assert.ok(!/Only this email is accepted/.test(body), 'old physical-only wording gone');
   }
@@ -197,7 +197,8 @@ test('customer pages carry the entry policy in English and Bengali, without the 
   }
   assert.ok(t('en', 'checkout.pickup').startsWith(ENTRY_OPTIONS));
   assert.match(t('en', 'checkout.pickup'), /admits one person once/);
-  assert.match(t('en', 'book.who'), /QR code .* or collect a physical ticket from the hall/);
+  assert.match(t('en', 'book.who'), /collect your physical ticket before the show/);
+  assert.match(t('en', 'checkout.pickup'), /Season tickets are given together/);
   assert.ok(!/Only this email is accepted/.test(t('en', 'checkout.pickup')));
   for (const file of ['src/components/ReceiptView.tsx', 'src/components/TicketDetailView.tsx']) {
     const source = readFileSync(join(import.meta.dirname, '..', file), 'utf8');
