@@ -14,7 +14,7 @@ import type { User } from '../src/lib/types';
 
 const skip = !DB_AVAILABLE;
 const fake = new FakeRazorpay();
-const CARDS = 'Entry is available through either QR code scanning of your digital ticket or collection of a physical ticket from the hall.';
+const CARDS = 'Come to the auditorium before the show starts.';
 const MSG91 = ['SMS_PROVIDER', 'MSG91_AUTH_KEY', 'MSG91_OTP_TEMPLATE_ID', 'MSG91_TEMPLATE_ID'];
 let auth: typeof import('../src/lib/auth');
 let checkout: typeof import('../src/lib/checkout');

@@ -180,7 +180,7 @@ const FESTIVAL_NAME = 'Samatat Natyomela 2026';
 const FESTIVAL_NAME_BN = 'সমতট নাট্যমেলা ২০২৬';
 const CONTACT_EMAIL = process.env.FESTIVAL_CONTACT_EMAIL || 'tickets@samatat.org';
 const TERMS =
-  'One person per ticket. Unnumbered seating within your section. No standard re-entry. Daily tickets cover one performance. Season passes cover only the listed performances, including the October prologue. Presented by Samatat Sanskriti at Ganabhawan, Uttarpara. Tentative programme October prologue + 19–30 December 2026; titles may change before publication.';
+  'One person per ticket. Unnumbered seating within your section. Come to the auditorium before the show starts, show your ticket email or confirmation SMS and a valid photo ID, and collect your physical ticket before the show. Season tickets are given together, all performances at once, on the first day, before that first show. Daily tickets cover one performance. Presented by Samatat Sanskriti at Ganabhawan, Uttarpara. Tentative programme October prologue + 19–30 December 2026; titles may change before publication.';
 
 await transaction(async (c) => {
   let festival = await one<{ id: string }>(c, 'SELECT id FROM festivals LIMIT 1');

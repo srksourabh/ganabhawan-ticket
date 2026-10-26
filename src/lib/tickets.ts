@@ -28,6 +28,7 @@ export async function ticketPdf(user: User, ticketId: string): Promise<Uint8Arra
     product_name: string;
     show_title: string;
     starts_at: string;
+    venue: string | null;
   }>(
     `SELECT t.id, t.reference, t.ordinal, t.status, t.booking_id,
             b.user_id, c.encrypted_token, c.id credential_id,
@@ -44,7 +45,8 @@ export async function ticketPdf(user: User, ticketId: string): Promise<Uint8Arra
                JOIN entitlements e ON e.show_id=s.id
                WHERE e.ticket_id=t.id ORDER BY s.starts_at LIMIT 1),
               ''
-            ) starts_at
+            ) starts_at,
+            (SELECT f.venue FROM festivals f ORDER BY f.created_at LIMIT 1) venue
      FROM tickets t
      JOIN bookings b ON b.id=t.booking_id
      JOIN credentials c ON c.ticket_id=t.id AND c.status='ACTIVE'
@@ -80,7 +82,7 @@ export async function ticketPdf(user: User, ticketId: string): Promise<Uint8Arra
     font: boldFont,
     color: rgb(0.1, 0.1, 0.1),
   });
-  page.drawText(`Venue: ${DEFAULT_VENUE}`, {
+  page.drawText(`Venue: ${row.venue || DEFAULT_VENUE}`, {
     x: 40,
     y: height - 68,
     size: 10,

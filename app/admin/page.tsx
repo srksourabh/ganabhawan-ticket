@@ -72,6 +72,20 @@ type Product = {
 };
 
 const money = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN')}`;
+const PROGRAMME_ZONES = ['Premier', 'Superior', 'Balcony'] as const;
+
+/** Rupee inputs on the drama form, stored as paise. A blank zone is left unchanged. */
+function zonePrices(form: FormData) {
+  const prices: Partial<Record<(typeof PROGRAMME_ZONES)[number], number>> = {};
+  for (const zone of PROGRAMME_ZONES) {
+    const raw = String(form.get(`price${zone}`) || '').trim();
+    if (!raw) continue;
+    const rupees = Number(raw);
+    if (!Number.isFinite(rupees) || rupees < 0) continue;
+    prices[zone] = Math.round(rupees * 100);
+  }
+  return prices;
+}
 
 /** Format a timestamptz for datetime-local using Asia/Kolkata wall clock. */
 function toLocalInput(iso: string) {
@@ -114,6 +128,7 @@ export default function AdminPage() {
   const [editingShow, setEditingShow] = useState<Show | null>(null);
   const [creating, setCreating] = useState(false);
   const [posterPreview, setPosterPreview] = useState('');
+  const [theaterUpload, setTheaterUpload] = useState('');
   const [deletingShow, setDeletingShow] = useState<Show | null>(null);
   /** One delete request at a time: state updates are not visible to a second click in the same tick. */
   const deleteInFlight = useRef(false);
@@ -200,7 +215,7 @@ export default function AdminPage() {
       status: String(form.get('status') || festival.status),
       holdMinutes: Number(form.get('holdMinutes') || festival.hold_minutes),
       maxQuantity: Number(form.get('maxQuantity') || festival.max_quantity),
-      theaterPhoto: String(form.get('theaterPhoto') || festival.theater_photo || AUDITORIUM_PHOTO),
+      theaterPhoto: theaterUpload || String(form.get('theaterPhoto') || festival.theater_photo || AUDITORIUM_PHOTO),
       bookingOpensAt: String(form.get('bookingOpensAt') || '') ? fromLocalInput(String(form.get('bookingOpensAt'))) : '',
       seasonClosesAt: fromLocalInput(String(form.get('seasonClosesAt') || '')),
     };
@@ -248,6 +263,8 @@ export default function AdminPage() {
       language: String(form.get('language') || 'Bengali'),
       status: String(form.get('status') || 'DRAFT'),
       artwork: artwork || 'red',
+      venue: String(form.get('venue') || ''),
+      prices: zonePrices(form),
       confirmCancellation: false,
     };
     if (!creating && payload.status === 'CANCELLED' && editingShow?.status !== 'CANCELLED') {
@@ -357,7 +374,7 @@ export default function AdminPage() {
         </div>
         <div className="admin__tabs" role="tablist">
           <Link className="btn btn--primary" href="/admin/accounts">Accounts</Link>
-          <Link className="btn btn--ghost" href="/admin/sheet">Booking sheet</Link>
+          <Link className="btn btn--ghost" href="/admin/sheet">Sold tickets</Link>
           <Link className="btn btn--ghost" href="/gate">Check tickets</Link>
           {TABS.filter((t) => profile && t.roles.includes(profile.role)).map(({ id, label }) => (
             <button
@@ -441,6 +458,7 @@ export default function AdminPage() {
           <label className="field">
             <span>Terms</span>
             <textarea name="terms" rows={4} defaultValue={festival.terms} />
+            <small className="muted">The booking page, checkout and ticket email always tell the audience to come to the auditorium before the show, show the ticket email or SMS and a valid photo ID, and collect the physical ticket before the show. Season tickets are handed over together on the first day.</small>
           </label>
           <button className="btn btn--primary" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save festival'}</button>
         </form>

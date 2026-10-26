@@ -1,14 +1,16 @@
 /** What a post-payment confirmation says, independent of the channel that carries it. */
 export const NO_REFUND = 'A ticket, once booked, cannot be cancelled or refunded.';
-/** Entry policy: EITHER the digital ticket's QR code is scanned OR a physical ticket is collected from the hall. */
-export const ENTRY_OPTIONS = "Entry is available through either QR code scanning of your digital ticket or collection of a physical ticket from the hall. Please follow the venue's entry instructions.";
+/** Arrive before the show and collect the physical ticket. Shown in the email, the terms, and the booking page. */
+export const ENTRY_OPTIONS = 'Come to the auditorium before the show starts. Show your ticket email or confirmation SMS and a valid photo ID, and collect your physical ticket before the show.';
+/** Season buyers receive every performance ticket together, on the first day. */
+export const SEASON_HANDOVER = 'Season tickets are given together, all performances at once, on the first day, before that first show.';
 /** Either method, never both: one ticket admits one person once. */
 export const ONE_ENTRY = 'Each ticket admits one person once: a ticket used for entry cannot be used again, by QR code or as a physical ticket.';
-export const PICKUP_INSTRUCTION = `${ENTRY_OPTIONS} To collect a physical ticket, bring this email and a photo ID; the name on the ID must match the name on this email. ${ONE_ENTRY}`;
+export const PICKUP_INSTRUCTION = `${ENTRY_OPTIONS} ${SEASON_HANDOVER} ${ONE_ENTRY}`;
 /** Opening of every confirmation email (the SMS template carries the same instruction: sms.ts). */
 export const CONFIRMED_LEAD = `Your booking is confirmed. This email is your ticket. ${PICKUP_INSTRUCTION} ${NO_REFUND}`;
-/** What to show: the QR code at the gate, or this email with a photo ID at the counter. */
-export const LINK_SIGN_IN_NOTE = 'Show the QR code in this email at the gate, or this email and your photo ID at the counter. You do not need an account.';
+/** What to bring to the counter before the show. */
+export const LINK_SIGN_IN_NOTE = 'Bring this email or the confirmation SMS and a valid photo ID to the auditorium before the show starts, and collect the physical ticket there. You do not need an account.';
 /** The support line every confirmation carries (address from env.ts supportEmail). */
 export const supportLine = (email: string) => `Support: ${email}`;
 
