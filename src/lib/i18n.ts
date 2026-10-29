@@ -146,6 +146,7 @@ const en: Dict = {
 
   'cart.title': 'Your cart',
   'cart.limitHint': 'Up to {max} tickets per checkout.',
+  'cart.holdInfo': 'Your tickets are reserved for you for 10 minutes once you proceed to payment. Complete the payment within that time — after 10 minutes the reservation is released.',
   'cart.empty': 'Your cart is empty.',
   'cart.browse': 'Browse the programme',
   'cart.each': 'each',
@@ -433,6 +434,7 @@ const bn: Dict = {
 
   'cart.title': 'আপনার কার্ট',
   'cart.limitHint': 'প্রতি চেকআউটে সর্বোচ্চ {max}টি টিকিট।',
+  'cart.holdInfo': 'পেমেন্ট করতে এগোলে আপনার টিকিট ১০ মিনিটের জন্য সংরক্ষিত থাকবে। এই সময়ের মধ্যেই পেমেন্ট সম্পন্ন করুন — ১০ মিনিট পর সংরক্ষণ ছেড়ে দেওয়া হয়।',
   'cart.empty': 'আপনার কার্ট খালি।',
   'cart.browse': 'অনুষ্ঠানসূচি দেখুন',
   'cart.each': 'প্রতিটি',

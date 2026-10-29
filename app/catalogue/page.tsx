@@ -320,6 +320,7 @@ export default function CataloguePage() {
                 ))}
               </ul>
               <p className="muted">{t('catalogue.mapHint')}</p>
+              <p className="alert alert--info" role="note">{t('cart.holdInfo')}</p>
               {notice && <p role="status" className="alert alert--info">{notice}</p>}
               {cart.count > 0 && (
                 <Link href="/cart" className="btn btn--primary">{t('book.reserve')}</Link>
