@@ -1,11 +1,12 @@
-# Expire ticket holds and run background jobs on production.
+# Manual fallback for expiring ticket holds and running background jobs on production.
+# The Worker's Cron Trigger (wrangler.jsonc, every 10 minutes) is the only scheduler:
+# this duplicate every-2-minutes schedule helped keep the Neon compute awake 24/7 and
+# exhaust the free-plan compute-hours quota. Trigger manually if the Worker cron is down.
 # Requires repository secrets: CRON_SECRET, APP_URL (e.g. https://ganabhawan-festival.srksourabh.workers.dev)
 
 name: Hold expiry cron
 
 on:
-  schedule:
-    - cron: "*/2 * * * *"
   workflow_dispatch:
 
 jobs:
