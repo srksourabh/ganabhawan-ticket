@@ -312,21 +312,25 @@ function BookPageInner() {
     );
   }
 
+  const show = product?.coverage?.[0];
+
   return (
     <main className="page-pad">
-      <section className="container" style={{ maxWidth: 520 }}>
-        <p style={{ marginBottom: '1rem' }}>
+      <section className="container book-shell">
+        <p style={{ marginBottom: '0.65rem' }}>
           <Link href="/catalogue" className="muted">{t('book.back')}</Link>
         </p>
         <div className="card stack">
-          <p className="eyebrow">{t('book.eyebrow')}</p>
-          <h1 className="h2">{t('book.title')}</h1>
+          <h1 className="h2" style={{ margin: 0 }}>{t('book.title')}</h1>
           {product && (
             <div className="book-plan">
               <AuditoriumSketch category={product.category} />
               <div>
-                <p className="eyebrow" style={{ margin: 0 }}>{kindLabel(locale, product.kind)} · {zoneLabel(locale, product.category)}</p>
-                <p style={{ margin: '.25rem 0 0', fontWeight: 700 }}>{money(product.price, dl)}</p>
+                <p className="pick__genre" style={{ margin: 0 }}>{kindLabel(locale, product.kind)} · {zoneLabel(locale, product.category)}</p>
+                {show && (
+                  <p className="book-plan__show">{localized(show.title, show.title_bn, locale)}</p>
+                )}
+                <p className="book-plan__price">{money(product.price, dl)}</p>
               </div>
             </div>
           )}

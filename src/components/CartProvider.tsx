@@ -8,7 +8,7 @@ import {
   type CheckoutOutcome, type PendingCheckout,
 } from '@/lib/cart-reconcile';
 import {
-  ACCOUNT_CART_PING_KEY, GUEST_CART_KEY, cleanupStaleCartStorage, forgetAccountLocally, guestCartId, pendingKey,
+  ACCOUNT_CART_PING_KEY, GUEST_CART_KEY, cleanupStaleCartStorage, forgetAccountLocally, pendingKey,
   readGuestItems, resetGuestCart, writeGuestItems, type CartOwner,
 } from '@/lib/cart-storage';
 
@@ -153,20 +153,31 @@ export function CartProvider({ children }: { children: ReactNode }) {
     try { storage().setItem(ACCOUNT_CART_PING_KEY, String(Date.now())); } catch { /* ignore */ }
   }, []);
 
-  /** Signed in: merge the guest cart once (server-side, idempotent), else just read the account cart. */
-  const loadAccount = useCallback(async (account: string) => {
-    const guest = readGuestItems<CartItem>(storage());
-    if (guest.length) {
-      const merged = await cartRequest('/api/cart/merge', {
-        method: 'POST',
-        body: JSON.stringify({ guestCartId: guestCartId(storage()), lines: guest.map((i) => ({ productId: i.productId, quantity: i.quantity })) }),
-      });
-      if (merged) {
-        resetGuestCart(storage());
-        applyServer(account, merged);
-        pingOtherTabs();
-        return;
-      }
+  function clearPendingBook() {
+    try { sessionStorage.removeItem('gb-pending-book'); } catch { /* ignore */ }
+  }
+
+  /** Same account still signed in: re-read the server cart (another tab may have changed it). */
+  const refreshAccount = useCallback(async (account: string) => {
+    applyServer(account, await cartRequest('/api/cart'));
+  }, [applyServer]);
+
+  /**
+   * A new sign-in starts empty. Guest picks are discarded (never merged). The account cart
+   * on the server is cleared when this browser was a guest or already held guest lines, or
+   * when switching from another account. A returning session with no guest cart keeps its
+   * server cart (page refresh).
+   */
+  const startAccountSession = useCallback(async (account: string, previous: CartOwner | undefined) => {
+    const hadGuest = readGuestItems<CartItem>(storage()).length > 0;
+    resetGuestCart(storage());
+    clearPendingBook();
+    const fresh = previous === null || hadGuest || (typeof previous === 'string' && previous !== account);
+    if (fresh) {
+      const emptied = await cartRequest('/api/cart', { method: 'PUT', body: JSON.stringify({ lines: [] }) });
+      applyServer(account, emptied ?? { lines: [] });
+      pingOtherTabs();
+      return;
     }
     applyServer(account, await cartRequest('/api/cart'));
   }, [applyServer, pingOtherTabs]);
@@ -174,22 +185,23 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const switchOwner = useCallback((next: CartOwner) => {
     const previous = ownerRef.current;
     if (previous === next) {
-      if (next) void loadAccount(next); // same account: refresh (another tab or device may have changed it)
+      if (next) void refreshAccount(next);
       return;
     }
-    // Leaving an account (sign-out, expired session, another account): its cart stays
-    // on the server and nothing of it remains in this browser.
+    // Leaving an account (sign-out, expired session, another account): nothing of it remains in this browser.
     if (previous) forgetAccountLocally(storage(), previous);
     ownerRef.current = next;
     setOwner(next);
     setNotices([]);
     if (next === null) {
-      show(readGuestItems<CartItem>(storage()));
+      resetGuestCart(storage());
+      clearPendingBook();
+      show([]);
     } else {
       show([]);
-      void loadAccount(next);
+      void startAccountSession(next, previous);
     }
-  }, [loadAccount, show]);
+  }, [refreshAccount, show, startAccountSession]);
 
   // Identity check on load, on every navigation (sign-in/out redirect), on focus and
   // when the tab becomes visible (signed in or out in another tab).
@@ -238,7 +250,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
     ownerRef.current = null;
     setOwner(null);
     setNotices([]);
-    show(readGuestItems<CartItem>(storage()));
+    resetGuestCart(storage());
+    clearPendingBook();
+    show([]);
   }, [show]);
 
   const remove = useCallback((productId: string) => {

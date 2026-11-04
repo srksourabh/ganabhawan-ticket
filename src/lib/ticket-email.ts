@@ -3,6 +3,7 @@ import { query } from './db';
 import { secret } from './env';
 import { BRAND_LOGO, FESTIVAL, FESTIVAL_BN, ORGANISATION } from './brand';
 import { CONFIRMED_LEAD, LINK_SIGN_IN_NOTE, NO_REFUND, PICKUP_INSTRUCTION, SEASON_HANDOVER } from './confirmation';
+import { ticketLineLabel } from './i18n';
 
 /**
  * The ticket confirmation email (HTML + the plain-text alternative's ticket section).
@@ -117,7 +118,7 @@ function ticketCard(t: EmailTicket, index: number, count: number, line: TicketEm
     <td style="padding:16px 18px;vertical-align:top;">
       <p style="${FONT}margin:0 0 4px;color:${C.gold};font-size:11px;letter-spacing:.12em;text-transform:uppercase;">Ticket ${index + 1} of ${count}</p>
       <p style="${SERIF}margin:0 0 6px;color:${C.ink};font-size:18px;">${esc(line?.product ?? 'Ticket')}</p>
-      <p style="${FONT}margin:0 0 10px;color:${C.muted};font-size:13px;">${esc(line?.kind === 'SEASON' ? 'Season ticket' : 'Daily ticket')}${line?.category ? ` &middot; ${esc(line.category)}` : ''}</p>
+      <p style="${FONT}margin:0 0 10px;color:${C.muted};font-size:13px;">${esc(ticketLineLabel(line?.kind ?? '', line?.category))}</p>
       ${shows ? `<p style="${FONT}margin:0 0 10px;color:${C.ink};font-size:13px;line-height:1.5;">${shows}</p>` : ''}
       ${line?.kind === 'SEASON' ? `<p style="${FONT}margin:0 0 10px;color:${C.ink};font-size:13px;line-height:1.5;">${esc(SEASON_HANDOVER)}</p>` : ''}
       <p style="${FONT}margin:0;color:${C.muted};font-size:12px;">Ticket number</p>
@@ -142,7 +143,7 @@ export function renderTicketEmailHtml(m: TicketEmailModel) {
       <tr>
         <td style="${FONT}padding:8px 0;border-top:1px solid ${C.line};color:${C.ink};font-size:14px;">
           <strong>${esc(l.product)}</strong><br>
-          <span style="color:${C.muted};font-size:13px;">${esc(l.kind === 'SEASON' ? 'Season ticket' : 'Daily ticket')}${l.category ? ` &middot; ${esc(l.category)}` : ''}</span><br>
+          <span style="color:${C.muted};font-size:13px;">${esc(ticketLineLabel(l.kind, l.category))}</span><br>
           ${l.performances.map((p) => `<span style="font-size:13px;">${esc(p.title)} &middot; ${esc(ist(p.startsAt))}</span>`).join('<br>')}
         </td>
         <td align="right" style="${FONT}padding:8px 0;border-top:1px solid ${C.line};color:${C.ink};font-size:14px;white-space:nowrap;vertical-align:top;">

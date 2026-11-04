@@ -12,10 +12,12 @@ export async function POST(request: Request): Promise<Response> {
     const who = String(user?.id ?? body?.email ?? body?.contact ?? '').trim().toLowerCase();
     await rateLimit('attempt-buyer:' + keyedHash(who), 40, 3600);
     await rateLimit('attempt-ip:' + hash(clientIp(request)), 300, 3600);
+    // A signed-in email account keeps that address. The phone number is taken with the booking.
+    const accountEmail = user && !user.guestSince && user.contact.includes('@') ? user.contact : null;
     const row = await recordBookingAttempt({
       name: body.name?.trim() || user?.name,
-      contact: body.contact?.trim() || user?.contact,
-      email: body.email,
+      contact: accountEmail || body.contact?.trim() || user?.contact,
+      email: accountEmail || body.email,
       phone: body.phone,
       productId: body.productId,
       quantity: body.quantity,

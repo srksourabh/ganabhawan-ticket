@@ -1,6 +1,6 @@
 import { ClerkProvider } from '@clerk/nextjs';
 import type { Metadata, Viewport } from 'next';
-import { FESTIVAL_BN, SITE_DESCRIPTION, SITE_TITLE } from '@/lib/brand';
+import { FESTIVAL, FESTIVAL_BN, FESTIVAL_POSTER, SITE_DESCRIPTION, SITE_TITLE } from '@/lib/brand';
 import { CartProvider } from '@/components/CartProvider';
 import ClerkSync from '@/components/ClerkSync';
 import { LocaleProvider } from '@/components/LocaleProvider';
@@ -13,7 +13,10 @@ import '@fontsource/noto-sans-bengali/400.css';
 import '@fontsource/noto-sans-bengali/600.css';
 import './globals.css';
 
+const appUrl = (process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000').replace(/\/$/, '');
+
 export const metadata: Metadata = {
+  metadataBase: new URL(appUrl),
   title: SITE_TITLE,
   description: SITE_DESCRIPTION,
   manifest: '/manifest.webmanifest',
@@ -23,13 +26,29 @@ export const metadata: Metadata = {
     title: FESTIVAL_BN,
   },
   icons: {
-    // Browser-tab favicon: the Samatat emblem from the navbar logo (public/favicon.ico: 16, 32, 48 px).
-    // The home-screen (apple) and PWA manifest icons are separate and unchanged.
+    // Samatat emblem (cropped from the navbar logo) for tabs, bookmarks, and link-preview favicons.
     icon: [
       { url: '/favicon.ico', sizes: 'any' },
       { url: '/icons/favicon-32.png', sizes: '32x32', type: 'image/png' },
     ],
-    apple: [{ url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }],
+    apple: [
+      { url: '/icons/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+    ],
+  },
+  openGraph: {
+    type: 'website',
+    locale: 'bn_IN',
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    siteName: FESTIVAL,
+    images: [{ url: FESTIVAL_POSTER, width: 642, height: 1024, alt: FESTIVAL }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    images: [FESTIVAL_POSTER],
   },
 };
 

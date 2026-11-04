@@ -25,6 +25,7 @@ import { razorpayKeyId } from './razorpay';
 import type { User } from './types';
 import { CONFIRMED_LEAD, LINK_SIGN_IN_NOTE, NO_REFUND, PICKUP_INSTRUCTION, appBaseUrl, smsShowLabel, supportLine, ticketsLink, type ConfirmationMessage } from './confirmation';
 import { DEFAULT_VENUE } from './brand';
+import { ticketLineLabel } from './i18n';
 import { assertCanPurchase, contactsOf } from './account-contacts';
 import { TEST_BOOKING_NOTE, issuedTickets, renderTicketEmailHtml, ticketTextLines } from './ticket-email';
 import { bookingPaymentMode } from './payment-mode';
@@ -399,7 +400,7 @@ export function receiptText(r: Receipt, appUrl: string, ticketLines: string[] = 
   const items = r.lines.map((l, i) => [
     `${i + 1}. ${l.product}${l.status !== 'CONFIRMED' ? ` [${l.status.replace('_', ' ')}]` : ''}`,
     `   Theatre: ${r.venue || DEFAULT_VENUE}`,
-    `   ${l.kind === 'SEASON' ? 'Season ticket' : 'Daily ticket'} · ${l.category}`,
+    `   ${ticketLineLabel(l.kind, l.category)}`,
     ...l.performances.map((p) => `   ${p.title}: ${ist(p.startsAt)}`),
     `   Quantity: ${l.quantity} × ${rupees(l.unitPrice)} = ${rupees(l.lineTotal)}`,
   ].join('\n'));

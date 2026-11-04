@@ -48,7 +48,11 @@ export async function sendEmail(to: string, subject: string, message: string, id
     body: JSON.stringify({ from, to: [to], subject, text: message, ...(html ? { html } : {}) }),
     signal: AbortSignal.timeout(10000),
   });
-  requireValue(response.ok, 'Email delivery is temporarily unavailable.', 503);
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 300);
+    console.error('resend send failed', response.status, detail);
+    throw new AppError(503, 'Email delivery is temporarily unavailable.');
+  }
 }
 
 /**

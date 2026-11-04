@@ -6,6 +6,7 @@ import { decrypt } from './security';
 import { sendEmail, sendMessage } from './auth';
 import { renderSms, sendSms } from './sms';
 import { DEFAULT_VENUE, ORGANISATION } from './brand';
+import { ticketLineLabel } from './i18n';
 import { CONFIRMED_LEAD, LINK_SIGN_IN_NOTE, NO_REFUND, PICKUP_INSTRUCTION, appBaseUrl, smsShowLabel, supportLine, ticketsLink, type ConfirmationMessage } from './confirmation';
 import { supportEmail } from './env';
 import { verifiedContacts } from './account-contacts';
@@ -254,7 +255,7 @@ export async function bookingConfirmation(bookingId: string): Promise<Confirmati
     booking.payment_reference && booking.paid_at ? `Payment ${booking.payment_reference} on ${istTime(booking.paid_at)}` : '',
     '',
     `${s.name ?? 'Tickets'}`,
-    `${s.kind === 'SEASON' ? 'Season ticket' : 'Daily ticket'} · ${s.category ?? ''}`,
+    ticketLineLabel(s.kind ?? '', s.category),
     ...(s.coverage ?? []).map((p) => `${p.title}: ${istTime(p.startsAt)}`),
     `Quantity: ${booking.quantity} × ${rupees(booking.unit_price)} = ${rupees(booking.total)}`,
     '',

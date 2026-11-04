@@ -104,7 +104,8 @@ export default function CheckoutPage() {
     if (runningRef.current) return; // double-click / repeated submit
     if (lines.some((line) => line.status === 'unavailable')) return;
     const name = buyer.name.trim();
-    const email = buyer.email.trim();
+    const accountEmail = me.contact?.includes('@') ? me.contact : '';
+    const email = (accountEmail || buyer.email).trim();
     const phone = buyer.phone.trim();
     if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || phone.replace(/\D/g, '').length < 10) {
       setBuyerError(t('checkout.detailsRequired'));
@@ -259,7 +260,6 @@ export default function CheckoutPage() {
         <p className="eyebrow">{locale === 'bn' ? FESTIVAL_BN : FESTIVAL}</p>
         <h1 className="h2">{t('checkout.title')}</h1>
         <p className="muted">{t('checkout.intro')}</p>
-        <p className="muted">{t('checkout.guest')}</p>
         <p className="banner" role="note"><strong>{t('terms.title')}.</strong> {t('checkout.pickup')}</p>
         <p className="banner banner--err" role="note">{t('checkout.noRefunds')}</p>
 
@@ -316,7 +316,8 @@ export default function CheckoutPage() {
             </label>
             <label className="field">
               <span>{t('checkout.email')}</span>
-              <input name="buyerEmail" type="email" autoComplete="email" required value={buyer.email} disabled={running} onChange={(event) => setBuyer((current) => ({ ...current, email: event.target.value }))} />
+              <input name="buyerEmail" type="email" autoComplete="email" required value={me.contact?.includes('@') ? me.contact : buyer.email} readOnly={Boolean(me.contact?.includes('@'))} disabled={running} onChange={(event) => { if (!me.contact?.includes('@')) setBuyer((current) => ({ ...current, email: event.target.value })); }} />
+              {me.contact?.includes('@') && <small className="muted">{t('checkout.emailLocked')}</small>}
             </label>
             <label className="field">
               <span>{t('checkout.phone')}</span>

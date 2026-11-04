@@ -101,7 +101,7 @@ export default function CartPage() {
               <span>{money(cart.total, dl)}</span>
             </div>
 
-            <Link href="/cart/checkout" className="btn btn--primary btn--block">{t('checkout.guest')}</Link>
+            <Link href="/cart/checkout" className="btn btn--primary btn--block">{t('cart.checkout')}</Link>
             <p className="alert alert--info" role="note" style={{ margin: 0 }}>{t('cart.holdInfo')}</p>
             <p className="muted" style={{ margin: 0 }}>{t('checkout.intro')}</p>
             <p className="banner banner--err" role="note">{t('checkout.noRefunds')} {t('checkout.pickup')}</p>

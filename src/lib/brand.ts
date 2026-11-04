@@ -27,7 +27,9 @@ export const AUDITORIUM_PHOTO = '/images/auditorium-two-floors.jpg';
 export const AUDITORIUM_HOUSE = '/images/auditorium-house.svg';
 export const BRAND_LOGO = '/images/samatat/logo.png';
 export const STORY_PHOTO = '/images/samatat/story-swapnomoy.jpg';
-/** Festival announcement hero for the 2026 Natyomela. */
+/** Master festival poster — home hero and link-share preview. */
+export const FESTIVAL_POSTER = '/images/samatat/master-poster.png';
+/** Festival announcement hero for the 2026 Natyomela (JPEG of the master poster). */
 export const HERO_PHOTO = '/images/samatat/hero-natyomela-2026.jpg';
 /** Production posters and stills used when a show has no dedicated artwork. */
 export const STAGE_PHOTOS = [

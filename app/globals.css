@@ -878,20 +878,20 @@ input:focus, select:focus, textarea:focus {
   padding-bottom: 5rem;
 }
 .catalogue-page__intro {
-  padding: 2.75rem 0 1.5rem;
+  padding: 1.5rem 0 0.85rem;
 }
 .catalogue-page__intro h1 {
-  font-size: clamp(2.2rem, 6vw, 3.8rem);
+  font-size: clamp(1.8rem, 5vw, 2.8rem);
   line-height: 1.15;
-  margin: 0.4rem 0 0.8rem;
+  margin: 0.25rem 0 0.5rem;
   color: var(--burgundy-text);
 }
 .catalogue-page__lede {
   max-width: 42rem;
-  font-size: 1.1rem;
-  line-height: 1.6;
+  font-size: 1rem;
+  line-height: 1.5;
   color: var(--ink-light);
-  margin: 0 0 1.6rem;
+  margin: 0 0 1rem;
 }
 
 .catalogue-page__search-wrap {
@@ -916,12 +916,16 @@ input:focus, select:focus, textarea:focus {
 }
 
 /* Drama Showcase Rails & Tabs */
+.catalogue-page__shows h2 {
+  margin: 0 0 0.65rem;
+  font-size: clamp(1.2rem, 3vw, 1.55rem);
+}
 .pick-rail {
   display: flex;
-  gap: 0.85rem;
+  gap: 0.65rem;
   overflow-x: auto;
-  padding: 0.4rem 0.2rem 1rem;
-  margin: 0 0 1.5rem;
+  padding: 0.2rem 0.1rem 0.75rem;
+  margin: 0 0 0.85rem;
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
 }
@@ -934,7 +938,7 @@ input:focus, select:focus, textarea:focus {
 }
 
 .show-rail {
-  flex: 0 0 168px;
+  flex: 0 0 132px;
   scroll-snap-align: start;
   border: 1.5px solid var(--border);
   background: #ffffff;
@@ -980,22 +984,22 @@ input:focus, select:focus, textarea:focus {
 
 .pick {
   display: grid;
-  gap: 2rem;
+  gap: 1rem;
   align-items: start;
   background: #ffffff;
   border-radius: var(--radius-lg);
-  padding: 1.5rem;
+  padding: 1rem 1.1rem 1.15rem;
   border: 1px solid var(--border);
   box-shadow: var(--shadow-card);
 }
-@media (min-width: 860px) {
-  .pick {
-    grid-template-columns: minmax(240px, 320px) 1fr;
-    padding: 2.2rem;
-    gap: 2.5rem;
-  }
+.pick__title-card {
+  display: grid;
+  grid-template-columns: minmax(96px, 140px) 1fr;
+  gap: 0.85rem;
+  align-items: center;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--border);
 }
-
 .pick__poster {
   width: 100%;
   aspect-ratio: 3 / 2;
@@ -1003,38 +1007,66 @@ input:focus, select:focus, textarea:focus {
   object-position: center;
   border-radius: var(--radius);
   background: var(--paper-subtle);
-  box-shadow: var(--shadow-card);
+  border: 1px solid var(--border);
 }
-
-.pick__side h3 {
-  font-size: clamp(1.6rem, 4vw, 2.2rem);
-  margin: 0.2rem 0 0.4rem;
+.pick__meta h3 {
+  font-size: clamp(1.25rem, 3.2vw, 1.7rem);
+  margin: 0.15rem 0 0.25rem;
   color: var(--burgundy-text);
+  line-height: 1.2;
 }
-.pick__side time {
+.pick__genre {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+.pick__meta time {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.35rem;
   color: var(--muted);
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 500;
-  margin-bottom: 1.25rem;
+  margin: 0;
+}
+.pick__booking {
+  display: grid;
+  gap: 0.85rem;
+  align-items: start;
+}
+@media (min-width: 860px) {
+  .pick__booking {
+    grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+    gap: 1.1rem;
+  }
+}
+.pick__ticket-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-width: 0;
+}
+.pick__note {
+  margin: 0;
 }
 
 /* Zone Seating Tiers List */
 .pick__zones {
   list-style: none;
-  margin: 1.5rem 0;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: 0.5rem;
 }
 .pick__zones li {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 1rem;
-  padding: 1.15rem 1.25rem;
+  gap: 0.65rem;
+  padding: 0.7rem 0.85rem;
   background: var(--paper-subtle);
   border: 1.5px solid var(--border);
   border-radius: var(--radius);
@@ -1058,13 +1090,13 @@ input:focus, select:focus, textarea:focus {
 
 .pick__zones strong {
   display: block;
-  font-size: 1.15rem;
+  font-size: 1rem;
   color: var(--ink);
 }
 .pick__zones p {
-  margin: 0.2rem 0;
+  margin: 0.1rem 0;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.84rem;
 }
 .pick__actions {
   display: flex;
@@ -1184,34 +1216,66 @@ input:focus, select:focus, textarea:focus {
 .pick__troupe {
   color: var(--muted);
   font-weight: 600;
-  margin: 0 0 0.4rem;
+  margin: 0 0 0.25rem;
+  font-size: 0.92rem;
 }
 
 /* Season panel: outside the single-play zone list */
 .season-panel {
-  margin-top: 1.5rem;
+  margin-top: 1rem;
+  padding: 1rem 1.1rem 1.15rem;
+  display: grid;
+  gap: 0.85rem;
 }
-.season-panel h3 {
-  font-size: clamp(1.3rem, 3vw, 1.7rem);
-  margin: 0.2rem 0 0.4rem;
+.season-panel__copy h3 {
+  font-size: clamp(1.2rem, 2.8vw, 1.5rem);
+  margin: 0.15rem 0 0.3rem;
   color: var(--burgundy-text);
+}
+.season-panel__copy .muted {
+  margin: 0;
+}
+.season-panel__body {
+  display: grid;
+  gap: 0.85rem;
+  align-items: start;
+}
+@media (min-width: 860px) {
+  .season-panel__body {
+    grid-template-columns: minmax(140px, 200px) minmax(0, 1fr);
+    gap: 1rem;
+  }
 }
 
 /* Auditorium hall photo with zone divisions */
 .auditorium {
   width: 100%;
-  margin: 1.2rem 0;
+  margin: 0;
 }
 .auditorium__frame {
   position: relative;
   border-radius: var(--radius);
   overflow: hidden;
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-sm);
   border: 1.5px solid var(--border);
   background: #efe2c8;
   aspect-ratio: 680 / 960;
-  max-width: 440px;
+  max-width: 280px;
   margin-inline: auto;
+}
+.auditorium--compact .auditorium__frame {
+  max-width: 220px;
+}
+.auditorium--compact .auditorium__legend {
+  margin-top: 0.45rem;
+  gap: 0.3rem 0.75rem;
+  font-size: 0.78rem;
+  justify-content: center;
+}
+.auditorium--compact .auditorium__tooltip {
+  margin-top: 0.4rem;
+  font-size: 0.82rem;
+  text-align: center;
 }
 .auditorium__photo {
   width: 100%;
@@ -1220,7 +1284,7 @@ input:focus, select:focus, textarea:focus {
   display: block;
 }
 .auditorium__plan {
-  width: min(100%, 420px);
+  width: min(100%, 280px);
   height: auto;
   display: block;
   margin-inline: auto;
@@ -1228,9 +1292,12 @@ input:focus, select:focus, textarea:focus {
   border: 1.5px solid var(--border);
   background: #efe2c8;
 }
+.auditorium__plan--compact {
+  width: min(100%, 200px);
+}
 .auditorium__sketch {
   position: relative;
-  width: 96px;
+  width: 72px;
   aspect-ratio: 680 / 960;
   margin: 0;
   flex: none;
@@ -1255,12 +1322,33 @@ input:focus, select:focus, textarea:focus {
   stroke-linejoin: round;
 }
 .cart-line {
-  grid-template-columns: 96px 1fr auto;
+  grid-template-columns: 72px 1fr auto;
 }
 .book-plan {
-  display: flex;
-  gap: 1rem;
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 0.75rem;
   align-items: center;
+  padding: 0.65rem 0.75rem;
+  background: var(--paper-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.book-plan__show {
+  margin: 0.15rem 0 0;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.book-plan__price {
+  margin: 0.2rem 0 0;
+  font-weight: 700;
+  color: var(--burgundy-text);
+}
+.book-shell {
+  max-width: 520px;
+}
+.book-shell .card.stack {
+  gap: 0.75rem;
 }
 .auditorium__overlay {
   position: absolute;

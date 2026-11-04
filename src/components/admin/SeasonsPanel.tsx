@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AUDITORIUM_HOUSE } from '@/lib/brand';
+import { zoneLabel } from '@/lib/i18n';
 
 type Performance = { id: string; title: string; startsAt: string; status: string };
 type Season = {
@@ -63,7 +64,7 @@ export default function SeasonsPanel({ onChanged }: { onChanged?: () => void }) 
   const load = useCallback(async () => {
     const res = await fetch('/api/admin/seasons', { cache: 'no-store' }).catch(() => null);
     const body = res ? await res.json().catch(() => ({})) : {};
-    if (!res || !res.ok) setError((body as { error?: string }).error || 'Could not load season tickets.');
+    if (!res || !res.ok) setError((body as { error?: string }).error || 'Could not load all together passes.');
     else setData(body as Overview);
     setLoading(false);
   }, []);
@@ -93,26 +94,26 @@ export default function SeasonsPanel({ onChanged }: { onChanged?: () => void }) 
     }
   }
 
-  if (loading) return <div className="stack admin__panel"><h2 className="h3">Seasons</h2><p className="muted" role="status">Loading season tickets…</p></div>;
+  if (loading) return <div className="stack admin__panel"><h2 className="h3">All together</h2><p className="muted" role="status">Loading all together passes…</p></div>;
 
   return (
     <div className="stack admin__panel">
-      <h2 className="h3">Seasons</h2>
+      <h2 className="h3">All together</h2>
       <p className="muted">
-        A season ticket is sold per zone and admits to every performance it covers. Cancelled performances are not part of new sales.
+        An all together pass is sold per zone and admits to every performance it covers. Cancelled performances are not part of new sales.
         Seats come from each performance&apos;s season allocation (Inventory).
       </p>
-      <img className="auditorium__plan" src={AUDITORIUM_HOUSE} alt="Auditorium plan showing Premier, Superior, and Balcony" />
+      <img className="auditorium__plan" src={AUDITORIUM_HOUSE} alt="Auditorium plan showing Front block, Second block, and First floor" />
       {message && <p className="banner banner--ok" role="status">{message}</p>}
       {error && <p className="banner banner--err" role="alert">{error}</p>}
 
       {data && (
         <section className="card stack stack--sm" aria-labelledby="season-switch-heading">
-          <h3 id="season-switch-heading" className="h3">Season-ticket sales: {data.sales.seasonSwitch ? 'Open' : 'Closed'}</h3>
+          <h3 id="season-switch-heading" className="h3">All together sales: {data.sales.seasonSwitch ? 'Open' : 'Closed'}</h3>
           <p style={{ margin: 0 }}>
-            Customers can buy season tickets only when <strong>all</strong> of these are on: public sales
-            ({data.sales.publicSales ? 'on' : 'off'}), season-ticket sales ({data.sales.seasonSwitch ? 'on' : 'off'}), the customer-sales
-            configuration ({data.sales.configured ? 'complete' : 'incomplete'}), and the season ticket&apos;s own &quot;On sale&quot;.
+            Customers can buy all together passes only when <strong>all</strong> of these are on: public sales
+            ({data.sales.publicSales ? 'on' : 'off'}), all together sales ({data.sales.seasonSwitch ? 'on' : 'off'}), the customer-sales
+            configuration ({data.sales.configured ? 'complete' : 'incomplete'}), and the pass&apos;s own &quot;On sale&quot;.
           </p>
           <p className="muted" style={{ margin: 0 }}>
             The season-ticket switch is the server setting <code>{data.sales.setting}</code> (<code>true</code> = open), and public sales are{' '}
@@ -121,14 +122,14 @@ export default function SeasonsPanel({ onChanged }: { onChanged?: () => void }) 
         </section>
       )}
 
-      {data && data.seasons.length === 0 && <p className="muted" role="status">No season tickets yet. Create one below.</p>}
+      {data && data.seasons.length === 0 && <p className="muted" role="status">No all together passes yet. Create one below.</p>}
 
       {data?.seasons.map((season) => {
         const active = season.performances.filter((p) => p.status !== 'CANCELLED');
         const addable = data.upcomingPerformances.filter((p) => !season.performances.some((c) => c.id === p.id));
         return (
           <article key={season.id} className="card stack stack--sm">
-            <p className="eyebrow">{season.zone} · {season.enabled ? 'On sale' : 'Not on sale'}</p>
+            <p className="eyebrow">{zoneLabel('en', season.zone)} · {season.enabled ? 'On sale' : 'Not on sale'}</p>
             <h3 className="h3">{season.name} <span className="muted">· {season.nameBn}</span></h3>
             <p style={{ margin: 0 }}>
               {rupees(season.price)} · {active.length} performance{active.length === 1 ? '' : 's'}
@@ -153,8 +154,8 @@ export default function SeasonsPanel({ onChanged }: { onChanged?: () => void }) 
 
             {deleting === season.id && (
               <div className="card stack stack--sm admin__confirm" role="alertdialog" aria-labelledby={`delete-season-${season.id}`}>
-                <h4 id={`delete-season-${season.id}`} className="h3">Delete this season ticket?</h4>
-                <p>Season ticket: <strong>{season.name}</strong> ({season.zone})</p>
+                <h4 id={`delete-season-${season.id}`} className="h3">Delete this all together pass?</h4>
+                <p>All together: <strong>{season.name}</strong> ({zoneLabel('en', season.zone)})</p>
                 {season.deletable ? (
                   <p className="muted">It has never been booked, so it is removed permanently with its list of performances. Performances and their seats are not affected.</p>
                 ) : (
@@ -164,8 +165,8 @@ export default function SeasonsPanel({ onChanged }: { onChanged?: () => void }) 
                   <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => setDeleting(null)}>Cancel</button>
                   {season.deletable && (
                     <button type="button" className="btn btn--danger" disabled={busy}
-                      onClick={() => { void run(() => send(`/api/admin/seasons/${season.id}`, 'DELETE'), `Season ticket "${season.name}" deleted.`); }}>
-                      {busy ? 'Deleting…' : 'Delete season ticket'}
+                      onClick={() => { void run(() => send(`/api/admin/seasons/${season.id}`, 'DELETE'), `All together pass "${season.name}" deleted.`); }}>
+                      {busy ? 'Deleting…' : 'Delete all together pass'}
                     </button>
                   )}
                 </div>
@@ -184,7 +185,7 @@ export default function SeasonsPanel({ onChanged }: { onChanged?: () => void }) 
                     setEditErrors(errors);
                     if (Object.keys(errors).length) return;
                     void run(() => send(`/api/admin/seasons/${season.id}`, 'PATCH', { ...values, enabled: form.get('enabled') === 'on', version: season.version }),
-                      `Season ticket "${String(values.name)}" updated.`);
+                      `All together pass "${String(values.name)}" updated.`);
                   }}
                 >
                   <div className="grid">
@@ -211,7 +212,7 @@ export default function SeasonsPanel({ onChanged }: { onChanged?: () => void }) 
 
                 <h4 className="h3">Performances</h4>
                 {season.performancesLocked && (
-                  <p className="muted" style={{ margin: 0 }}>This season ticket has been booked, so its performances can no longer change.</p>
+                  <p className="muted" style={{ margin: 0 }}>This all together pass has been booked, so its performances can no longer change.</p>
                 )}
                 <ul className="stack stack--sm" style={{ margin: 0, paddingLeft: '1.1rem' }}>
                   {season.performances.map((p) => (
@@ -235,7 +236,7 @@ export default function SeasonsPanel({ onChanged }: { onChanged?: () => void }) 
                     onSubmit={(event) => {
                       event.preventDefault();
                       const showId = String(new FormData(event.currentTarget).get('showId') ?? '');
-                      void run(() => send(`/api/admin/seasons/${season.id}/coverage`, 'POST', { showId }), 'Performance added to the season ticket.');
+                      void run(() => send(`/api/admin/seasons/${season.id}/coverage`, 'POST', { showId }), 'Performance added to the all together pass.');
                     }}
                   >
                     <label className="field"><span>Add a performance</span>
@@ -261,15 +262,15 @@ export default function SeasonsPanel({ onChanged }: { onChanged?: () => void }) 
             const { errors, values } = validate(form, true);
             setCreateErrors(errors);
             if (Object.keys(errors).length) return;
-            void run(() => send('/api/admin/seasons', 'POST', { zone: form.get('zone'), ...values }), `Season ticket "${String(values.name)}" created.`)
+            void run(() => send('/api/admin/seasons', 'POST', { zone: form.get('zone'), ...values }), `All together pass "${String(values.name)}" created.`)
               .then(() => formEl.reset());
           }}
         >
-          <h3 className="h3">Create a season ticket</h3>
+          <h3 className="h3">Create an all together pass</h3>
           <p className="muted" style={{ margin: 0 }}>One per zone. It covers every published performance that has not started; adjust the list afterwards (before any sale).</p>
           <div className="grid">
             <label className="field"><span>Zone</span>
-              <select name="zone" aria-invalid={Boolean(createErrors.zone)}>{data.zonesWithoutSeason.map((z) => <option key={z}>{z}</option>)}</select>
+              <select name="zone" aria-invalid={Boolean(createErrors.zone)}>{data.zonesWithoutSeason.map((z) => <option key={z} value={z}>{zoneLabel('en', z)}</option>)}</select>
               {createErrors.zone && <small role="alert">{createErrors.zone}</small>}
             </label>
             <label className="field"><span>Name</span>
@@ -285,7 +286,7 @@ export default function SeasonsPanel({ onChanged }: { onChanged?: () => void }) 
               {createErrors.price && <small role="alert">{createErrors.price}</small>}
             </label>
           </div>
-          <button className="btn btn--primary" type="submit" disabled={busy}>{busy ? 'Creating…' : 'Create season ticket'}</button>
+          <button className="btn btn--primary" type="submit" disabled={busy}>{busy ? 'Creating…' : 'Create all together pass'}</button>
         </form>
       )}
     </div>

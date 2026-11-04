@@ -25,6 +25,8 @@ type Props = {
   photoUrl?: string;
   selectedProductId?: string | null;
   onSelectZone: (zone: AuditoriumZone) => void;
+  /** Smaller plan, no second zone list (the parent already shows buy buttons). */
+  compact?: boolean;
 };
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
@@ -60,6 +62,7 @@ export default function AuditoriumMap({
   zones,
   selectedProductId,
   onSelectZone,
+  compact = false,
 }: Props) {
   const { locale, t } = useLocale();
   const dl = dateLocale(locale);
@@ -95,11 +98,13 @@ export default function AuditoriumMap({
   const activeZone = zones.find((zone) => zone.category === activeCategory) ?? null;
 
   return (
-    <div className="auditorium auditorium--photo">
-      <div className="auditorium__floors" aria-hidden="true">
-        <span>{t('map.firstFloor')} · {zoneLabel(locale, 'Balcony')}</span>
-        <span>{t('map.ground')} · {zoneLabel(locale, 'Premier')} / {zoneLabel(locale, 'Superior')}</span>
-      </div>
+    <div className={`auditorium auditorium--photo${compact ? ' auditorium--compact' : ''}`}>
+      {!compact && (
+        <div className="auditorium__floors" aria-hidden="true">
+          <span>{zoneLabel(locale, 'Balcony')}</span>
+          <span>{t('map.ground')} · {zoneLabel(locale, 'Premier')} / {zoneLabel(locale, 'Superior')}</span>
+        </div>
+      )}
 
       <div className="auditorium__frame">
         <img className="auditorium__photo" src={AUDITORIUM_HOUSE} alt="" />
@@ -154,7 +159,7 @@ export default function AuditoriumMap({
         </svg>
       </div>
 
-      <p className="auditorium__zone-only">{t('map.zoneOnly')}</p>
+      {!compact && <p className="auditorium__zone-only">{t('map.zoneOnly')}</p>}
 
       <ul className="auditorium__legend" aria-hidden="true">
         {zones.map((zone) => (
@@ -182,31 +187,33 @@ export default function AuditoriumMap({
             )}
           </>
         ) : (
-          <span className="muted">{t('catalogue.mapHint')}</span>
+          <span className="muted">{compact ? t('map.zoneOnly') : t('catalogue.mapHint')}</span>
         )}
       </div>
 
-      <ul className="auditorium__zone-list">
-        {zones.map((zone) => {
-          const soldOut = isBlocked(zone);
-          const isSelected = zone.productId !== null && zone.productId === selectedProductId;
-          return (
-            <li key={zone.category}>
-              <button
-                type="button"
-                className={`auditorium__zone-btn auditorium__zone-btn--${zone.category.toLowerCase()}${isSelected ? ' auditorium__zone-btn--selected' : ''}`}
-                disabled={soldOut}
-                aria-pressed={isSelected}
-                onClick={() => activate(zone)}
-              >
-                <strong>{zoneLabel(locale, zone.category)}</strong>
-                <span>{zoneWhere(locale, zone.category)}</span>
-                <span>{soldOut ? statusText(zone) : `${money(zone.price, dl)} · ${t('map.available', { count: zone.available })}`}</span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+      {!compact && (
+        <ul className="auditorium__zone-list">
+          {zones.map((zone) => {
+            const soldOut = isBlocked(zone);
+            const isSelected = zone.productId !== null && zone.productId === selectedProductId;
+            return (
+              <li key={zone.category}>
+                <button
+                  type="button"
+                  className={`auditorium__zone-btn auditorium__zone-btn--${zone.category.toLowerCase()}${isSelected ? ' auditorium__zone-btn--selected' : ''}`}
+                  disabled={soldOut}
+                  aria-pressed={isSelected}
+                  onClick={() => activate(zone)}
+                >
+                  <strong>{zoneLabel(locale, zone.category)}</strong>
+                  <span>{zoneWhere(locale, zone.category)}</span>
+                  <span>{soldOut ? statusText(zone) : `${money(zone.price, dl)} · ${t('map.available', { count: zone.available })}`}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
