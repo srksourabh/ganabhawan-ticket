@@ -2,6 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "ganabhawan-festival",
   "account_id": "284e2fb6036048cc75fd24df7712d03e",
+  "workers_dev": true,
   "compatibility_date": "2026-09-06",
   "compatibility_flags": [
     "nodejs_compat"
@@ -21,6 +22,19 @@
   // 10-minute cadence still reclaims them promptly while letting Neon auto-suspend.
   "triggers": {
     "crons": ["*/10 * * * *"]
+  },
+  // Keep the public ticket hostname attached across deploys (dashboard route was wiped once).
+  "routes": [
+    {
+      "pattern": "ticket.samatat.org",
+      "custom_domain": true,
+      "zone_name": "samatat.org"
+    }
+  ],
+  "observability": {
+    "logs": {
+      "enabled": true
+    }
   },
   "version_metadata": {
     "binding": "CF_VERSION_METADATA"
