@@ -23,14 +23,7 @@
   "triggers": {
     "crons": ["*/10 * * * *"]
   },
-  // Keep the public ticket hostname attached across deploys (dashboard route was wiped once).
-  "routes": [
-    {
-      "pattern": "ticket.samatat.org",
-      "custom_domain": true,
-      "zone_name": "samatat.org"
-    }
-  ],
+  // Public site stays on *.workers.dev only (no custom domain).
   "observability": {
     "logs": {
       "enabled": true
