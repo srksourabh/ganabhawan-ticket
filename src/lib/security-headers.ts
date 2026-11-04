@@ -20,6 +20,8 @@ const clerkHost = clerkFrontendHost();
 const clerk = ['https://*.clerk.accounts.dev', 'https://*.clerk.com', clerkHost ? `https://${clerkHost}` : ''].filter(Boolean).join(' ');
 const turnstile = 'https://challenges.cloudflare.com';
 
+const ga = 'https://www.googletagmanager.com https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com';
+
 const scriptSrc = [
   "'self'",
   "'unsafe-inline'",
@@ -27,6 +29,7 @@ const scriptSrc = [
   'https://checkout.razorpay.com',
   clerk,
   turnstile,
+  ga,
 ].filter(Boolean).join(' ');
 
 export const SECURITY_HEADER_LIST: { key: string; value: string }[] = [
@@ -46,7 +49,7 @@ export const SECURITY_HEADER_LIST: { key: string; value: string }[] = [
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
-      `connect-src 'self' https://api.razorpay.com https://lumberjack.razorpay.com ${clerk} https://clerk-telemetry.com https://accounts.google.com https://*.googleapis.com`,
+      `connect-src 'self' https://api.razorpay.com https://lumberjack.razorpay.com ${clerk} https://clerk-telemetry.com https://accounts.google.com https://*.googleapis.com ${ga}`,
       `frame-src https://api.razorpay.com https://checkout.razorpay.com ${clerk} ${turnstile} https://accounts.google.com https://*.google.com`,
     ].join('; '),
   },

@@ -185,13 +185,13 @@ export default function CheckoutPage() {
           if (current && current.quantity === line.item.quantity) cart.remove(line.item.productId);
         }
       }
-      router.push(`/receipts/${checkoutId}`);
+      router.push(`/thank-you?checkout=${checkoutId}`);
     } catch (error) {
       // The browser may have missed the result (closed modal, lost network) while
       // the server confirmed via webhook/reconciliation: trust the server.
       if (checkoutId && (await cart.reconcileWithServer()) === 'paid') {
         setLines((prev) => updateAll(prev, { status: 'confirmed' }));
-        router.push(`/receipts/${checkoutId}`);
+        router.push(`/thank-you?checkout=${checkoutId}`);
         return;
       }
       const refund = error instanceof Error && error.message === 'REFUND_REQUIRED';
@@ -308,20 +308,20 @@ export default function CheckoutPage() {
             <span>{money(total, dl)}</span>
           </div>
 
-          <form className="card stack" onSubmit={(event) => { event.preventDefault(); void runCheckout(); }}>
+          <form className="card stack" onSubmit={(event) => { event.preventDefault(); void runCheckout(); }} noValidate>
             <h2 className="h3">{t('checkout.buyer')}</h2>
             <label className="field">
               <span>{t('checkout.name')}</span>
-              <input name="buyerName" autoComplete="name" required value={buyer.name} disabled={running} onChange={(event) => setBuyer((current) => ({ ...current, name: event.target.value }))} />
+              <input name="buyerName" autoComplete="name" required value={buyer.name} disabled={running} aria-invalid={Boolean(buyerError && !buyer.name.trim()) || undefined} onChange={(event) => setBuyer((current) => ({ ...current, name: event.target.value }))} />
             </label>
             <label className="field">
               <span>{t('checkout.email')}</span>
-              <input name="buyerEmail" type="email" autoComplete="email" required value={me.contact?.includes('@') ? me.contact : buyer.email} readOnly={Boolean(me.contact?.includes('@'))} disabled={running} onChange={(event) => { if (!me.contact?.includes('@')) setBuyer((current) => ({ ...current, email: event.target.value })); }} />
+              <input name="buyerEmail" type="email" autoComplete="email" required value={me.contact?.includes('@') ? me.contact : buyer.email} readOnly={Boolean(me.contact?.includes('@'))} disabled={running} aria-invalid={Boolean(buyerError && !(me.contact?.includes('@') ? me.contact : buyer.email).trim()) || undefined} onChange={(event) => { if (!me.contact?.includes('@')) setBuyer((current) => ({ ...current, email: event.target.value })); }} />
               {me.contact?.includes('@') && <small className="muted">{t('checkout.emailLocked')}</small>}
             </label>
             <label className="field">
               <span>{t('checkout.phone')}</span>
-              <input name="buyerPhone" type="tel" autoComplete="tel" inputMode="tel" required value={buyer.phone} disabled={running} onChange={(event) => setBuyer((current) => ({ ...current, phone: event.target.value }))} />
+              <input name="buyerPhone" type="tel" autoComplete="tel" inputMode="tel" required value={buyer.phone} disabled={running} aria-invalid={Boolean(buyerError && buyer.phone.replace(/\D/g, '').length < 10) || undefined} onChange={(event) => setBuyer((current) => ({ ...current, phone: event.target.value }))} />
             </label>
             {buyerError && <p role="alert" className="banner banner--err">{buyerError}</p>}
             {blocked ? (

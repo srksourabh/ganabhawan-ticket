@@ -48,7 +48,7 @@ export function AuditoriumSketch({ category }: { category?: string | null }) {
   const zone = asCategory(category);
   return (
     <figure className="auditorium__sketch">
-      <img src={AUDITORIUM_HOUSE} alt="" />
+      <img src={AUDITORIUM_HOUSE} alt={zone ? `Auditorium plan highlighting ${zone}` : 'Auditorium seating plan'} />
       {zone && (
         <svg viewBox="0 0 680 960" className="auditorium__overlay" aria-hidden="true">
           <polygon className="auditorium__sketch-mark" points={HITS[zone].hit} />
@@ -107,7 +107,7 @@ export default function AuditoriumMap({
       )}
 
       <div className="auditorium__frame">
-        <img className="auditorium__photo" src={AUDITORIUM_HOUSE} alt="" />
+        <img className="auditorium__photo" src={AUDITORIUM_HOUSE} alt="Auditorium seating plan: Front block, Second block, and First floor" />
         <svg
           viewBox="0 0 680 960"
           className="auditorium__overlay"
