@@ -87,7 +87,7 @@ export default function SiteHeader() {
     <header className="site-header safe-x">
       <div className="site-header__inner">
         <Link href="/" className="site-header__brand" onClick={() => setOpen(false)} lang={locale === 'bn' ? 'bn' : undefined}>
-          <img src={BRAND_LOGO} alt="" className="site-header__logo" width={36} height={36} />
+          <img src={BRAND_LOGO} alt={brandName} className="site-header__logo" width={36} height={36} />
           <span className="site-header__brand-text">
             {brandName}
             <small>{t('nav.venue')}</small>

@@ -108,8 +108,8 @@ function LoginForm() {
               <div style={styles.divider}><span style={styles.rule} /><span>{t('login.orOtp')}</span><span style={styles.rule} /></div>
               <form onSubmit={requestCode} noValidate>
                 <label htmlFor="contact" style={styles.label}>{t(mobileEnabled ? 'login.contact' : 'login.email')}</label>
-                <input id="contact" type="text" autoComplete="username" value={contact} onChange={e => setContact(e.target.value)} placeholder={t(mobileEnabled ? 'login.contactPlaceholder' : 'login.emailPlaceholder')} style={styles.input} disabled={loading} />
-                {error && <p role="alert" style={styles.error}>{error}</p>}
+                <input id="contact" type="text" autoComplete="username" value={contact} onChange={e => setContact(e.target.value)} placeholder={t(mobileEnabled ? 'login.contactPlaceholder' : 'login.emailPlaceholder')} style={styles.input} disabled={loading} aria-invalid={Boolean(error) || undefined} aria-describedby={error ? 'login-contact-error' : undefined} />
+                {error && <p id="login-contact-error" role="alert" style={styles.error}>{error}</p>}
                 <button type="submit" style={{ ...styles.btn, ...(loading || !contact.trim() ? styles.btnDisabled : {}) }} disabled={loading || !contact.trim()}>
                   {loading ? t('login.sending') : t('login.send')}
                 </button>
@@ -139,8 +139,8 @@ function LoginForm() {
         )}
         <form onSubmit={verifyCode} noValidate>
           <label htmlFor="code" style={styles.label}>{t('login.otp')}</label>
-          <input id="code" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={e => setCode(e.target.value)} style={styles.input} disabled={loading} />
-          {error && <p role="alert" style={styles.error}>{error}</p>}
+          <input id="code" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={e => setCode(e.target.value)} style={styles.input} disabled={loading} aria-invalid={Boolean(error) || undefined} aria-describedby={error ? 'login-code-error' : undefined} />
+          {error && <p id="login-code-error" role="alert" style={styles.error}>{error}</p>}
           <button type="submit" style={{ ...styles.btn, ...(loading || !code.trim() ? styles.btnDisabled : {}) }} disabled={loading || !code.trim()}>
             {loading ? t('login.checking') : t('login.verify')}
           </button>

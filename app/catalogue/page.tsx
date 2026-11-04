@@ -275,7 +275,7 @@ export default function CataloguePage() {
                 onClick={() => setSelectedShowId(show.id)}
                 className={`show-rail${effectiveShowId === show.id ? ' show-rail--on' : ''}`}
               >
-                <img src={showStill(show, index)} alt="" />
+                <img src={showStill(show, index)} alt={localized(show.title, show.title_bn, locale)} />
                 <span>{localized(show.title, show.title_bn, locale)}</span>
               </button>
             ))}
@@ -286,7 +286,7 @@ export default function CataloguePage() {
               <img
                 className="pick__poster"
                 src={showStill(selectedShow, Math.max(0, shows.findIndex((s) => s.id === selectedShow.id)))}
-                alt=""
+                alt={localized(selectedShow.title, selectedShow.title_bn, locale)}
               />
               <div className="pick__meta">
                 <p className="pick__genre">{selectedShow.genre}</p>

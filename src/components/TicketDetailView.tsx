@@ -176,7 +176,7 @@ function TicketShowCodes({
             {' — '}
             {new Date(c.startsAt).toLocaleString(dl, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}
           </p>
-          <img src={qr} alt="" width={240} height={240} />
+          <img src={qr} alt={`${t('tickets.yours')} ${ticketRef}`} width={240} height={240} />
           <p className="ticket-pass__ref">{ticketRef}</p>
           <p className="muted">{admitted > 0 ? t('tickets.admitted') : t('tickets.notScanned')}</p>
           <p className="muted">{t('tickets.showAtDoor')}</p>

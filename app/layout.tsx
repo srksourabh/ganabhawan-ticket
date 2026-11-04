@@ -1,11 +1,16 @@
 import { ClerkProvider } from '@clerk/nextjs';
 import type { Metadata, Viewport } from 'next';
-import { FESTIVAL, FESTIVAL_BN, FESTIVAL_POSTER, SITE_DESCRIPTION, SITE_TITLE } from '@/lib/brand';
+import { FESTIVAL_BN } from '@/lib/brand';
 import { CartProvider } from '@/components/CartProvider';
 import ClerkSync from '@/components/ClerkSync';
+import CookieBanner from '@/components/CookieBanner';
+import GoogleAnalytics from '@/components/GoogleAnalytics';
 import { LocaleProvider } from '@/components/LocaleProvider';
+import SiteFooter from '@/components/SiteFooter';
 import SiteHeader from '@/components/SiteHeader';
 import SkipLink from '@/components/SkipLink';
+import StickyMobileCta from '@/components/StickyMobileCta';
+import { OG_SHARE, PAGE_META, appBaseUrl } from '@/lib/page-meta';
 import '@fontsource/cormorant-garamond/600.css';
 import '@fontsource/dm-sans/400.css';
 import '@fontsource/dm-sans/600.css';
@@ -13,12 +18,9 @@ import '@fontsource/noto-sans-bengali/400.css';
 import '@fontsource/noto-sans-bengali/600.css';
 import './globals.css';
 
-const appUrl = (process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000').replace(/\/$/, '');
-
 export const metadata: Metadata = {
-  metadataBase: new URL(appUrl),
-  title: SITE_TITLE,
-  description: SITE_DESCRIPTION,
+  ...PAGE_META.home,
+  metadataBase: new URL(appBaseUrl()),
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
@@ -26,10 +28,11 @@ export const metadata: Metadata = {
     title: FESTIVAL_BN,
   },
   icons: {
-    // Samatat emblem (cropped from the navbar logo) for tabs, bookmarks, and link-preview favicons.
     icon: [
       { url: '/favicon.ico', sizes: 'any' },
       { url: '/icons/favicon-32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
     ],
     apple: [
       { url: '/icons/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
@@ -37,18 +40,8 @@ export const metadata: Metadata = {
     ],
   },
   openGraph: {
-    type: 'website',
-    locale: 'bn_IN',
-    title: SITE_TITLE,
-    description: SITE_DESCRIPTION,
-    siteName: FESTIVAL,
-    images: [{ url: FESTIVAL_POSTER, width: 642, height: 1024, alt: FESTIVAL }],
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: SITE_TITLE,
-    description: SITE_DESCRIPTION,
-    images: [FESTIVAL_POSTER],
+    ...PAGE_META.home.openGraph,
+    images: [{ url: OG_SHARE, width: 1200, height: 630, alt: FESTIVAL_BN }],
   },
 };
 
@@ -85,6 +78,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <ClerkSync />
               <SiteHeader />
               <div id="main-content">{children}</div>
+              <SiteFooter />
+              <StickyMobileCta />
+              <CookieBanner />
+              <GoogleAnalytics />
             </CartProvider>
           </LocaleProvider>
         </ClerkProvider>
