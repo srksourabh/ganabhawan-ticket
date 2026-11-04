@@ -225,11 +225,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
     function handleStorage(event: StorageEvent) {
       const current = ownerRef.current;
       if (current === null && event.key === GUEST_CART_KEY) show(readGuestItems<CartItem>(storage()));
-      if (current && event.key === ACCOUNT_CART_PING_KEY) void loadAccount(current);
+      if (current && event.key === ACCOUNT_CART_PING_KEY) void refreshAccount(current);
     }
     window.addEventListener('storage', handleStorage);
     return () => window.removeEventListener('storage', handleStorage);
-  }, [loadAccount, show]);
+  }, [refreshAccount, show]);
 
   /** Every change: a guest cart is saved in this browser, an account cart on the server. */
   const commit = useCallback((next: CartItem[]) => {
