@@ -133,7 +133,7 @@ test('seasons: edit changes only the fields sent, refuses protected fields, bad 
   await assert.rejects(seasons.updateSeason(owner, daily.id, { price: 5, version: 1 }), /not found/, 'daily tickets are not edited here');
 });
 
-test('seasons: performances can be added or removed before any sale, never after, never the last one', { skip }, async () => {
+test('seasons: performances can be added or removed before and after a sale (new purchases only), never the last one', { skip }, async () => {
   const { shows, season } = await seasonOfThree();
   const extra = await makeShow({ startsInMinutes: 6 * 24 * 60 });
   const owner = await makeUser('owner');
@@ -145,9 +145,16 @@ test('seasons: performances can be added or removed before any sale, never after
   await assert.rejects(seasons.removeSeasonPerformance(owner, season.productId, shows[0].showId), /at least one performance/);
   await seasons.addSeasonPerformance(owner, season.productId, shows[1].showId);
   const version = Number((await query<{ version: number }>('SELECT version FROM products WHERE id=$1', [season.productId]))[0].version);
-  await buySeason(await makeUser(), season.productId, version);
-  await assert.rejects(seasons.removeSeasonPerformance(owner, season.productId, shows[1].showId), /already been booked/);
-  await assert.rejects(seasons.addSeasonPerformance(owner, season.productId, shows[2].showId), /already been sold/);
+  const buyer = await makeUser();
+  const co = await buySeason(buyer, season.productId, version);
+  const held = async () => query<{ snapshot: unknown; total: number }>('SELECT snapshot, total FROM bookings WHERE checkout_id=$1', [co.id]);
+  const ents = async () => (await query<{ show_id: string }>('SELECT e.show_id FROM entitlements e JOIN tickets t ON t.id=e.ticket_id JOIN bookings b ON b.id=t.booking_id WHERE b.checkout_id=$1 ORDER BY e.show_id', [co.id])).map((r) => r.show_id);
+  const before = { booking: await held(), entitlements: await ents() };
+  // Changing the pass afterwards changes new purchases only; the buyer keeps what they bought.
+  await seasons.removeSeasonPerformance(owner, season.productId, shows[1].showId);
+  await seasons.addSeasonPerformance(owner, season.productId, shows[2].showId);
+  assert.deepEqual({ booking: await held(), entitlements: await ents() }, before);
+  assert.deepEqual(before.entitlements, [shows[0].showId, shows[1].showId].sort());
 });
 
 test('seasons: delete removes a never-booked season ticket; one with any booking or attempt is kept (409) with its history', { skip }, async () => {

@@ -7,6 +7,7 @@ import { assertShowCancellable, cancelShowSales } from './commerce';
 import { defaultDailyClose, productSellState, type CoveredPerformance, type SaleWindow } from './availability';
 import { ZONES, zoneTemplate, type Zone } from './inventory-admin';
 import { ADMIN_POLICY } from './admin-policy';
+import { applyProgrammeInclusion, inclusionStates } from './programme-inclusion';
 import { assertDailyPriceShared, assertSeasonFinalPrice, loadZonePrices, seasonPricing, seasonProductPricing, type PricingZone } from './pricing';
 export async function catalogue() {
  const festival=(await query<Festival>('SELECT * FROM festivals ORDER BY created_at LIMIT 1'))[0];
@@ -70,7 +71,9 @@ function instantOrNull(value: unknown, label: string): string | null {
 export async function adminCatalogue() {
  const festival=(await query<Festival>('SELECT * FROM festivals ORDER BY created_at LIMIT 1'))[0];
  if(!festival) return {festival:null,shows:[],products:[],development:developmentAdaptersAllowed()};
- const shows=await query<Show>('SELECT * FROM shows WHERE festival_id=$1 ORDER BY starts_at',[festival.id]);
+ const inclusion=await inclusionStates();
+ // Each programme's All Together inclusion (programme-inclusion.ts): INCLUDED, EXCLUDED, PARTIAL or NO_PASS.
+ const shows=(await query<Show>('SELECT * FROM shows WHERE festival_id=$1 ORDER BY starts_at',[festival.id])).map(s=>({...s,all_together:inclusion.get(s.id)??'NO_PASS'}));
  const products=await query<Product>(`SELECT p.*, GREATEST(0,LEAST(COALESCE(MIN(i.allocation-i.held-i.committed),0),
  COALESCE(p.cap-(SELECT COALESCE(sum(quantity),0) FROM bookings b WHERE b.product_id=p.id AND b.status IN ('HELD','PAYMENT_PENDING','CONFIRMED')),2147483647)))::int available,
  COALESCE(jsonb_agg(jsonb_build_object('id',s.id,'title',s.title,'title_bn',s.title_bn,'starts_at',s.starts_at,'status',s.status) ORDER BY s.starts_at) FILTER (WHERE s.id IS NOT NULL),'[]'::jsonb) coverage
@@ -198,6 +201,8 @@ export interface ShowInput {
  venue?:string;
  /** Daily ticket price in paise for this programme's zones. Omitted zones keep the copied price. */
  prices?:Partial<Record<Zone, number>>;
+ /** Include in All Together — Every Play (programme-inclusion.ts). New programmes are excluded unless true. */
+ allTogether?:boolean;
 }
 function programmePrices(raw: unknown): Partial<Record<Zone, number>> | null {
  if (raw == null) return null;
@@ -261,6 +266,8 @@ export async function upsertShow(user:User, input:ShowInput) {
    await c.query('INSERT INTO product_coverage(product_id,show_id,pool_id) VALUES($1,$2,$3)',[dailyProduct.id,show.id,dailyPool.id]);
   }
   await applyProgrammeDetails(c, festival!.id, show.id, input.venue, input.prices);
+  // Excluded by default: only an explicit admin choice adds it to All Together (new purchases only).
+  if(input.allTogether===true) await applyProgrammeInclusion(c,user.id,show.id,true);
   await c.query(`INSERT INTO devices(id,name) VALUES('gate-one','Main entrance'),('gate-two','Balcony entrance') ON CONFLICT(id) DO NOTHING`);
   await c.query(
     `INSERT INTO staff_scopes(user_id,show_id,gate,device_id)
@@ -370,6 +377,12 @@ export async function updateShow(user:User, id:string, input:Record<string,unkno
    [title,titleBn,troupe,synopsis,synopsisBn,startsAt.toISOString(),endsAt.toISOString(),runtime,genre,language,status,artwork,salesClosesAt.toISOString(),id]))!;
   if (status === 'CANCELLED' && show!.status !== 'CANCELLED') await cancelShowSales(c, id, user.id);
   await applyProgrammeDetails(c, (show as Show & { festival_id: string }).festival_id, id, input.venue, input.prices);
+  if(input.allTogether!==undefined) {
+   requireValue(typeof input.allTogether==='boolean','All Together inclusion must be true or false.',400);
+   const current=(await inclusionStates(c)).get(id);
+   const wanted=input.allTogether as boolean;
+   if((wanted && current!=='INCLUDED') || (!wanted && (current==='INCLUDED' || current==='PARTIAL'))) await applyProgrammeInclusion(c,user.id,id,wanted);
+  }
   await audit(c,user.id,'show.update',id,input);
   return updated;
  },true);

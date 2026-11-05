@@ -158,8 +158,8 @@ export default function PricingPanel({ onChanged }: { onChanged?: () => void }) 
                   {row.missingProgrammes && row.missingProgrammes.length > 0 && (
                     <p className="banner banner--err" role="status" style={{ whiteSpace: 'normal' }}>
                       Not in this pass: {row.missingProgrammes.map((p) => `${p.title} (${when(p.startsAt)})`).join(', ')}.
-                      The original total counts only the {row.programmeCount} programmes the pass covers. Add a programme under Seasons
-                      (possible only before the pass has been sold).
+                      The original total counts only the {row.programmeCount} programmes the pass covers. Include a programme under
+                      Dramas (Include in All Together); passes already bought keep their programmes.
                     </p>
                   )}
                 </td>

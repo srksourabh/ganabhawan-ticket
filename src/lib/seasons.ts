@@ -71,8 +71,8 @@ export async function seasonsOverview(user: User, nowMs = Date.now()) {
       available, state, open: reasons.length === 0, closedReasons: reasons,
       confirmedBookings: Number(s.confirmed), purchasesInProgress: Number(s.in_progress),
       performances: s.coverage.map((c) => ({ id: c.show_id, title: c.title, startsAt: new Date(c.starts_at).toISOString(), status: c.status })),
-      // Performances can change only before anything was bought (the same rule as addShowToSeason).
-      performancesLocked: Number(s.history) > 0,
+      // Performances can change at any time; only new purchases follow (existing bookings keep theirs).
+      performancesLocked: false,
       deletable: Number(s.history) === 0,
       deleteBlockedReason: Number(s.history) > 0
         ? 'This season ticket has bookings or purchase attempts, so its history is kept. Turn "On sale" off instead.'
@@ -151,9 +151,9 @@ export async function addSeasonPerformance(user: User, id: string, showId: unkno
 }
 
 /**
- * Removes a performance from a season ticket. Like adding, only before anything was bought
- * (no booking or purchase attempt, any status), so what customers bought never changes, and
- * never the last performance (delete the season ticket instead).
+ * Removes a performance from an All Together (season) pass, for NEW purchases only: bookings
+ * already made keep their snapshot, allocations and ticket entitlements. Never the last
+ * performance (delete the pass instead).
  */
 export async function removeSeasonPerformance(user: User, id: string, showId: string) {
   assertSeasonRole(user);
@@ -161,9 +161,6 @@ export async function removeSeasonPerformance(user: User, id: string, showId: st
   return transaction(async (c) => {
     const p = await one<{ id: string; kind: string }>(c, 'SELECT id, kind FROM products WHERE id=$1 FOR UPDATE', [id]);
     requireValue(p && p.kind === 'SEASON', 'Season ticket not found.', 404);
-    const history = await one<{ n: number }>(c,
-      'SELECT ((SELECT count(*) FROM bookings WHERE product_id=$1) + (SELECT count(*) FROM booking_attempts WHERE product_id=$1))::int n', [id]);
-    requireValue(Number(history?.n ?? 0) === 0, 'This season ticket has already been booked; its performances can no longer change.', 409);
     const covered = await one<{ n: number; included: boolean }>(c,
       'SELECT count(*)::int n, bool_or(show_id=$2) included FROM product_coverage WHERE product_id=$1', [id, showId]);
     requireValue(covered?.included === true, 'This performance is not part of the season ticket.', 404);

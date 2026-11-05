@@ -334,9 +334,13 @@ test('a published programme outside the pass is reported, never counted or added
     assert.deepEqual(row.missingProgrammes!.map((p) => p.id), [late.showId], 'the uncovered published programme is named');
   }
   assert.equal((await productIn(passes.Premier)).pricing!.programmeCount, 11, 'the customer sees the same count');
-  // Once a pass has been sold its programmes cannot change (what buyers paid for is kept).
-  await pay(await makeUser('customer'), [{ productId: passes.Premier, quantity: 1, version: 1 }]);
-  await assert.rejects(seasons.addSeasonPerformance(owner, passes.Premier, late.showId), /already been sold/);
+  // A sold pass can still gain it for NEW purchases; the existing buyer's booking is unchanged.
+  const { co } = await pay(await makeUser('customer'), [{ productId: passes.Premier, quantity: 1, version: 1 }]);
+  const sold = async () => query('SELECT snapshot, total, unit_price FROM bookings WHERE checkout_id=$1', [co.id]);
+  const was = await sold();
+  await seasons.addSeasonPerformance(owner, passes.Premier, late.showId);
+  assert.deepEqual(await sold(), was);
+  assert.equal((await pricing.pricingOverview(owner)).allTogether.find((r) => r.zone === 'Premier')!.programmeCount, 12);
   // An unsold pass can take it: then 12 programmes, ₹350 × 12 = ₹4,200, nothing missing.
   await seasons.addSeasonPerformance(owner, passes.Superior, late.showId);
   const superior = (await pricing.pricingOverview(owner)).allTogether.find((r) => r.zone === 'Superior')!;

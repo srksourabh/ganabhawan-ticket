@@ -184,11 +184,11 @@ export async function zoneTemplate(c: Client, festivalId: string, excludeShowId:
 }
 
 /**
- * Explicit admin action: add one performance to a season ticket's coverage.
- * New performances never join a season by themselves (upsertShow). Refused once
- * the season ticket has any sale, hold or payment in progress, so what existing
- * season customers bought never changes. The product version is bumped, so carts
- * holding the old season ticket must re-add it (and see the new coverage).
+ * Explicit admin action: add one performance to an All Together (season) pass's coverage.
+ * New performances never join a pass by themselves (upsertShow). Only NEW purchases cover it:
+ * every existing booking keeps its own snapshot, allocations and entitlements (existing holders
+ * gain a programme only through programme-inclusion.ts amendExistingPasses). The product
+ * version is bumped, so carts holding the old pass must re-add it (and see the new coverage).
  */
 export async function addShowToSeason(user: User, productId: string, showId: string) {
   return transaction(async (c) => {
@@ -199,9 +199,6 @@ export async function addShowToSeason(user: User, productId: string, showId: str
     requireValue(show!.status !== 'CANCELLED' && new Date(show!.starts_at).getTime() > Date.now(), 'Only an upcoming, not cancelled performance can be added.', 409);
     const covered = await one(c, 'SELECT 1 FROM product_coverage WHERE product_id=$1 AND show_id=$2', [product!.id, show!.id]);
     requireValue(!covered, 'This performance is already part of the season ticket.', 409);
-    const sold = await one<{ n: number }>(c,
-      "SELECT count(*)::int n FROM bookings WHERE product_id=$1 AND status IN ('HELD','PAYMENT_PENDING','CONFIRMED','REFUND_REQUIRED','REFUNDED')", [product!.id]);
-    requireValue(Number(sold?.n ?? 0) === 0, 'This season ticket has already been sold or is being bought; its performances can no longer change.', 409);
     const pool = await one<{ id: string }>(c,
       `SELECT p.id FROM pools p JOIN capacities cap ON cap.id=p.capacity_id WHERE cap.show_id=$1 AND cap.zone=$2 AND p.kind='SEASON'`, [show!.id, product!.category]);
     requireValue(pool, 'This performance has no season stock for that zone.', 409);

@@ -402,6 +402,20 @@ input:focus, select:focus, textarea:focus {
   gap: 0.4rem;
   font-size: 0.94rem;
 }
+/* A checkbox beside its label (admin forms): not stretched like a text input. */
+.field--check {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.6rem;
+}
+.field--check input[type='checkbox'] {
+  width: 1.2rem;
+  height: 1.2rem;
+  min-height: 0;
+  padding: 0;
+  flex: 0 0 auto;
+  accent-color: var(--burgundy);
+}
 
 /* Quantity Stepper */
 .qty-stepper {
