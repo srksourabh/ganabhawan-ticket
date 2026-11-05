@@ -7,7 +7,9 @@ import { AuditoriumSketch } from '@/components/AuditoriumMap';
 import { useCart } from '@/components/CartProvider';
 import { useLocale } from '@/components/LocaleProvider';
 import { FESTIVAL, FESTIVAL_BN } from '@/lib/brand';
-import { dateLocale, kindLabel, localized, zoneLabel } from '@/lib/i18n';
+import { dateLocale, kindLabel, localized, withZoneLabels, zoneLabel } from '@/lib/i18n';
+import type { SeasonPricing } from '@/lib/pricing';
+import SeasonPrice from '@/components/SeasonPrice';
 import { createClientPaymentOrder, payExistingOrder, prefillFromContact, type RazorpayOrder } from '@/lib/razorpay-checkout';
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
@@ -36,6 +38,8 @@ type CatalogueProduct = {
   /** Server-decided (availability.ts). */
   state?: 'SELLABLE' | 'SOLD_OUT' | 'CLOSED';
   available?: number;
+  /** All together only, server-computed (pricing.ts). */
+  pricing?: SeasonPricing;
 };
 type HoldResult = { id: string; reference: string; total: number; currency: string; expires_at: string | null; unit_price: number; quantity: number };
 type OrderResult = RazorpayOrder & { provider: 'development' | 'razorpay' };
@@ -270,7 +274,7 @@ function BookPageInner() {
       const show = product.coverage?.[0];
       const outcome = cart.add({
         productId: product.id,
-        name: localized(product.name, product.name_bn, locale),
+        name: withZoneLabels(localized(product.name, product.name_bn, locale), locale),
         category: product.category,
         kind: product.kind,
         showTitle: show ? localized(show.title, show.title_bn, locale) : '',
@@ -330,7 +334,9 @@ function BookPageInner() {
                 {show && (
                   <p className="book-plan__show">{localized(show.title, show.title_bn, locale)}</p>
                 )}
-                <p className="book-plan__price">{money(product.price, dl)}</p>
+                {product.kind === 'SEASON'
+                  ? <SeasonPrice price={product.price} pricing={product.pricing} />
+                  : <p className="book-plan__price">{money(product.price, dl)}</p>}
               </div>
             </div>
           )}

@@ -6,7 +6,9 @@ import { AUDITORIUM_HOUSE, DEFAULT_VENUE, DEFAULT_VENUE_BN, FESTIVAL, FESTIVAL_B
 import AuditoriumMap, { type AuditoriumCategory, type AuditoriumZone } from '@/components/AuditoriumMap';
 import { useCart } from '@/components/CartProvider';
 import { useLocale } from '@/components/LocaleProvider';
-import { dateLocale, localized, zoneLabel, zoneWhere } from '@/lib/i18n';
+import { dateLocale, localized, withZoneLabels, zoneLabel, zoneWhere } from '@/lib/i18n';
+import type { SeasonPricing } from '@/lib/pricing';
+import SeasonPrice from '@/components/SeasonPrice';
 
 type Show = { id: string; title: string; title_bn: string; troupe: string; synopsis: string; synopsis_bn: string; starts_at: string; genre: string; artwork?: string };
 type Product = {
@@ -21,6 +23,8 @@ type Product = {
   coverage: { id: string; title: string; starts_at: string }[];
   /** Server-decided (availability.ts): only SELLABLE can be added to the cart. */
   state?: 'SELLABLE' | 'SOLD_OUT' | 'CLOSED';
+  /** All together only, server-computed (pricing.ts): the shared per-programme price × programmes. */
+  pricing?: SeasonPricing;
 };
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
@@ -131,7 +135,7 @@ export default function CataloguePage() {
   function handleAddSeason(product: Product) {
     const outcome = cart.add({
       productId: product.id,
-      name: localized(product.name, product.name_bn, locale),
+      name: withZoneLabels(localized(product.name, product.name_bn, locale), locale),
       category: product.category,
       kind: product.kind,
       showTitle: t('catalogue.season'),
@@ -150,7 +154,7 @@ export default function CataloguePage() {
   function addLine(product: Product, showTitle: string, startsAt: string, added: string) {
     const outcome = cart.add({
       productId: product.id,
-      name: localized(product.name, product.name_bn, locale),
+      name: withZoneLabels(localized(product.name, product.name_bn, locale), locale),
       category: product.category,
       kind: product.kind,
       showTitle,
@@ -354,9 +358,8 @@ export default function CataloguePage() {
                       <div>
                         <strong>{zoneLabel(locale, line.category)}</strong>
                         <p>{zoneWhere(locale, line.category)}</p>
+                        {line.product && <SeasonPrice price={line.product.price} pricing={line.product.pricing} />}
                         <p>
-                          {line.product ? money(line.product.price, dl) : ''}
-                          {' · '}
                           {seasonClosed ? t('catalogue.closed') : available > 0 ? t('map.available', { count: available }) : t('map.soldOut')}
                         </p>
                       </div>

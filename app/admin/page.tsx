@@ -10,6 +10,8 @@ import AvailabilityPanel from '@/components/admin/AvailabilityPanel';
 import SeasonsPanel from '@/components/admin/SeasonsPanel';
 import StaffPanel from '@/components/admin/StaffPanel';
 import MetricsPanel from '@/components/admin/MetricsPanel';
+import PricingPanel from '@/components/admin/PricingPanel';
+import { zoneLabel } from '@/lib/i18n';
 
 type Tab = 'festival' | 'shows' | 'availability' | 'seasons' | 'prices' | 'zones' | 'inventory' | 'staff' | 'metrics';
 /** What each role can open. The UI only mirrors this: every admin API checks the role itself. */
@@ -642,6 +644,7 @@ export default function AdminPage() {
       {tab === 'prices' && (
         <div className="stack admin__panel">
           <h2 className="h3">Ticket prices by zone</h2>
+          <PricingPanel onChanged={() => { void load(); }} />
           <section className="card stack stack--sm" aria-labelledby="season-sales-heading">
             <h3 id="season-sales-heading" className="h3">Season-ticket sales</h3>
             {seasonSales === null ? (
@@ -658,8 +661,9 @@ export default function AdminPage() {
               </>
             )}
           </section>
-          <p className="muted">Prices follow the hall: Premier is the front of the ground floor, Superior the back, Balcony the gallery. The stage is not for sale.</p>
-          <img className="auditorium__plan" src={AUDITORIUM_HOUSE} alt="Auditorium plan with Premier, Superior, Balcony, and the stage" />
+          <p className="muted">Prices follow the hall: Front block is the front of the ground floor, Second block the back, First floor upstairs. The stage is not for sale.</p>
+          <p className="muted">Ticket options below: display name and &quot;On sale&quot;. Daily prices come from <strong>Price per programme</strong> and All together prices from <strong>All together — final prices</strong> above.</p>
+          <img className="auditorium__plan" src={AUDITORIUM_HOUSE} alt="Auditorium plan with Front block, Second block, First floor, and the stage" />
           <div className="grid">
             {products.map((product) => (
               <form
@@ -668,22 +672,19 @@ export default function AdminPage() {
                 onSubmit={(event) => {
                   event.preventDefault();
                   const form = new FormData(event.currentTarget);
+                  // Prices are set above (shared pricing); this form keeps the current price.
                   saveProduct(
                     product,
-                    Number(form.get('price')),
+                    product.price / 100,
                     form.get('enabled') === 'on',
                     String(form.get('name') || product.name),
                   );
                 }}
               >
-                <p className="eyebrow">{product.kind} · {product.category}</p>
+                <p className="eyebrow">{product.kind === 'SEASON' ? 'All together' : 'Daily'} · {zoneLabel('en', product.category)}</p>
                 <label className="field">
                   <span>Display name</span>
                   <input name="name" defaultValue={product.name} />
-                </label>
-                <label className="field">
-                  <span>Price (₹)</span>
-                  <input name="price" type="number" min={0} step={1} defaultValue={product.price / 100} />
                 </label>
                 <label className="field field--check">
                   <input name="enabled" type="checkbox" defaultChecked={product.enabled} />
@@ -707,19 +708,19 @@ export default function AdminPage() {
         <div className="card stack admin__panel">
           <h2 className="h3">Auditorium zones (guest map)</h2>
           <p className="muted">
-            Guests choose a zone on this plan. Hovering Premier, Superior, or Balcony lights that block and shows its price. Chairs are not sold one by one.
+            Guests choose a zone on this plan. Hovering Front block, Second block, or First floor lights that block and shows its price. Chairs are not sold one by one.
           </p>
           <div className="admin__zone-legend">
             <div><strong>Stage</strong> — bottom of the picture (not for sale)</div>
-            <div><strong>Premier</strong> — ground floor, front, nearest the stage</div>
-            <div><strong>Superior</strong> — ground floor, back, under the balcony</div>
-            <div><strong>Balcony</strong> — first floor</div>
-            <div><strong>Season</strong> — festival pass for the chosen zone</div>
+            <div><strong>Front block</strong> — ground floor, front, nearest the stage</div>
+            <div><strong>Second block</strong> — ground floor, back, under the first floor</div>
+            <div><strong>First floor</strong> — upstairs</div>
+            <div><strong>All together</strong> — festival pass for the chosen zone</div>
           </div>
           <img className="auditorium__plan" src={AUDITORIUM_HOUSE} alt="Auditorium seating plan" />
           <ul className="admin__zone-prices">
             {seasonProducts.map((p) => (
-              <li key={p.id}>{p.category} Season · {money(p.price)}</li>
+              <li key={p.id}>{zoneLabel('en', p.category)} · All together · {money(p.price)}</li>
             ))}
           </ul>
           <Link className="btn btn--primary" href="/catalogue">Preview guest catalogue</Link>

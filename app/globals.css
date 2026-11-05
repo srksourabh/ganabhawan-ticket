@@ -1311,6 +1311,25 @@ input:focus, select:focus, textarea:focus {
 .season-panel__copy .muted {
   margin: 0;
 }
+/* All together price: only the original total is struck through (SeasonPrice.tsx). */
+.season-price {
+  margin: 0.2rem 0;
+}
+.season-price p {
+  margin: 0.05rem 0;
+}
+.season-price__was {
+  color: var(--muted-light);
+}
+.season-price__off {
+  color: var(--success);
+  font-weight: 600;
+}
+.season-price__now {
+  display: block;
+  font-size: 1.1rem;
+  color: var(--burgundy-text);
+}
 .season-panel__body {
   display: grid;
   gap: 0.85rem;
