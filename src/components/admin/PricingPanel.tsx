@@ -7,6 +7,7 @@ type AllTogetherRow = {
   zone: string; label: string; productId: string | null; name?: string; enabled?: boolean; version?: number; updatedAt?: string | null;
   perProgrammePrice?: number | null; programmeCount?: number; originalTotal?: number | null; finalPrice?: number;
   discountAmount?: number; discountPercent?: number; blocked?: boolean; problem?: string | null;
+  missingProgrammes?: { id: string; title: string; startsAt: string }[];
 };
 type Overview = { ready: boolean; zones: ZoneRow[]; allTogether: AllTogetherRow[] };
 
@@ -154,6 +155,13 @@ export default function PricingPanel({ onChanged }: { onChanged?: () => void }) 
                     <button className="btn btn--primary btn--sm" type="submit" disabled={busy}>Save</button>
                   </form>
                   {row.blocked && <p className="banner banner--err" role="alert" style={{ whiteSpace: 'normal' }}>{row.problem} New All together bookings are paused for this zone.</p>}
+                  {row.missingProgrammes && row.missingProgrammes.length > 0 && (
+                    <p className="banner banner--err" role="status" style={{ whiteSpace: 'normal' }}>
+                      Not in this pass: {row.missingProgrammes.map((p) => `${p.title} (${when(p.startsAt)})`).join(', ')}.
+                      The original total counts only the {row.programmeCount} programmes the pass covers. Add a programme under Seasons
+                      (possible only before the pass has been sold).
+                    </p>
+                  )}
                 </td>
               </tr>
             ))}

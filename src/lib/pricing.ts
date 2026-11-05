@@ -233,6 +233,10 @@ export interface AllTogetherRow extends Partial<SeasonPricing> {
   enabled?: boolean;
   version?: number;
   updatedAt?: string | null;
+  /** The programmes the pass covers (not cancelled), in date order: what programmeCount counts. */
+  programmes?: { id: string; title: string; startsAt: string }[];
+  /** Published, upcoming programmes the pass does NOT cover (never added automatically: see addShowToSeason). */
+  missingProgrammes?: { id: string; title: string; startsAt: string }[];
 }
 
 /** Everything the admin "Ticket prices" screen shows. */
@@ -248,6 +252,13 @@ export async function pricingOverview(user: User) {
        (SELECT max(a.created_at) FROM audit_events a WHERE a.entity=p.id::text AND (a.action IN ('product.season.create','product.update')
           OR (a.action='product.season.update' AND a.detail->'before'->'price' IS DISTINCT FROM a.detail->'after'->'price'))) updated_at
      FROM products p WHERE p.festival_id=$1 AND p.kind='SEASON'`, [festival.id]);
+  type Programme = { id: string; title: string; starts_at: string; product_id: string | null };
+  const covered = await query<Programme>(
+    `SELECT s.id, s.title, s.starts_at, pc.product_id FROM product_coverage pc JOIN shows s ON s.id=pc.show_id JOIN products p ON p.id=pc.product_id
+     WHERE p.festival_id=$1 AND p.kind='SEASON' AND s.status<>'CANCELLED' ORDER BY s.starts_at, s.id`, [festival.id]);
+  const published = await query<Programme>(
+    `SELECT s.id, s.title, s.starts_at, NULL product_id FROM shows s WHERE s.festival_id=$1 AND s.status='PUBLISHED' AND s.ends_at>now() ORDER BY s.starts_at, s.id`, [festival.id]);
+  const view = (r: Programme) => ({ id: r.id, title: r.title, startsAt: new Date(r.starts_at).toISOString() });
   return {
     ready,
     zones: PRICING_ZONES.map((zone) => ({ ...prices[zone], label: zoneLabel('en', zone) })),
@@ -255,9 +266,12 @@ export async function pricingOverview(user: User) {
       const s = seasons.find((r) => r.category === zone);
       if (!s) return { zone, label: zoneLabel('en', zone), productId: null };
       const pricing = seasonPricing({ perProgrammePrice: prices[zone].price, programmeCount: Number(s.programmes), finalPrice: Number(s.price), configured: prices[zone].configured });
+      const mine = covered.filter((r) => r.product_id === s.id);
       return {
         zone, label: zoneLabel('en', zone), productId: s.id, name: s.name, enabled: s.enabled, version: Number(s.version),
         updatedAt: s.updated_at ? new Date(s.updated_at).toISOString() : null, ...pricing,
+        programmes: mine.map(view),
+        missingProgrammes: published.filter((p) => !mine.some((m) => m.id === p.id)).map(view),
       };
     }),
   };
