@@ -6,6 +6,7 @@ import { activeCoverage, seasonSaleBlocked, sellState } from './availability';
 import { configurationProblems, publicSalesOpen, seasonTicketSalesEnabled } from './env';
 import { addShowToSeason, createSeasonProduct } from './inventory-admin';
 import type { User } from './types';
+import { assertSeasonFinalPrice, seasonProductPricing } from './pricing';
 
 /**
  * Season management for the admin dashboard. There is no separate "season" entity in the
@@ -117,10 +118,14 @@ export async function updateSeason(user: User, id: string, input: Record<string,
   if (input.price !== undefined) requireValue(Number.isInteger(input.price) && (input.price as number) > 0, 'Price must be a positive whole number of paise.', 400);
   if (input.enabled !== undefined) requireValue(typeof input.enabled === 'boolean', '"On sale" must be true or false.', 400);
   return transaction(async (c) => {
-    const p = await one<{ id: string; kind: string; name: string; name_bn: string; price: number; enabled: boolean; version: number }>(
+    const p = await one<{ id: string; kind: string; name: string; name_bn: string; price: number; enabled: boolean; version: number; festival_id: string; category: string }>(
       c, 'SELECT * FROM products WHERE id=$1 FOR UPDATE', [id]);
     requireValue(p && p.kind === 'SEASON', 'Season ticket not found.', 404);
     requireValue(Number(p!.version) === input.version, 'This season ticket was changed by someone else. Refresh and try again.', 409);
+    // The final All together price never exceeds the original total (shared per-programme price × programmes).
+    if (input.price !== undefined && input.price !== Number(p!.price)) {
+      assertSeasonFinalPrice((await seasonProductPricing(c, { id, festival_id: p!.festival_id, category: p!.category, price: input.price as number })).pricing);
+    }
     const next = {
       name: input.name !== undefined ? (input.name as string).trim() : p!.name,
       name_bn: input.nameBn !== undefined ? (input.nameBn as string).trim() : p!.name_bn,

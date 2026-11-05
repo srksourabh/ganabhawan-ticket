@@ -2,6 +2,7 @@ import { transaction, one, query, type Client } from './db';
 import { AppError, requireValue } from './errors';
 import { audit } from './audit';
 import type { User } from './types';
+import { assertSeasonFinalPrice, loadZonePrices, seasonPricing } from './pricing';
 
 /**
  * Admin-configured inventory for one show × zone (migration 0008):
@@ -146,6 +147,8 @@ export async function createSeasonProduct(user: User, input: { category?: unknow
        JOIN pools p ON p.capacity_id=cap.id AND p.kind='SEASON'
        WHERE s.festival_id=$1 AND s.status='PUBLISHED' AND s.starts_at>now() ORDER BY s.starts_at`, [festival!.id, category])).rows;
     requireValue(pools.length > 0, 'Publish at least one upcoming performance before creating a season ticket.', 409);
+    const shared = (await loadZonePrices(festival!.id, c))[category as Zone];
+    assertSeasonFinalPrice(seasonPricing({ perProgrammePrice: shared.price, programmeCount: pools.length, finalPrice: price, configured: shared.configured }));
     const product = (await one<{ id: string }>(c,
       `INSERT INTO products(festival_id,name,name_bn,category,kind,price) VALUES($1,$2,$3,$4,'SEASON',$5) RETURNING *`,
       [festival!.id, name, nameBn, category, price]))!;
@@ -169,11 +172,14 @@ export async function zoneTemplate(c: Client, festivalId: string, excludeShowId:
        (SELECT price FROM products WHERE show_id=cap.show_id AND kind='DAILY' AND category=cap.zone LIMIT 1) price
      FROM capacities cap WHERE cap.show_id=(SELECT s.id FROM shows s WHERE s.festival_id=$1 AND s.id<>$2
        AND EXISTS (SELECT 1 FROM capacities x WHERE x.show_id=s.id) ORDER BY s.starts_at DESC LIMIT 1)`, [festivalId, excludeShowId])).rows;
+  // The daily price is the zone's shared per-programme price when one is configured (pricing.ts).
+  const shared = await loadZonePrices(festivalId, c);
   return ZONES.map((zone) => {
     const row = rows.find((r) => r.zone === zone);
+    const price = shared[zone].configured ? shared[zone].price! : Number(row?.price ?? 0);
     return row
-      ? { zone, ceiling: Number(row.ceiling), seasonAllocation: row.season_allocation, daily: Number(row.daily ?? 0), season: Number(row.season ?? 0), price: Number(row.price ?? 0), enabled: true }
-      : { zone, ceiling: 0, seasonAllocation: 0, daily: 0, season: 0, price: 0, enabled: false };
+      ? { zone, ceiling: Number(row.ceiling), seasonAllocation: row.season_allocation, daily: Number(row.daily ?? 0), season: Number(row.season ?? 0), price, enabled: true }
+      : { zone, ceiling: 0, seasonAllocation: 0, daily: 0, season: 0, price, enabled: false };
   });
 }
 

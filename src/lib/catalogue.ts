@@ -7,6 +7,7 @@ import { assertShowCancellable, cancelShowSales } from './commerce';
 import { defaultDailyClose, productSellState, type CoveredPerformance, type SaleWindow } from './availability';
 import { ZONES, zoneTemplate, type Zone } from './inventory-admin';
 import { ADMIN_POLICY } from './admin-policy';
+import { assertDailyPriceShared, assertSeasonFinalPrice, loadZonePrices, seasonPricing, seasonProductPricing, type PricingZone } from './pricing';
 export async function catalogue() {
  const festival=(await query<Festival>('SELECT * FROM festivals ORDER BY created_at LIMIT 1'))[0];
  if(!festival) return {festival:null,shows:[],products:[],development:developmentAdaptersAllowed()};
@@ -32,6 +33,8 @@ export async function publicProducts(festivalId: string, nowMs = Date.now()) {
   (SELECT COALESCE(sum(quantity),0)::int FROM bookings b WHERE b.product_id=p.id AND b.status IN ('HELD','PAYMENT_PENDING','CONFIRMED')) cap_used
   FROM products p JOIN festivals f ON f.id=p.festival_id JOIN product_coverage pc ON pc.product_id=p.id JOIN pools i ON i.id=pc.pool_id JOIN shows s ON s.id=pc.show_id
   WHERE p.festival_id=$1 AND (p.enabled=true OR p.kind='DAILY') ORDER BY p.price, p.id, s.starts_at`,[festivalId]);
+ // One shared per-programme price per zone: the All together original total and discount (pricing.ts).
+ const zonePrices=await loadZonePrices(festivalId);
  const byProduct=new Map<string,CoverageRow[]>();
  for(const row of rows) byProduct.set(row.product_id,[...(byProduct.get(row.product_id)??[]),row]);
  const products:Product[]=[];
@@ -40,12 +43,17 @@ export async function publicProducts(festivalId: string, nowMs = Date.now()) {
   if(visible.length===0) continue;
   const first=coverage[0];
   const kind=first.kind==='SEASON'?'SEASON':'DAILY';
-  const {state,available}=!first.enabled?{state:'CLOSED' as const,available:0}:productSellState(kind,coverage,first.cap===null?null:Number(first.cap),Number(first.cap_used),nowMs,undefined,saleWindow(kind,{booking_opens_at:first.booking_opens_at,season_closes_at:first.season_closes_at}));
+  const zone=zonePrices[String(first.category) as PricingZone];
+  const pricing=kind==='SEASON'
+   ? seasonPricing({perProgrammePrice:zone?.price??null,programmeCount:coverage.filter(s=>s.status!=='CANCELLED').length,finalPrice:Number(first.price),configured:zone?.configured??false})
+   : null;
+  // A final price above the original total is never offered (placeHold refuses it too).
+  const {state,available}=!first.enabled||pricing?.blocked?{state:'CLOSED' as const,available:0}:productSellState(kind,coverage,first.cap===null?null:Number(first.cap),Number(first.cap_used),nowMs,undefined,saleWindow(kind,{booking_opens_at:first.booking_opens_at,season_closes_at:first.season_closes_at}));
   const product:Record<string,unknown>={};
   for(const [key,value] of Object.entries(first)) {
    if(!['product_id','show_id','title','title_bn','starts_at','ends_at','status','allocation','held','committed','cap_used','sales_closes_at','booking_opens_at','season_closes_at'].includes(key)) product[key]=value;
   }
-  products.push({...(product as unknown as Product),available,state,
+  products.push({...(product as unknown as Product),available,state,...(pricing?{pricing}:{}),
    coverage:visible.map(s=>({id:s.show_id,title:s.title,title_bn:s.title_bn,starts_at:new Date(s.starts_at).toISOString(),status:s.status}) as unknown as Show)});
  }
  return products;
@@ -125,6 +133,10 @@ export async function updateProduct(user:User,id:string,input:{price:number;enab
   const p=await one(c,'SELECT * FROM products WHERE id=$1 FOR UPDATE',[id]); requireValue(p,'Product not found',404);
   requireValue(p.version===input.version,'The product changed. Refresh and try again.');
   requireValue(Number.isInteger(input.price)&&input.price>=0,'Price must be nonnegative paise.',400);
+  // Shared pricing (pricing.ts): a daily price is the zone's per-programme price; an All together
+  // final price never exceeds its original total.
+  if(p.kind==='DAILY' && Number(p.price)!==input.price) await assertDailyPriceShared(c,p.festival_id,p.category,input.price);
+  if(p.kind==='SEASON' && Number(p.price)!==input.price) assertSeasonFinalPrice((await seasonProductPricing(c,{id:p.id,festival_id:p.festival_id,category:p.category,price:input.price})).pricing);
   const name=input.name!==undefined?String(input.name):p.name;
   const nameBn=input.nameBn!==undefined?String(input.nameBn):p.name_bn;
   requireValue(name.trim().length>0 && nameBn.trim().length>0,'Product name is required.',400);
@@ -210,6 +222,7 @@ async function applyProgrammeDetails(c: Client, festivalId: string, showId: stri
  if (!prices) return;
  for (const zone of ZONES) {
   if (prices[zone] === undefined) continue;
+  await assertDailyPriceShared(c, festivalId, zone, prices[zone]!);
   await c.query("UPDATE products SET price=$1, version=version+1 WHERE show_id=$2 AND kind='DAILY' AND category=$3", [prices[zone], showId, zone]);
  }
 }
