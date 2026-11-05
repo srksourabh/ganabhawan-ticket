@@ -130,7 +130,7 @@ export default function AdminPage() {
   const [editingShow, setEditingShow] = useState<Show | null>(null);
   const [creating, setCreating] = useState(false);
   const [posterPreview, setPosterPreview] = useState('');
-  const [theaterUpload, setTheaterUpload] = useState('');
+  const [theaterUpload] = useState('');
   const [deletingShow, setDeletingShow] = useState<Show | null>(null);
   /** One delete request at a time: state updates are not visible to a second click in the same tick. */
   const deleteInFlight = useRef(false);

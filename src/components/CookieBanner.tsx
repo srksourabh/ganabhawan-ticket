@@ -10,6 +10,8 @@ export default function CookieBanner() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
+    // Consent lives in browser storage: read after mount so the server and first client render match.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setVisible(readCookieConsent() === null);
   }, []);
 
