@@ -17,3 +17,6 @@ artifacts/
 .clerk/
 .composio/
 .playwright-mcp/
+.env.local
+
+docs/
