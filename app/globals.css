@@ -1056,19 +1056,50 @@ input:focus, select:focus, textarea:focus {
   display: block;
   background: var(--paper-subtle);
 }
-.show-rail span {
-  display: block;
-  padding: 0.6rem 0.65rem 0.75rem;
+.show-rail__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+  padding: 0.6rem 0.65rem 0.7rem;
+  min-width: 0;
+}
+.show-rail__title {
   font-size: 0.82rem;
   font-weight: 600;
   line-height: 1.25;
   color: var(--ink);
+  overflow-wrap: anywhere;
 }
+.show-rail__when {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.74rem;
+  line-height: 1.3;
+  color: var(--muted);
+}
+/* Small text tag from the server's sale state (performance-status.ts); one accent per meaning. */
+.show-rail__tag {
+  align-self: flex-start;
+  margin-top: auto;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--muted);
+  background: var(--paper-subtle);
+}
+.show-rail__tag--available { color: var(--success); border-color: var(--success-border); background: var(--success-bg); }
+.show-rail__tag--selling-fast,
+.show-rail__tag--few-seats { color: var(--gold-dark); border-color: var(--border-gold); background: var(--gold-light); }
+.show-rail__tag--sold-out { color: var(--danger); border-color: var(--danger-border); background: var(--danger-bg); }
 .show-rail--on {
   border-color: var(--burgundy);
   box-shadow: 0 0 0 2px var(--burgundy), var(--shadow-card);
 }
-.show-rail--on span {
+.show-rail--on .show-rail__title {
   color: var(--burgundy);
 }
 

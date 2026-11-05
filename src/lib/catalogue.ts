@@ -54,7 +54,8 @@ export async function publicProducts(festivalId: string, nowMs = Date.now()) {
   for(const [key,value] of Object.entries(first)) {
    if(!['product_id','show_id','title','title_bn','starts_at','ends_at','status','allocation','held','committed','cap_used','sales_closes_at','booking_opens_at','season_closes_at'].includes(key)) product[key]=value;
   }
-  products.push({...(product as unknown as Product),available,state,...(pricing?{pricing}:{}),
+  // Daily: the zone's online seats (one pool), for the performance-card status tag (performance-status.ts).
+  products.push({...(product as unknown as Product),available,state,...(pricing?{pricing}:{}),...(kind==='DAILY'?{capacity:Number(first.allocation)}:{}),
    coverage:visible.map(s=>({id:s.show_id,title:s.title,title_bn:s.title_bn,starts_at:new Date(s.starts_at).toISOString(),status:s.status}) as unknown as Show)});
  }
  return products;
