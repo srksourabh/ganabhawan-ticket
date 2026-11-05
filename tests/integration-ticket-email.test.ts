@@ -101,7 +101,9 @@ test('guest buys 2 tickets: unique ticket numbers, HTML + text email with a QR p
   for (const body of [mail.html!, mail.text]) {
     assert.ok(body.includes(when), `performance time ${when}`);
     assert.ok(body.includes(facts.venue.replace(/&/g, '&amp;')) || body.includes(facts.venue), 'venue');
-    assert.match(body, /Premier/);
+    // The zone by its display name (Premier → Front block); the internal id is never shown.
+    assert.match(body, /Front block/);
+    assert.doesNotMatch(body, /Premier/);
   }
   assert.match(mail.html!, /2 &times; /, 'quantity');
   assert.ok(!mail.html!.includes(ORG) && !mail.text.includes(ORG), 'the organisation address is not shown to the customer');

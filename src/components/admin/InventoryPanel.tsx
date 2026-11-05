@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { AUDITORIUM_HOUSE } from '@/lib/brand';
+import { zoneLabel } from '@/lib/i18n';
 
 type ZoneRow = {
   show_id: string;
@@ -80,7 +81,7 @@ export default function InventoryPanel({ onChanged }: { onChanged?: () => void }
         how many season tickets the website may sell. Daily and season tickets use separate stock, so neither can
         oversell the other. A season ticket uses one seat in every performance it covers.
       </p>
-      <img className="auditorium__plan" src={AUDITORIUM_HOUSE} alt="Auditorium plan: Premier in front, Superior behind, Balcony above, stage at the front" />
+      <img className="auditorium__plan" src={AUDITORIUM_HOUSE} alt="Auditorium plan: Front block in front, Second block behind, First floor above, stage at the front" />
       {message && <p className="banner banner--ok" role="status">{message}</p>}
       {error && <p className="banner banner--err" role="alert">{error}</p>}
 
@@ -96,7 +97,7 @@ export default function InventoryPanel({ onChanged }: { onChanged?: () => void }
       >
         <h3 className="h3">Season allocation for a zone (all upcoming performances)</h3>
         <div className="grid">
-          <label className="field"><span>Zone</span><select name="zone">{ZONES.map((z) => <option key={z}>{z}</option>)}</select></label>
+          <label className="field"><span>Zone</span><select name="zone">{ZONES.map((z) => <option key={z} value={z}>{zoneLabel('en', z)}</option>)}</select></label>
           <label className="field"><span>Season allocation</span><input name="seasonAllocation" type="number" min={0} required /></label>
           <label className="field"><span>Online season allocation</span><input name="onlineSeasonAllocation" type="number" min={0} required /></label>
         </div>
@@ -121,15 +122,15 @@ export default function InventoryPanel({ onChanged }: { onChanged?: () => void }
                     capacityId: r.capacity_id, version: r.version,
                     ceiling: Number(f.get('ceiling')), seasonAllocation: Number(f.get('seasonAllocation')),
                     dailyAllocation: Number(f.get('dailyAllocation')), onlineSeasonAllocation: Number(f.get('onlineSeasonAllocation')),
-                  }), `${show.title} · ${r.zone} updated.`);
+                  }), `${show.title} · ${zoneLabel('en', r.zone)} updated.`);
                 }}
               >
-                <p className="eyebrow">{r.zone}{r.daily_enabled === false ? ' · daily tickets off' : ''}</p>
+                <p className="eyebrow">{zoneLabel('en', r.zone)}{r.daily_enabled === false ? ' · daily tickets off' : ''}</p>
                 <label className="field"><span>Total capacity</span><input name="ceiling" type="number" min={0} defaultValue={r.ceiling} /></label>
                 <label className="field"><span>Season allocation</span><input name="seasonAllocation" type="number" min={0} defaultValue={r.season_allocation ?? r.online_season_allocation} /></label>
                 <label className="field"><span>Daily allocation (online) · {r.daily_used} sold/held</span><input name="dailyAllocation" type="number" min={0} defaultValue={r.daily_allocation} /></label>
                 <label className="field"><span>Online season allocation · {r.season_used} sold/held</span><input name="onlineSeasonAllocation" type="number" min={0} defaultValue={r.online_season_allocation} /></label>
-                <button className="btn btn--ghost btn--sm" type="submit" disabled={busy}>Save {r.zone}</button>
+                <button className="btn btn--ghost btn--sm" type="submit" disabled={busy}>Save {zoneLabel('en', r.zone)}</button>
               </form>
             ))}
           </div>

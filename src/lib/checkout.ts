@@ -25,7 +25,7 @@ import { razorpayKeyId } from './razorpay';
 import type { User } from './types';
 import { CONFIRMED_LEAD, LINK_SIGN_IN_NOTE, NO_REFUND, PICKUP_INSTRUCTION, appBaseUrl, smsShowLabel, supportLine, ticketsLink, type ConfirmationMessage } from './confirmation';
 import { DEFAULT_VENUE } from './brand';
-import { ticketLineLabel } from './i18n';
+import { ticketLineLabel, withZoneLabels } from './i18n';
 import { assertCanPurchase, contactsOf } from './account-contacts';
 import { TEST_BOOKING_NOTE, issuedTickets, renderTicketEmailHtml, ticketTextLines } from './ticket-email';
 import { bookingPaymentMode } from './payment-mode';
@@ -91,7 +91,7 @@ async function checkoutView(db: Queryable, checkoutId: string, userId: string) {
     status: checkoutStatus(bookings as { status: string; expires_at: string }[]),
     expiresAt: live.length ? new Date(Math.min(...live.map((b) => new Date(b.expires_at).getTime()))).toISOString() : null,
     bookings: bookings.map((b) => ({
-      id: b.id, reference: b.reference, productId: b.product_id, name: b.snapshot?.name ?? '', category: b.snapshot?.category ?? '',
+      id: b.id, reference: b.reference, productId: b.product_id, name: withZoneLabels(b.snapshot?.name ?? ''), category: b.snapshot?.category ?? '',
       quantity: Number(b.quantity), unitPrice: Number(b.unit_price), total: Number(b.total), status: b.status,
     })),
   };
@@ -377,7 +377,7 @@ async function buildReceipt(co: Row): Promise<Receipt> {
     lines: bookings.map((b) => ({
       bookingId: b.id,
       bookingReference: b.reference,
-      product: b.snapshot?.name ?? '',
+      product: withZoneLabels(b.snapshot?.name ?? ''),
       category: b.snapshot?.category ?? '',
       kind: b.snapshot?.kind ?? '',
       performances: [...(b.snapshot?.coverage ?? [])]

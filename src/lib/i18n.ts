@@ -126,6 +126,9 @@ const en: Dict = {
   'catalogue.soldOut': 'Sold out',
   'catalogue.closed': 'Sales closed',
   'catalogue.seasonTitle': 'All together — every play',
+  'catalogue.perProgramme': '{price} × {count} programmes',
+  'catalogue.discount': '{percent}% OFF · You save {amount}',
+  'catalogue.originalPrice': 'Original price {price}',
   'catalogue.seasonHint': 'One pass per person. Covers all plays in chronological order, October prologue to finale.',
 
   'map.aria': 'Auditorium seating map — select a zone, not an individual seat',
@@ -474,6 +477,9 @@ const bn: Dict = {
   'catalogue.soldOut': 'শেষ',
   'catalogue.closed': 'বিক্রি বন্ধ',
   'catalogue.seasonTitle': 'একত্রে — সব নাটক',
+  'catalogue.perProgramme': '{price} × {count}টি নাটক',
+  'catalogue.discount': '{percent}% ছাড় · আপনার সাশ্রয় {amount}',
+  'catalogue.originalPrice': 'আসল দাম {price}',
   'catalogue.seasonHint': 'প্রতি ব্যক্তি একটি পাস। অক্টোবর প্রস্তাবনা থেকে ফিনালে পর্যন্ত সব নাটক কালানুক্রমে অন্তর্ভুক্ত।',
 
   'map.aria': 'অডিটোরিয়াম সিটিং ম্যাপ — আলাদা আসন নয়, জোন নির্বাচন করুন',
@@ -746,6 +752,16 @@ export function zoneLabel(locale: Locale, category: string): string {
   const key = `zone.${category}` as MessageKey;
   if (key in catalogs.en) return t(locale, key);
   return category;
+}
+
+/**
+ * Product names are stored with the internal zone id ("Macbeth – Premier", "Premier Season",
+ * also inside older bookings' snapshots). Shown with the display name instead ("Macbeth – Front
+ * block"); the stored data and zone ids never change.
+ */
+export function withZoneLabels(text: string, locale: Locale = 'en'): string {
+  if (!text) return text;
+  return text.replace(/\b(Premier|Superior|Balcony)\b/g, (zone) => zoneLabel(locale, zone));
 }
 
 /** English line on tickets, receipts and email: "Daily ticket · Front block" or "All together · First floor". */

@@ -6,7 +6,7 @@ import { decrypt } from './security';
 import { sendEmail, sendMessage } from './auth';
 import { renderSms, sendSms } from './sms';
 import { DEFAULT_VENUE, ORGANISATION } from './brand';
-import { ticketLineLabel } from './i18n';
+import { ticketLineLabel, withZoneLabels } from './i18n';
 import { CONFIRMED_LEAD, LINK_SIGN_IN_NOTE, NO_REFUND, PICKUP_INSTRUCTION, appBaseUrl, smsShowLabel, supportLine, ticketsLink, type ConfirmationMessage } from './confirmation';
 import { supportEmail } from './env';
 import { verifiedContacts } from './account-contacts';
@@ -100,7 +100,7 @@ export async function ticketPdf(user: User, ticketId: string): Promise<Uint8Arra
   });
 
   if (row.product_name) {
-    page.drawText(row.product_name, {
+    page.drawText(withZoneLabels(row.product_name), {
       x: 40,
       y: height - 120,
       size: 13,
@@ -254,7 +254,7 @@ export async function bookingConfirmation(bookingId: string): Promise<Confirmati
     `Booking ${booking.reference}`,
     booking.payment_reference && booking.paid_at ? `Payment ${booking.payment_reference} on ${istTime(booking.paid_at)}` : '',
     '',
-    `${s.name ?? 'Tickets'}`,
+    `${withZoneLabels(s.name ?? 'Tickets')}`,
     ticketLineLabel(s.kind ?? '', s.category),
     ...(s.coverage ?? []).map((p) => `${p.title}: ${istTime(p.startsAt)}`),
     `Quantity: ${booking.quantity} × ${rupees(booking.unit_price)} = ${rupees(booking.total)}`,
@@ -286,7 +286,7 @@ export async function bookingConfirmation(bookingId: string): Promise<Confirmati
       total: Number(booking.total),
       payment: booking.payment_reference && booking.paid_at ? { reference: booking.payment_reference, paidAt: new Date(booking.paid_at).toISOString() } : null,
       lines: [{
-        bookingId, product: s.name ?? 'Tickets', kind: s.kind ?? '', category: s.category ?? '',
+        bookingId, product: withZoneLabels(s.name ?? 'Tickets'), kind: s.kind ?? '', category: s.category ?? '',
         performances: [...(s.coverage ?? [])].map((p) => ({ title: p.title, startsAt: new Date(p.startsAt).toISOString() })).sort((x, y) => x.startsAt.localeCompare(y.startsAt)),
         quantity: Number(booking.quantity), unitPrice: Number(booking.unit_price), lineTotal: Number(booking.total), confirmed: booking.status === 'CONFIRMED',
       }],

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { AUDITORIUM_HOUSE } from '@/lib/brand';
+import { zoneLabel } from '@/lib/i18n';
 
 type ZoneSales = {
   zone: string;
@@ -70,7 +71,7 @@ export default function AvailabilityPanel({ onChanged }: { onChanged?: () => voi
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error((body as { error?: string }).error || 'Request failed.');
-      setMessage(`${show.title}${zone ? ` · ${zone}` : ''}: sales ${open ? 'opened' : 'closed'}.`);
+      setMessage(`${show.title}${zone ? ` · ${zoneLabel('en', zone)}` : ''}: sales ${open ? 'opened' : 'closed'}.`);
       await load();
       onChanged?.();
     } catch (e) {
@@ -88,7 +89,7 @@ export default function AvailabilityPanel({ onChanged }: { onChanged?: () => voi
         tickets (Seasons tab) are not changed. Closing never cancels bookings: tickets already bought stay valid.
         Capacity is set under <strong>Inventory</strong>; cancelling a performance is done under <strong>Dramas</strong>.
       </p>
-      <img className="auditorium__plan" src={AUDITORIUM_HOUSE} alt="Auditorium plan showing Premier, Superior, and Balcony" />
+      <img className="auditorium__plan" src={AUDITORIUM_HOUSE} alt="Auditorium plan showing Front block, Second block, and First floor" />
       {message && <p className="banner banner--ok" role="status">{message}</p>}
       {error && <p className="banner banner--err" role="alert">{error}</p>}
 
@@ -119,15 +120,15 @@ export default function AvailabilityPanel({ onChanged }: { onChanged?: () => voi
           <div className="grid">
             {show.zones.map((z) => (
               <article key={z.zone} className="stack stack--sm">
-                <p className="eyebrow">{z.zone} · {ZONE_LABEL[z.state]}</p>
+                <p className="eyebrow">{zoneLabel('en', z.zone)} · {ZONE_LABEL[z.state]}</p>
                 <p style={{ margin: 0 }}>{z.reason}</p>
                 <p className="muted" style={{ margin: 0 }}>
                   Capacity {z.ceiling} · daily seats {z.allocation ?? 0} · sold {z.sold} · held {z.held} · remaining {z.remaining}
                 </p>
                 {z.productId && show.status !== 'CANCELLED' && (
                   z.enabled
-                    ? <button type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => { void setSales(false, z.zone); }}>Close {z.zone}</button>
-                    : <button type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => { void setSales(true, z.zone); }}>Open {z.zone}</button>
+                    ? <button type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => { void setSales(false, z.zone); }}>Close {zoneLabel('en', z.zone)}</button>
+                    : <button type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => { void setSales(true, z.zone); }}>Open {zoneLabel('en', z.zone)}</button>
                 )}
               </article>
             ))}
