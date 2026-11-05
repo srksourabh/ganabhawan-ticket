@@ -55,7 +55,7 @@ const en: Dict = {
 
   'home.eyebrow': `${DEFAULT_VENUE_PLACE}, ${DEFAULT_VENUE} · ${FESTIVAL_DATES}`,
   'home.lead': `Twelve evenings of Bengali theatre at ${DEFAULT_VENUE}, ${FESTIVAL_DATES}. Choose a section and pay in one step.`,
-  'home.support': `Presented by ${ORGANISATION}. Choose Daily or all together for Front block, Second block, and First floor.`,
+  'home.support': `Presented by ${ORGANISATION}. Choose Daily or All Together for Front block, Second block, and First floor.`,
   'home.cta': 'Get tickets',
   'home.storyTitle': 'Theatre as community',
   'home.story': `Founded in 1999 in ${DEFAULT_VENUE_PLACE}. Samatat names the ancient Bengali kingdom of this riverbank: a cultural practice rooted here, reaching outward. ${FESTIVAL} continues that annual gathering.`,
@@ -114,18 +114,18 @@ const en: Dict = {
   'catalogue.daily': 'Daily admission',
   'catalogue.mapHint': 'Pick a coloured zone, not a single chair. Front block is ground-floor front, Second block is ground-floor back, First floor is upstairs.',
   'catalogue.addDaily': 'Add daily',
-  'catalogue.addSeason': 'Add all together',
+  'catalogue.addSeason': 'Add All Together',
   'catalogue.added': 'Added {category} · {title} to your cart.',
   'catalogue.addFail': 'Unable to add to cart.',
-  'catalogue.addedSeason': 'Added {category} all together to your cart.',
+  'catalogue.addedSeason': 'Added {category} All Together to your cart.',
   'catalogue.addToCart': 'Add to cart',
   'catalogue.searchEmpty': 'No matches. Try another word, or browse the plays below.',
-  'catalogue.season': 'All together',
+  'catalogue.season': 'All Together',
   'catalogue.available': '{count} available · {shows} performance(s)',
   'catalogue.bookNow': 'Book now',
   'catalogue.soldOut': 'Sold out',
   'catalogue.closed': 'Sales closed',
-  'catalogue.seasonTitle': 'All together — every play',
+  'catalogue.seasonTitle': 'All Together — Every Play',
   'catalogue.perProgramme': '{price} × {count} programmes',
   'catalogue.discount': '{percent}% OFF · You save {amount}',
   'catalogue.originalPrice': 'Original price {price}',
@@ -224,7 +224,7 @@ const en: Dict = {
   'cart.dismiss': 'OK',
   'checkout.noRefunds': 'A ticket, once booked, cannot be cancelled or refunded.',
   'terms.title': 'Terms',
-  'checkout.pickup': 'Come to the auditorium before the show starts. Show your ticket email or confirmation SMS and a valid photo ID, and collect your physical ticket before the show. All together passes are handed over on the first day, before that first show, all performances at once. Each ticket admits one person once.',
+  'checkout.pickup': 'Come to the auditorium before the show starts. Show your ticket email or confirmation SMS and a valid photo ID, and collect your physical ticket before the show. All Together passes are handed over on the first day, before that first show, all performances at once. Each ticket admits one person once.',
   'support.line': 'Support: {email}',
   'checkout.guest': 'Continue as guest',
   'checkout.blocked': 'Some tickets in your cart can no longer be bought. Remove them to continue — nothing has been charged.',
@@ -289,7 +289,7 @@ const en: Dict = {
   'admin.saving': 'Saving…',
 
   'kind.DAILY': 'Daily',
-  'kind.SEASON': 'All together',
+  'kind.SEASON': 'All Together',
 
   'book.loading': 'Loading booking…',
   'book.back': '← Back to programme',
@@ -299,7 +299,7 @@ const en: Dict = {
   'book.email': 'Email',
   'book.phone': 'Phone number',
   'book.contact': 'Mobile or email',
-  'book.who': 'Your name, email and phone are taken when you pay. The ticket is emailed and sent by SMS to those details. A booked ticket cannot be refunded. Come to the auditorium before the show starts, show that email or SMS and a valid photo ID, and collect your physical ticket before the show. All together passes are handed over on the first day, all performances at once.',
+  'book.who': 'Your name, email and phone are taken when you pay. The ticket is emailed and sent by SMS to those details. A booked ticket cannot be refunded. Come to the auditorium before the show starts, show that email or SMS and a valid photo ID, and collect your physical ticket before the show. All Together passes are handed over on the first day, all performances at once.',
   'book.qty': 'Number of tickets',
   'book.max': '(max 6)',
   'book.hint': 'Price is confirmed after the hold is created. Your selection is reserved for a limited time.',
@@ -318,7 +318,7 @@ const en: Dict = {
   'book.confirmed': 'Booking confirmed',
   'book.ready': 'Your tickets are ready. Open My tickets to show your QR codes.',
   'book.viewTickets': 'View my tickets',
-  'book.emailed': 'Your tickets have been emailed to {email}. Come to the auditorium before the show starts, show that email or the confirmation SMS and a valid photo ID, and collect your physical ticket before the show. All together passes are handed over on the first day.',
+  'book.emailed': 'Your tickets have been emailed to {email}. Come to the auditorium before the show starts, show that email or the confirmation SMS and a valid photo ID, and collect your physical ticket before the show. All Together passes are handed over on the first day.',
   'pay.failed': 'Payment failed.',
   'pay.refunded': 'Payment was received, but these tickets are no longer available. A refund has been started.',
   'pay.orderFail': 'Unable to create a payment order. Your hold is active — please refresh.',
@@ -764,9 +764,22 @@ export function withZoneLabels(text: string, locale: Locale = 'en'): string {
   return text.replace(/\b(Premier|Superior|Balcony)\b/g, (zone) => zoneLabel(locale, zone));
 }
 
-/** English line on tickets, receipts and email: "Daily ticket · Front block" or "All together · First floor". */
+/**
+ * The name a customer sees for a ticket option. An All Together pass is always called
+ * "All Together — Every Play · <zone>" (its stored name, e.g. "Premier Season", is internal);
+ * a daily ticket keeps its stored name with the zone's display name.
+ */
+export function productDisplayName(name: string, kind?: string | null, category?: string | null, locale: Locale = 'en'): string {
+  if (kind === 'SEASON') {
+    const zone = category ? zoneLabel(locale, category) : '';
+    return zone ? `${t(locale, 'catalogue.seasonTitle')} · ${zone}` : t(locale, 'catalogue.seasonTitle');
+  }
+  return withZoneLabels(name, locale);
+}
+
+/** English line on tickets, receipts and email: "Daily ticket · Front block" or "All Together · First floor". */
 export function ticketLineLabel(kind: string, category?: string | null): string {
-  const kindText = kind === 'SEASON' ? 'All together' : 'Daily ticket';
+  const kindText = kind === 'SEASON' ? 'All Together' : 'Daily ticket';
   const zone = category ? zoneLabel('en', category) : '';
   return zone ? `${kindText} · ${zone}` : kindText;
 }

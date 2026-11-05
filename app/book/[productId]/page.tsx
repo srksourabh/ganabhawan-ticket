@@ -7,7 +7,7 @@ import { AuditoriumSketch } from '@/components/AuditoriumMap';
 import { useCart } from '@/components/CartProvider';
 import { useLocale } from '@/components/LocaleProvider';
 import { FESTIVAL, FESTIVAL_BN } from '@/lib/brand';
-import { dateLocale, kindLabel, localized, withZoneLabels, zoneLabel } from '@/lib/i18n';
+import { dateLocale, kindLabel, localized, productDisplayName, zoneLabel } from '@/lib/i18n';
 import type { SeasonPricing } from '@/lib/pricing';
 import SeasonPrice from '@/components/SeasonPrice';
 import { createClientPaymentOrder, payExistingOrder, prefillFromContact, type RazorpayOrder } from '@/lib/razorpay-checkout';
@@ -38,7 +38,7 @@ type CatalogueProduct = {
   /** Server-decided (availability.ts). */
   state?: 'SELLABLE' | 'SOLD_OUT' | 'CLOSED';
   available?: number;
-  /** All together only, server-computed (pricing.ts). */
+  /** All Together only, server-computed (pricing.ts). */
   pricing?: SeasonPricing;
 };
 type HoldResult = { id: string; reference: string; total: number; currency: string; expires_at: string | null; unit_price: number; quantity: number };
@@ -274,7 +274,7 @@ function BookPageInner() {
       const show = product.coverage?.[0];
       const outcome = cart.add({
         productId: product.id,
-        name: withZoneLabels(localized(product.name, product.name_bn, locale), locale),
+        name: productDisplayName(localized(product.name, product.name_bn, locale), product.kind, product.category, locale),
         category: product.category,
         kind: product.kind,
         showTitle: show ? localized(show.title, show.title_bn, locale) : '',

@@ -57,7 +57,7 @@ export const PAGE_META = {
   }),
   catalogue: pageMetadata({
     title: 'Programme',
-    description: `Browse plays and ticket zones for ${FESTIVAL} at Ganabhawan, Uttarpara. Daily and all-together tickets.`,
+    description: `Browse plays and ticket zones for ${FESTIVAL} at Ganabhawan, Uttarpara. Daily tickets and All Together — Every Play passes.`,
     path: '/catalogue',
   }),
   login: pageMetadata({

@@ -27,8 +27,8 @@ export async function expireHolds() { return transaction(c=>expireIn(c),true); }
 type BookingRow = Record<string, any>;
 export type HoldInput = {productId:string;quantity:number;version:number};
 export const SEASON_SALES_CLOSED='Season-ticket sales are currently closed.';
-/** The All together price is above its original total (base price lowered): not sold until the admin fixes it. */
-export const SEASON_PRICE_UPDATING='All together prices are being updated. Please try again later.';
+/** The All Together price is above its original total (base price lowered): not sold until the admin fixes it. */
+export const SEASON_PRICE_UPDATING='All Together prices are being updated. Please try again later.';
 /** Payment-order boundary: a hold made while sales were open gets no NEW payment order once they are paused (it expires). */
 export function assertPublicSalesOpen() { requireValue(publicSalesOpen(),'Ticket sales are paused.'); }
 /**
@@ -45,7 +45,7 @@ export async function assertHeldBookingsSellable(c:Client,bookingIds:string[]) {
   requireValue(rows.every(r=>r.festival_status==='PUBLISHED'),'Ticket sales are paused.');
   requireValue(rows.every(r=>r.enabled),'This ticket option is not available.');
   if(rows.some(r=>seasonSaleBlocked(r.kind))) throw new AppError(409,SEASON_SALES_CLOSED,'SEASON_SALES_CLOSED');
-  // An All together hold is never paid at more than its current original total (pricing.ts).
+  // An All Together hold is never paid at more than its current original total (pricing.ts).
   const seasons=(await c.query<{id:string;festival_id:string;category:string;unit_price:number}>(
    "SELECT p.id,p.festival_id,p.category,b.unit_price FROM bookings b JOIN products p ON p.id=b.product_id WHERE b.id=ANY($1::uuid[]) AND p.kind='SEASON'",[bookingIds])).rows;
   for(const s of seasons) {

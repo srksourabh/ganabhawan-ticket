@@ -198,7 +198,7 @@ test('customer pages carry the entry policy in English and Bengali, without the 
   assert.ok(t('en', 'checkout.pickup').startsWith(ENTRY_OPTIONS));
   assert.match(t('en', 'checkout.pickup'), /admits one person once/);
   assert.match(t('en', 'book.who'), /collect your physical ticket before the show/);
-  assert.match(t('en', 'checkout.pickup'), /All together passes are handed over on the first day/);
+  assert.match(t('en', 'checkout.pickup'), /All Together passes are handed over on the first day/);
   assert.ok(!/Only this email is accepted/.test(t('en', 'checkout.pickup')));
   for (const file of ['src/components/ReceiptView.tsx', 'src/components/TicketDetailView.tsx']) {
     const source = readFileSync(join(import.meta.dirname, '..', file), 'utf8');

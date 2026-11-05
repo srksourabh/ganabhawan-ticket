@@ -31,8 +31,8 @@ async function send(url: string, method: string, body: unknown) {
 
 /**
  * A. Price per programme (one per zone): daily tickets of every upcoming programme use it, and
- *    the All together original total is computed from it.
- * B. All together: the admin enters only the final price; original total, saving and percentage
+ *    the All Together original total is computed from it.
+ * B. All Together: the admin enters only the final price; original total, saving and percentage
  *    are computed by the server (pricing.ts) from A × the programmes the pass covers.
  */
 export default function PricingPanel({ onChanged }: { onChanged?: () => void }) {
@@ -77,7 +77,7 @@ export default function PricingPanel({ onChanged }: { onChanged?: () => void }) 
       <section className="card stack stack--sm" aria-labelledby="per-programme-heading">
         <h3 id="per-programme-heading" className="h3">Price per programme</h3>
         <p className="muted" style={{ margin: 0 }}>
-          One price per zone, shared by daily tickets (every upcoming programme) and the All together original total.
+          One price per zone, shared by daily tickets (every upcoming programme) and the All Together original total.
           Saving it updates both. Tickets already booked keep the price they were bought at.
         </p>
         {!data.ready && <p className="banner banner--err" role="alert">Shared prices need database migration 0012. Prices are shown from the daily tickets until it is applied.</p>}
@@ -97,7 +97,7 @@ export default function PricingPanel({ onChanged }: { onChanged?: () => void }) 
                       event.preventDefault();
                       const paise = rupeesToPaise(String(new FormData(event.currentTarget).get('price') ?? ''));
                       if (paise === null) { setError(`${z.label}: enter a price above ₹0, with at most two decimals.`); return; }
-                      void run(() => send('/api/admin/pricing', 'PUT', { zone: z.zone, price: paise, version: z.version }), `${z.label}: ${rupees(paise)} per programme saved. Daily tickets and All together prices are updated.`);
+                      void run(() => send('/api/admin/pricing', 'PUT', { zone: z.zone, price: paise, version: z.version }), `${z.label}: ${rupees(paise)} per programme saved. Daily tickets and All Together prices are updated.`);
                     }}
                   >
                     <label className="sr-only" htmlFor={`zone-price-${z.zone}`}>{z.label} price per programme in rupees</label>
@@ -112,9 +112,9 @@ export default function PricingPanel({ onChanged }: { onChanged?: () => void }) 
       </section>
 
       <section className="card stack stack--sm" aria-labelledby="all-together-heading">
-        <h3 id="all-together-heading" className="h3">All together — final prices</h3>
+        <h3 id="all-together-heading" className="h3">All Together — final prices</h3>
         <p className="muted" style={{ margin: 0 }}>
-          Enter only the final All together price. The original total (price per programme × programmes in the pass), the saving and the
+          Enter only the final All Together price. The original total (price per programme × programmes in the pass), the saving and the
           percentage are calculated. A final price above the original total is not sold until it is lowered.
           Create passes and choose their programmes under <strong>Seasons</strong>.
         </p>
@@ -124,7 +124,7 @@ export default function PricingPanel({ onChanged }: { onChanged?: () => void }) 
           </thead>
           <tbody>
             {data.allTogether.map((row) => row.productId === null ? (
-              <tr key={row.zone}><td><strong>{row.label}</strong></td><td colSpan={6} className="muted">No All together pass for this zone (create one under Seasons).</td></tr>
+              <tr key={row.zone}><td><strong>{row.label}</strong></td><td colSpan={6} className="muted">No All Together pass for this zone (create one under Seasons).</td></tr>
             ) : (
               <tr key={row.zone} aria-invalid={row.blocked || undefined}>
                 <td><strong>{row.label}</strong></td>
@@ -147,14 +147,14 @@ export default function PricingPanel({ onChanged }: { onChanged?: () => void }) 
                       if (row.originalTotal !== null && row.originalTotal !== undefined && paise > row.originalTotal) {
                         setError(`${row.label}: the final price cannot be more than the original total ${rupees(row.originalTotal)}.`); return;
                       }
-                      void run(() => send(`/api/admin/seasons/${row.productId}`, 'PATCH', { price: paise, version: row.version }), `${row.label}: All together price ${rupees(paise)} saved.`);
+                      void run(() => send(`/api/admin/seasons/${row.productId}`, 'PATCH', { price: paise, version: row.version }), `${row.label}: All Together price ${rupees(paise)} saved.`);
                     }}
                   >
-                    <label className="sr-only" htmlFor={`final-price-${row.zone}`}>{row.label} final All together price in rupees</label>
+                    <label className="sr-only" htmlFor={`final-price-${row.zone}`}>{row.label} final All Together price in rupees</label>
                     <input id={`final-price-${row.zone}`} name="price" inputMode="decimal" defaultValue={row.finalPrice === undefined ? '' : String(row.finalPrice / 100)} style={{ maxWidth: '8rem' }} />
                     <button className="btn btn--primary btn--sm" type="submit" disabled={busy}>Save</button>
                   </form>
-                  {row.blocked && <p className="banner banner--err" role="alert" style={{ whiteSpace: 'normal' }}>{row.problem} New All together bookings are paused for this zone.</p>}
+                  {row.blocked && <p className="banner banner--err" role="alert" style={{ whiteSpace: 'normal' }}>{row.problem} New All Together bookings are paused for this zone.</p>}
                   {row.missingProgrammes && row.missingProgrammes.length > 0 && (
                     <p className="banner banner--err" role="status" style={{ whiteSpace: 'normal' }}>
                       Not in this pass: {row.missingProgrammes.map((p) => `${p.title} (${when(p.startsAt)})`).join(', ')}.

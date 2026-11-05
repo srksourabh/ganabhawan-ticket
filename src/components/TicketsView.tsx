@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useLocale } from '@/components/LocaleProvider';
 import { FESTIVAL, FESTIVAL_BN } from '@/lib/brand';
-import { dateLocale, withZoneLabels } from '@/lib/i18n';
+import { dateLocale, productDisplayName } from '@/lib/i18n';
 import PayBookingButton from '@/components/PayBookingButton';
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
@@ -27,7 +27,7 @@ export type BookingRow = {
   total: number;
   currency: string;
   created_at: string;
-  snapshot: { name: string; coverage: { title: string; startsAt: string }[] };
+  snapshot: { name: string; kind?: string; category?: string; coverage: { title: string; startsAt: string }[] };
   tickets: TicketRow[];
 };
 
@@ -68,7 +68,7 @@ export default function TicketsView({
             <article key={b.id} className="card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '.5rem' }}>
                 <div>
-                  <h2 style={{ fontFamily: 'Georgia, serif', fontSize: '1.2rem', margin: '0 0 .25rem' }}>{withZoneLabels(b.snapshot?.name ?? '', locale)}</h2>
+                  <h2 style={{ fontFamily: 'Georgia, serif', fontSize: '1.2rem', margin: '0 0 .25rem' }}>{productDisplayName(b.snapshot?.name ?? '', b.snapshot?.kind, b.snapshot?.category, locale)}</h2>
                   <p style={{ margin: 0, fontFamily: 'monospace', fontSize: '.9rem', color: 'var(--muted)' }}>{b.reference}</p>
                 </div>
                 <span style={{ padding: '.25rem .7rem', borderRadius: 20, fontSize: '.8rem', fontWeight: 600, background: '#141414', color: statusColour[b.status] || 'var(--muted)' }}>
@@ -98,7 +98,7 @@ export default function TicketsView({
                   <PayBookingButton
                     bookingId={b.id}
                     amount={b.total}
-                    description={b.snapshot?.name ? withZoneLabels(b.snapshot.name, locale) : b.reference}
+                    description={b.snapshot?.name ? productDisplayName(b.snapshot.name, b.snapshot.kind, b.snapshot.category, locale) : b.reference}
                     contact={contact}
                   />
                 )}

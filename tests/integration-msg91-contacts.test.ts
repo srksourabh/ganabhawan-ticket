@@ -14,7 +14,7 @@ import type { User } from '../src/lib/types';
 
 const skip = !DB_AVAILABLE;
 const fake = new FakeRazorpay();
-const CARDS = 'Arrive before the show. Show this SMS or your ticket email and a valid photo ID, and collect the physical ticket before the show. All together: all of them on the first day.';
+const CARDS = 'Arrive before the show. Show this SMS or your ticket email and a valid photo ID, and collect the physical ticket before the show. All Together: all of them on the first day.';
 let auth: typeof import('../src/lib/auth');
 let checkout: typeof import('../src/lib/checkout');
 let payments: typeof import('../src/lib/payments');

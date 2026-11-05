@@ -5,7 +5,7 @@ import { dateLocale } from '@/lib/i18n';
 import type { SeasonPricing } from '@/lib/pricing';
 
 /**
- * The All together price as the server computed it (pricing.ts). With a saving:
+ * The All Together price as the server computed it (pricing.ts). With a saving:
  *
  *   ₹500 × 12 programmes      (never struck through)
  *   ~~₹6,000~~                (only the original total is struck through)

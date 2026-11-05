@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { AuditoriumSketch } from '@/components/AuditoriumMap';
 import { useLocale } from '@/components/LocaleProvider';
-import { dateLocale, kindLabel, withZoneLabels, zoneLabel } from '@/lib/i18n';
+import { dateLocale, kindLabel, productDisplayName, zoneLabel } from '@/lib/i18n';
 import PayBookingButton from '@/components/PayBookingButton';
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
@@ -49,7 +49,7 @@ export default function TicketDetailView({ booking, contact, supportEmail }: { b
           </p>
         </div>
         <h1 style={{ fontFamily: 'Georgia, serif', fontSize: 'clamp(1.6rem, 5vw, 2.5rem)', lineHeight: 1.1, margin: '0 0 .5rem' }}>
-          {withZoneLabels(booking.snapshot?.name ?? '', locale)}
+          {productDisplayName(booking.snapshot?.name ?? '', booking.snapshot?.kind, booking.snapshot?.category, locale)}
         </h1>
         <p style={{ fontFamily: 'monospace', fontSize: '1rem', color: '#64564d', margin: booking.checkout_id ? '0 0 .5rem' : '0 0 1.5rem' }}>{booking.reference}</p>
         {booking.checkout_id && (
@@ -111,7 +111,7 @@ export default function TicketDetailView({ booking, contact, supportEmail }: { b
             <PayBookingButton
               bookingId={booking.id}
               amount={booking.checkout_total ?? booking.total}
-              description={booking.snapshot?.name ? withZoneLabels(booking.snapshot.name, locale) : booking.reference}
+              description={booking.snapshot?.name ? productDisplayName(booking.snapshot.name, booking.snapshot.kind, booking.snapshot.category, locale) : booking.reference}
               contact={contact}
             />
           </div>

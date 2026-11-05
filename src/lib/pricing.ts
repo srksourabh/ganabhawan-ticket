@@ -11,7 +11,7 @@ import type { User } from './types';
  *   Daily ticket      pays the per-programme price (no discount, ever). The daily products'
  *                     `price` is a copy, rewritten for every upcoming programme by setZonePrice
  *                     (holds, carts and payments keep reading products.price, as before).
- *   All together      pays the admin's FINAL price (the season product's `price`, as before).
+ *   All Together      pays the admin's FINAL price (the season product's `price`, as before).
  *                     Its ORIGINAL total = per-programme price × programmes it covers, computed
  *                     here and never stored, so a base-price change re-prices it everywhere.
  *
@@ -57,7 +57,7 @@ export function discountPercent(discount: number, original: number) {
 }
 
 /**
- * The All together price breakdown. Pure: the same function prices the catalogue, the admin
+ * The All Together price breakdown. Pure: the same function prices the catalogue, the admin
  * table, the hold (commerce.ts placeHold) and the booking snapshot.
  *
  * `configured` = the per-programme price is the admin's (zone_prices). Only then can the
@@ -80,7 +80,7 @@ export function seasonPricing(input: { perProgrammePrice: number | null; program
     showDiscount: !blocked && discountAmount > 0,
     blocked,
     problem: blocked
-      ? `The All together price ${rupees(finalPrice)} is more than the original total ${rupees(originalTotal!)} (${rupees(per!)} × ${count} programmes). Lower the All together price.`
+      ? `The All Together price ${rupees(finalPrice)} is more than the original total ${rupees(originalTotal!)} (${rupees(per!)} × ${count} programmes). Lower the All Together price.`
       : null,
   };
 }
@@ -149,7 +149,7 @@ export async function loadZonePrices(festivalId: string, c?: Client): Promise<Re
   return out;
 }
 
-/** The All together breakdown of one season product (non-cancelled programmes it covers). */
+/** The All Together breakdown of one season product (non-cancelled programmes it covers). */
 export async function seasonProductPricing(c: Client | undefined, product: { id: string; festival_id: string; category: string; price: number }) {
   const prices = await loadZonePrices(product.festival_id, c);
   const zone = prices[product.category as PricingZone];
@@ -162,7 +162,7 @@ export async function seasonProductPricing(c: Client | undefined, product: { id:
 }
 
 /**
- * An admin-entered final All together price must not exceed the original total (when the
+ * An admin-entered final All Together price must not exceed the original total (when the
  * per-programme price is configured). Used by create / edit of a season product.
  */
 export function assertSeasonFinalPrice(pricing: SeasonPricing) {
@@ -224,7 +224,7 @@ export async function assertDailyPriceShared(c: Client, festivalId: string, zone
     'DAILY_PRICE_SHARED');
 }
 
-/** One zone of the admin All together table; only `zone`, `label` and `productId: null` when the zone has no pass. */
+/** One zone of the admin All Together table; only `zone`, `label` and `productId: null` when the zone has no pass. */
 export interface AllTogetherRow extends Partial<SeasonPricing> {
   zone: PricingZone;
   label: string;

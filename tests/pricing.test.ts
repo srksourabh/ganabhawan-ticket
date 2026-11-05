@@ -17,7 +17,7 @@ test('categories: Premier, Superior and Balcony are shown as Front block, Second
   assert.equal(zoneLabel('en', 'Premier'), 'Front block');
   assert.equal(zoneLabel('en', 'Superior'), 'Second block');
   assert.equal(zoneLabel('en', 'Balcony'), 'First floor');
-  assert.equal(ticketLineLabel('SEASON', 'Premier'), 'All together · Front block');
+  assert.equal(ticketLineLabel('SEASON', 'Premier'), 'All Together · Front block');
   assert.equal(ticketLineLabel('DAILY', 'Balcony'), 'Daily ticket · First floor');
   // Stored product names (and older booking snapshots) keep the zone id; only the display changes.
   assert.equal(withZoneLabels('Macbeth 2.0 – Premier'), 'Macbeth 2.0 – Front block');
@@ -28,7 +28,7 @@ test('categories: Premier, Superior and Balcony are shown as Front block, Second
   assert.equal(withZoneLabels(''), '');
 });
 
-test('All together: original = per-programme × programmes, saving and percentage (the three example zones)', () => {
+test('All Together: original = per-programme × programmes, saving and percentage (the three example zones)', () => {
   const cases = [
     { per: 50000, final: 400000, original: 600000, save: 200000, pct: 33.33 },
     { per: 35000, final: 300000, original: 420000, save: 120000, pct: 28.57 },
@@ -50,7 +50,7 @@ test('All together: original = per-programme × programmes, saving and percentag
   assert.equal(seasonPricing({ perProgrammePrice: 50000, programmeCount: 11, finalPrice: 400000, configured: true }).originalTotal, 550000);
 });
 
-test('All together: a final price above the original is blocked when configured; equal is valid with no discount', () => {
+test('All Together: a final price above the original is blocked when configured; equal is valid with no discount', () => {
   const over = seasonPricing({ perProgrammePrice: 25000, programmeCount: 8, finalPrice: 220000, configured: true });
   assert.equal(over.blocked, true);
   assert.equal(over.showDiscount, false);
@@ -86,7 +86,7 @@ function render(price: number, pricing?: ReturnType<typeof seasonPricing>) {
   return renderToStaticMarkup(createElement(LocaleProvider, null, createElement(SeasonPrice, { price, pricing })));
 }
 
-test('All together card: only the original total is struck through, never "price × programmes"', () => {
+test('All Together card: only the original total is struck through, never "price × programmes"', () => {
   const pricing = seasonPricing({ perProgrammePrice: 50000, programmeCount: 12, finalPrice: 400000, configured: true });
   const html = render(400000, pricing);
   const dl = dateLocale('bn');

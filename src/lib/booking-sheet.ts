@@ -122,7 +122,7 @@ type Coverage = { title?: string; startsAt?: string };
 /** When the counter hands over the physical card. Season: every performance, on the first day. */
 export function handoverNote(kind: string): string {
   return kind === 'SEASON' || kind === 'Season'
-    ? 'All together on the first day, before the first show'
+    ? 'All Together on the first day, before the first show'
     : 'Before this performance';
 }
 

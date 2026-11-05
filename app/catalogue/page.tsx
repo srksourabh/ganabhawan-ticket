@@ -6,7 +6,7 @@ import { AUDITORIUM_HOUSE, DEFAULT_VENUE, DEFAULT_VENUE_BN, FESTIVAL, FESTIVAL_B
 import AuditoriumMap, { type AuditoriumCategory, type AuditoriumZone } from '@/components/AuditoriumMap';
 import { useCart } from '@/components/CartProvider';
 import { useLocale } from '@/components/LocaleProvider';
-import { dateLocale, localized, withZoneLabels, zoneLabel, zoneWhere } from '@/lib/i18n';
+import { dateLocale, localized, productDisplayName, zoneLabel, zoneWhere } from '@/lib/i18n';
 import type { SeasonPricing } from '@/lib/pricing';
 import SeasonPrice from '@/components/SeasonPrice';
 
@@ -23,7 +23,7 @@ type Product = {
   coverage: { id: string; title: string; starts_at: string }[];
   /** Server-decided (availability.ts): only SELLABLE can be added to the cart. */
   state?: 'SELLABLE' | 'SOLD_OUT' | 'CLOSED';
-  /** All together only, server-computed (pricing.ts): the shared per-programme price × programmes. */
+  /** All Together only, server-computed (pricing.ts): the shared per-programme price × programmes. */
   pricing?: SeasonPricing;
 };
 
@@ -135,7 +135,7 @@ export default function CataloguePage() {
   function handleAddSeason(product: Product) {
     const outcome = cart.add({
       productId: product.id,
-      name: withZoneLabels(localized(product.name, product.name_bn, locale), locale),
+      name: productDisplayName(localized(product.name, product.name_bn, locale), product.kind, product.category, locale),
       category: product.category,
       kind: product.kind,
       showTitle: t('catalogue.season'),
@@ -154,7 +154,7 @@ export default function CataloguePage() {
   function addLine(product: Product, showTitle: string, startsAt: string, added: string) {
     const outcome = cart.add({
       productId: product.id,
-      name: withZoneLabels(localized(product.name, product.name_bn, locale), locale),
+      name: productDisplayName(localized(product.name, product.name_bn, locale), product.kind, product.category, locale),
       category: product.category,
       kind: product.kind,
       showTitle,

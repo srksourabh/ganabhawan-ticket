@@ -662,7 +662,7 @@ export default function AdminPage() {
             )}
           </section>
           <p className="muted">Prices follow the hall: Front block is the front of the ground floor, Second block the back, First floor upstairs. The stage is not for sale.</p>
-          <p className="muted">Ticket options below: display name and &quot;On sale&quot;. Daily prices come from <strong>Price per programme</strong> and All together prices from <strong>All together — final prices</strong> above.</p>
+          <p className="muted">Ticket options below: display name and &quot;On sale&quot;. Daily prices come from <strong>Price per programme</strong> and All Together prices from <strong>All Together — final prices</strong> above.</p>
           <img className="auditorium__plan" src={AUDITORIUM_HOUSE} alt="Auditorium plan with Front block, Second block, First floor, and the stage" />
           <div className="grid">
             {products.map((product) => (
@@ -681,7 +681,7 @@ export default function AdminPage() {
                   );
                 }}
               >
-                <p className="eyebrow">{product.kind === 'SEASON' ? 'All together' : 'Daily'} · {zoneLabel('en', product.category)}</p>
+                <p className="eyebrow">{product.kind === 'SEASON' ? 'All Together' : 'Daily'} · {zoneLabel('en', product.category)}</p>
                 <label className="field">
                   <span>Display name</span>
                   <input name="name" defaultValue={product.name} />
@@ -715,12 +715,12 @@ export default function AdminPage() {
             <div><strong>Front block</strong> — ground floor, front, nearest the stage</div>
             <div><strong>Second block</strong> — ground floor, back, under the first floor</div>
             <div><strong>First floor</strong> — upstairs</div>
-            <div><strong>All together</strong> — festival pass for the chosen zone</div>
+            <div><strong>All Together</strong> — festival pass for the chosen zone</div>
           </div>
           <img className="auditorium__plan" src={AUDITORIUM_HOUSE} alt="Auditorium seating plan" />
           <ul className="admin__zone-prices">
             {seasonProducts.map((p) => (
-              <li key={p.id}>{zoneLabel('en', p.category)} · All together · {money(p.price)}</li>
+              <li key={p.id}>{zoneLabel('en', p.category)} · All Together · {money(p.price)}</li>
             ))}
           </ul>
           <Link className="btn btn--primary" href="/catalogue">Preview guest catalogue</Link>

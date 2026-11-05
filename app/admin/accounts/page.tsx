@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { withZoneLabels, zoneLabel } from '@/lib/i18n';
+import { productDisplayName, zoneLabel } from '@/lib/i18n';
 
 type Attempt = {
   id: string;
@@ -222,7 +222,7 @@ export default function AccountsPage() {
                   <td>{row.name}</td>
                   <td>{row.email || (row.contact?.includes('@') ? row.contact : '—')}</td>
                   <td>{row.phone || (row.contact && !row.contact.includes('@') ? row.contact : '—')}</td>
-                  <td>{withZoneLabels(row.product_name)}<br /><span className="muted">{row.kind} · {zoneLabel('en', row.category)}</span></td>
+                  <td>{productDisplayName(row.product_name, row.kind, row.category)}<br /><span className="muted">{row.kind} · {zoneLabel('en', row.category)}</span></td>
                   <td>{row.quantity}</td>
                   <td>{row.outcome}</td>
                   <td>{row.reference ? `${row.reference}${row.booking_status ? ` · ${row.booking_status}` : ''}` : 'Not held'}</td>

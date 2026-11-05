@@ -108,8 +108,8 @@ test('confirmation email names the buyer, theatre, ticket type, and the counter 
   assert.match(text, /cannot be cancelled or refunded/);
   assert.match(text, /photo ID/);
   assert.match(text, /before the show/);
-  // Season passes are called "All together" (confirmation.ts SEASON_HANDOVER).
-  assert.match(text, /All together passes are handed over on the first day, before that first show, all performances at once/);
+  // Season passes are called "All Together" (confirmation.ts SEASON_HANDOVER).
+  assert.match(text, /All Together passes are handed over on the first day, before that first show, all performances at once/);
 });
 
 test('sold-ticket download: one ticket, one booking, or every ticket, with name email and phone', () => {
@@ -118,7 +118,7 @@ test('sold-ticket download: one ticket, one booking, or every ticket, with name 
     { ticket: 'GF-2-1', name: 'Rina Das', email: 'rina@example.com', phone: '+919876543210', category: 'Premier', kind: 'Season', show: 'Macbeth; Goraibabu', handover: handoverNote('Season'), booking: 'GF-2', venue: 'Ganabhawan' },
     { ticket: 'GF-2-2', name: 'Rina Das', email: 'rina@example.com', phone: '+919876543210', category: 'Premier', kind: 'Season', show: 'Macbeth; Goraibabu', handover: handoverNote('Season'), booking: 'GF-2', venue: 'Ganabhawan' },
   ];
-  assert.equal(handoverNote('Season'), 'All together on the first day, before the first show');
+  assert.equal(handoverNote('Season'), 'All Together on the first day, before the first show');
   assert.equal(selectPhysicalTickets(rows, {}).length, 3);
   assert.deepEqual(selectPhysicalTickets(rows, { ticket: 'GF-1-1' }).map((row) => row.ticket), ['GF-1-1']);
   assert.deepEqual(selectPhysicalTickets(rows, { booking: 'GF-2' }).map((row) => row.ticket), ['GF-2-1', 'GF-2-2']);

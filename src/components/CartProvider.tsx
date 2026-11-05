@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
-import { isLocale, LOCALE_COOKIE, LOCALE_STORAGE_KEY, t, withZoneLabels, type Locale } from '@/lib/i18n';
+import { isLocale, LOCALE_COOKIE, LOCALE_STORAGE_KEY, t, productDisplayName, type Locale } from '@/lib/i18n';
 import {
   readPendingCheckout, reconcileCart, writePendingCheckout,
   type CheckoutOutcome, type PendingCheckout,
@@ -102,7 +102,7 @@ function fromServer(line: ServerLine): CartItem {
   const bn = clientLocale() === 'bn';
   return {
     productId: line.productId,
-    name: withZoneLabels(bn && line.nameBn ? line.nameBn : line.name, bn ? 'bn' : 'en'),
+    name: productDisplayName(bn && line.nameBn ? line.nameBn : line.name, line.kind, line.category, bn ? 'bn' : 'en'),
     category: line.category,
     kind: line.kind,
     showTitle: line.kind === 'SEASON' ? t(clientLocale(), 'catalogue.season') : (bn && line.showTitleBn ? line.showTitleBn : line.showTitle),
