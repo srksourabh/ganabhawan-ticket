@@ -4,7 +4,7 @@ const W = 864;
 const H = 1152;
 const base =
   'C:/Users/soura/.cursor/projects/c-Projects-Ganabhawan-Ticket/assets/ganabhawan-gate-base.jpg';
-const out = 'public/images/samatat/ganabhawan-gate-poster.jpg';
+const out = 'public/images/samatat/ganabhawan-gate-poster.jpeg';
 
 const pillar = [
   'public/images/samatat/shows/actor-koushik-sen.jpg',

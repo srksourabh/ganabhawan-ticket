@@ -39,8 +39,8 @@ export default function HomePage() {
                   ? 'গণভবনের ফটক — নাট্যশিল্পীদের ছবি সহ উৎসব পোস্টার'
                   : 'Ganabhawan gate — festival poster with theatre artists on the facade'
               }
-              width={864}
-              height={1152}
+              width={1500}
+              height={1125}
               decoding="async"
               fetchPriority="high"
             />

@@ -34,7 +34,7 @@ export const FESTIVAL_POSTER = '/images/samatat/master-poster.png';
 /** Festival announcement hero for the 2026 Natyomela (JPEG of the master poster). */
 export const HERO_PHOTO = '/images/samatat/hero-natyomela-2026.jpg';
 /** Ganabhawan gate poster with festival artists displayed on the facade. */
-export const GANABHAWAN_GATE_POSTER = '/images/samatat/ganabhawan-gate-poster.jpg';
+export const GANABHAWAN_GATE_POSTER = '/images/samatat/ganabhawan-gate-poster.jpeg';
 /** Production posters and stills used when a show has no dedicated artwork. */
 export const STAGE_PHOTOS = [
   '/images/samatat/shows/macbeth-two.jpg',
