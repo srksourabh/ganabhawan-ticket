@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { AUDITORIUM_HOUSE, DEFAULT_VENUE, DEFAULT_VENUE_BN, FESTIVAL, FESTIVAL_BN, STAGE_PHOTOS } from '@/lib/brand';
+import { AUDITORIUM_HOUSE_CATALOGUE, DEFAULT_VENUE, DEFAULT_VENUE_BN, FESTIVAL, FESTIVAL_BN, STAGE_PHOTOS } from '@/lib/brand';
 import AuditoriumMap, { type AuditoriumCategory, type AuditoriumZone } from '@/components/AuditoriumMap';
 import { useCart } from '@/components/CartProvider';
 import { useLocale } from '@/components/LocaleProvider';
@@ -376,7 +376,7 @@ export default function CataloguePage() {
               <p className="muted">{t('catalogue.seasonHint')}</p>
             </div>
             <div className="season-panel__body">
-              <img className="auditorium__plan auditorium__plan--compact" src={AUDITORIUM_HOUSE} alt="Auditorium plan: Front block in front of the stage, Second block behind it, First floor above" />
+              <img className="auditorium__plan auditorium__plan--compact" src={AUDITORIUM_HOUSE_CATALOGUE} alt="Auditorium plan: Front block in front of the stage, Second block behind it, First floor above" />
               <ul className="pick__zones">
                 {seasonLines.map((line) => {
                   // Server-decided (availability.ts): CLOSED when any covered performance can no longer be sold.

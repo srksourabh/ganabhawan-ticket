@@ -4,7 +4,7 @@ import { zoneStatus } from '@/lib/zone-status';
 import { useState, type KeyboardEvent } from 'react';
 import { useLocale } from './LocaleProvider';
 import { dateLocale, zoneLabel, zoneWhere } from '@/lib/i18n';
-import { AUDITORIUM_HOUSE, AUDITORIUM_PHOTO } from '@/lib/brand';
+import { AUDITORIUM_HOUSE, AUDITORIUM_HOUSE_CATALOGUE, AUDITORIUM_PHOTO } from '@/lib/brand';
 
 export { AUDITORIUM_PHOTO, AUDITORIUM_HOUSE };
 export type AuditoriumCategory = 'Premier' | 'Superior' | 'Balcony';
@@ -107,7 +107,7 @@ export default function AuditoriumMap({
       )}
 
       <div className="auditorium__frame">
-        <img className="auditorium__photo" src={AUDITORIUM_HOUSE} alt="Auditorium seating plan: Front block, Second block, and First floor" />
+        <img className="auditorium__photo" src={AUDITORIUM_HOUSE_CATALOGUE} alt="Auditorium seating plan: Front block, Second block, and First floor" />
         <svg
           viewBox="0 0 680 960"
           className="auditorium__overlay"
