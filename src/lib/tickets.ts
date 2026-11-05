@@ -6,7 +6,7 @@ import { decrypt } from './security';
 import { sendEmail, sendMessage } from './auth';
 import { renderSms, sendSms } from './sms';
 import { DEFAULT_VENUE, ORGANISATION } from './brand';
-import { ticketLineLabel } from './i18n';
+import { productDisplayName, ticketLineLabel } from './i18n';
 import { CONFIRMED_LEAD, LINK_SIGN_IN_NOTE, NO_REFUND, PICKUP_INSTRUCTION, appBaseUrl, smsShowLabel, supportLine, ticketsLink, type ConfirmationMessage } from './confirmation';
 import { supportEmail } from './env';
 import { verifiedContacts } from './account-contacts';
@@ -27,6 +27,8 @@ export async function ticketPdf(user: User, ticketId: string): Promise<Uint8Arra
     credential_id: string;
     booking_reference: string;
     product_name: string;
+    product_kind: string | null;
+    product_category: string | null;
     show_title: string;
     starts_at: string;
     venue: string | null;
@@ -34,7 +36,7 @@ export async function ticketPdf(user: User, ticketId: string): Promise<Uint8Arra
     `SELECT t.id, t.reference, t.ordinal, t.status, t.booking_id,
             b.user_id, c.encrypted_token, c.id credential_id,
             b.reference booking_reference,
-            (b.snapshot->>'name') product_name,
+            (b.snapshot->>'name') product_name, (b.snapshot->>'kind') product_kind, (b.snapshot->>'category') product_category,
             COALESCE(
               (SELECT s.title FROM shows s
                JOIN entitlements e ON e.show_id=s.id
@@ -100,7 +102,7 @@ export async function ticketPdf(user: User, ticketId: string): Promise<Uint8Arra
   });
 
   if (row.product_name) {
-    page.drawText(row.product_name, {
+    page.drawText(productDisplayName(row.product_name, row.product_kind, row.product_category), {
       x: 40,
       y: height - 120,
       size: 13,
@@ -254,7 +256,7 @@ export async function bookingConfirmation(bookingId: string): Promise<Confirmati
     `Booking ${booking.reference}`,
     booking.payment_reference && booking.paid_at ? `Payment ${booking.payment_reference} on ${istTime(booking.paid_at)}` : '',
     '',
-    `${s.name ?? 'Tickets'}`,
+    `${productDisplayName(s.name ?? 'Tickets', s.kind, s.category)}`,
     ticketLineLabel(s.kind ?? '', s.category),
     ...(s.coverage ?? []).map((p) => `${p.title}: ${istTime(p.startsAt)}`),
     `Quantity: ${booking.quantity} × ${rupees(booking.unit_price)} = ${rupees(booking.total)}`,
@@ -286,7 +288,7 @@ export async function bookingConfirmation(bookingId: string): Promise<Confirmati
       total: Number(booking.total),
       payment: booking.payment_reference && booking.paid_at ? { reference: booking.payment_reference, paidAt: new Date(booking.paid_at).toISOString() } : null,
       lines: [{
-        bookingId, product: s.name ?? 'Tickets', kind: s.kind ?? '', category: s.category ?? '',
+        bookingId, product: productDisplayName(s.name ?? 'Tickets', s.kind, s.category), kind: s.kind ?? '', category: s.category ?? '',
         performances: [...(s.coverage ?? [])].map((p) => ({ title: p.title, startsAt: new Date(p.startsAt).toISOString() })).sort((x, y) => x.startsAt.localeCompare(y.startsAt)),
         quantity: Number(booking.quantity), unitPrice: Number(booking.unit_price), lineTotal: Number(booking.total), confirmed: booking.status === 'CONFIRMED',
       }],

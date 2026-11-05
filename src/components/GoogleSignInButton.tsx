@@ -2,7 +2,7 @@
 
 import { useClerk } from '@clerk/nextjs';
 import { useSignIn } from '@clerk/nextjs/legacy';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useLocale } from './LocaleProvider';
 
 export default function GoogleSignInButton({ redirectUrl = '/' }: { redirectUrl?: string }) {
@@ -14,10 +14,8 @@ export default function GoogleSignInButton({ redirectUrl = '/' }: { redirectUrl?
   const clerkStatus = (clerk as { status?: string } | undefined)?.status;
   const clerkFailed = !isLoaded && clerk?.loaded === false && clerkStatus === 'error';
 
-  useEffect(() => {
-    if (!clerkFailed) return;
-    setError(t('google.unavailable'));
-  }, [clerkFailed, t]);
+  // Derived, not stored: shown while Clerk failed to load, unless a sign-in error replaced it.
+  const shownError = error || (clerkFailed ? t('google.unavailable') : '');
 
   async function signInWithGoogle() {
     if (!isLoaded || !signIn) return;
@@ -51,7 +49,7 @@ export default function GoogleSignInButton({ redirectUrl = '/' }: { redirectUrl?
         </svg>
         {label}
       </button>
-      {error && <p className="banner banner--err" role="alert">{error}</p>}
+      {shownError && <p className="banner banner--err" role="alert">{shownError}</p>}
     </div>
   );
 }

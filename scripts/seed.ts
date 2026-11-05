@@ -303,6 +303,13 @@ await transaction(async (c) => {
     }
   }
 
+  // The shared per-programme price of each zone (migration 0012; pricing.ts). Skipped before that migration.
+  if ((await c.query("SELECT to_regclass('public.zone_prices') IS NOT NULL ok")).rows[0]?.ok) {
+    for (const [zone, daily] of [['Premier', 500], ['Superior', 350], ['Balcony', 250]] as const) {
+      await c.query('INSERT INTO zone_prices(festival_id,zone,price) VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [festival.id, zone, daily * 100]);
+    }
+  }
+
   const devices = await c.query('SELECT id FROM devices LIMIT 1');
   if (devices.rows.length === 0) {
     await c.query(`INSERT INTO devices(id,name) VALUES('gate-one','Main entrance'),('gate-two','Balcony entrance')`);

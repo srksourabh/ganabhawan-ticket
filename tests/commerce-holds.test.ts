@@ -53,11 +53,15 @@ test('reserve rejects idempotency key shorter than 8 chars', async () => {
 // ---------------------------------------------------------------------------
 
 test('reserve requires product to exist (DB)', { skip: !DB_AVAILABLE }, async () => {
+  // A complete sales configuration and a buyer with a verified contact, so the refusal comes from
+  // the missing product (not from the configuration gate's 503 or the contact rule's 409).
+  const fixtures = await import('./helpers/fixtures');
+  fixtures.useLiveStagingEnv();
   const { reserve } = await import('../src/lib/commerce');
-  const fakeUser = { id: 'user-1', contact: 'test@example.com', name: 'Test', role: 'customer' as const };
+  const buyer = await fixtures.makeUser('customer');
   await assert.rejects(
-    () => reserve(fakeUser, { productId: '00000000-0000-0000-0000-000000000000', quantity: 1, version: 1 }, crypto.randomUUID()),
-    (err: unknown) => err instanceof AppError && (err.status === 404 || err.status === 409),
+    () => reserve(buyer, { productId: '00000000-0000-0000-0000-000000000000', quantity: 1, version: 1 }, crypto.randomUUID()),
+    (err: unknown) => err instanceof AppError && err.status === 404 && /not available/.test(err.message),
   );
 });
 

@@ -10,6 +10,8 @@ export default function GoogleAnalytics() {
   const [consent, setConsent] = useState<CookieConsent | null>(null);
 
   useEffect(() => {
+    // Consent lives in browser storage: read after mount (same render on server and client), then follow changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setConsent(readCookieConsent());
     function onConsent(event: Event) {
       const detail = (event as CustomEvent<CookieConsent>).detail;

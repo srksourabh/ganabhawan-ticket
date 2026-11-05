@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { searchCatalogue } from '@/lib/chroma';
 import { catalogue } from '@/lib/catalogue';
 import type { CatalogueSearchResult } from '@/lib/chroma';
+import { productDisplayName } from '@/lib/i18n';
 
 /** PostgreSQL fallback when Chroma is not configured or unreachable. */
 async function searchFromCatalogue(text: string, limit: number): Promise<CatalogueSearchResult[]> {
@@ -31,7 +32,7 @@ async function searchFromCatalogue(text: string, limit: number): Promise<Catalog
     hits.push({
       id: `product:${product.id}`,
       kind: 'product',
-      title: product.name,
+      title: productDisplayName(product.name, product.kind, product.category),
       titleBn: product.name_bn,
       description: `${product.kind} · ${product.category}`,
       score: 0.9,

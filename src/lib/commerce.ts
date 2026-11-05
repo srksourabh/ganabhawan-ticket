@@ -7,6 +7,7 @@ import { markAttemptsConfirmed } from './attempts';
 import { assertLiveConfiguration, publicSalesOpen } from './env';
 import { salesOpen, seasonSaleBlocked, type CoveredPerformance } from './availability';
 import { assertCanPurchase } from './account-contacts';
+import { dailyPricingSnapshot, loadZonePrices, seasonPricing, seasonPricingSnapshot, seasonProductPricing, type PricingZone } from './pricing';
 import type { User } from './types';
 export async function movement(c:Client,poolId:string,operation:string,held:number,committed:number,reason:string) {
  await c.query('INSERT INTO movements(pool_id,operation,delta_held,delta_committed,reason) VALUES($1,$2,$3,$4,$5)',[poolId,operation,held,committed,reason]);
@@ -26,6 +27,8 @@ export async function expireHolds() { return transaction(c=>expireIn(c),true); }
 type BookingRow = Record<string, any>;
 export type HoldInput = {productId:string;quantity:number;version:number};
 export const SEASON_SALES_CLOSED='Season-ticket sales are currently closed.';
+/** The All Together price is above its original total (base price lowered): not sold until the admin fixes it. */
+export const SEASON_PRICE_UPDATING='All Together prices are being updated. Please try again later.';
 /** Payment-order boundary: a hold made while sales were open gets no NEW payment order once they are paused (it expires). */
 export function assertPublicSalesOpen() { requireValue(publicSalesOpen(),'Ticket sales are paused.'); }
 /**
@@ -42,6 +45,13 @@ export async function assertHeldBookingsSellable(c:Client,bookingIds:string[]) {
   requireValue(rows.every(r=>r.festival_status==='PUBLISHED'),'Ticket sales are paused.');
   requireValue(rows.every(r=>r.enabled),'This ticket option is not available.');
   if(rows.some(r=>seasonSaleBlocked(r.kind))) throw new AppError(409,SEASON_SALES_CLOSED,'SEASON_SALES_CLOSED');
+  // An All Together hold is never paid at more than its current original total (pricing.ts).
+  const seasons=(await c.query<{id:string;festival_id:string;category:string;unit_price:number}>(
+   "SELECT p.id,p.festival_id,p.category,b.unit_price FROM bookings b JOIN products p ON p.id=b.product_id WHERE b.id=ANY($1::uuid[]) AND p.kind='SEASON'",[bookingIds])).rows;
+  for(const s of seasons) {
+   const {pricing}=await seasonProductPricing(c,{id:s.id,festival_id:s.festival_id,category:s.category,price:Number(s.unit_price)});
+   if(pricing.blocked) throw new AppError(409,SEASON_PRICE_UPDATING,'SEASON_PRICE_INVALID');
+  }
 }
 /** Loads and validates a product for a hold (locks the product row). */
 export async function loadProductForHold(c:Client,input:HoldInput) {
@@ -74,7 +84,15 @@ export async function placeHold(c:Client,user:User,input:HoldInput,product:Booki
   }),'Sales for this performance have closed.');
   requireValue(coverage.every(p=>p.allocation-p.held-p.committed>=input.quantity),'Not enough tickets remain. Please choose fewer tickets.');
   if(product.cap!==null) { const used=await one(c,"SELECT COALESCE(sum(quantity),0)::int n FROM bookings WHERE product_id=$1 AND status IN ('HELD','PAYMENT_PENDING','CONFIRMED')",[product.id]); requireValue(used!.n+input.quantity<=product.cap,'The product limit has been reached.'); }
-  const snapshot={name:product.name,category:product.category,kind:product.kind,terms:product.terms,physicalRequired:product.physical_required,coverage:coverage.map(s=>({showId:s.show_id,poolId:s.pool_id,title:s.title,startsAt:s.starts_at,weight:s.weight}))};
+  // The price breakdown is computed here, by the server, and stored with the booking (pricing.ts).
+  const zonePrice=(await loadZonePrices(product.festival_id,c))[product.category as PricingZone];
+  let pricing;
+  if(kind==='SEASON') {
+   const breakdown=seasonPricing({perProgrammePrice:zonePrice?.price??null,programmeCount:coverage.length,finalPrice:Number(product.price),configured:zonePrice?.configured??false});
+   if(breakdown.blocked) throw new AppError(409,SEASON_PRICE_UPDATING,'SEASON_PRICE_INVALID');
+   pricing=seasonPricingSnapshot(product.category,breakdown,zonePrice?.version??null);
+  } else pricing=dailyPricingSnapshot(product.category,Number(product.price),zonePrice?.version??null);
+  const snapshot={name:product.name,category:product.category,kind:product.kind,terms:product.terms,physicalRequired:product.physical_required,coverage:coverage.map(s=>({showId:s.show_id,poolId:s.pool_id,title:s.title,startsAt:s.starts_at,weight:s.weight})),pricing};
   const booking=(await one(c,`INSERT INTO bookings(reference,user_id,product_id,quantity,unit_price,total,product_version,snapshot,status,expires_at)
    VALUES($1,$2,$3,$4,$5,$6,$7,$8,'HELD',now()+$9*interval '1 minute') RETURNING *`,
    ['GF-'+randomBytes(4).toString('hex').toUpperCase(),user.id,product.id,input.quantity,product.price,product.price*input.quantity,product.version,JSON.stringify(snapshot),product.hold_minutes]))!;
@@ -323,6 +341,11 @@ export async function refundCase(c:Client,b:Record<string,unknown>,paymentId:str
 export async function ownedBookings(userId:string,id?:string) {
  return query(`SELECT b.*,COALESCE((SELECT jsonb_agg(jsonb_build_object('id',t.id,'reference',t.reference,'status',t.status,'ordinal',t.ordinal,'credentialKind',cr.kind,'admitted',(SELECT count(*) FROM admissions a WHERE a.ticket_id=t.id)) ORDER BY t.ordinal) FROM tickets t LEFT JOIN credentials cr ON cr.ticket_id=t.id AND cr.status='ACTIVE' WHERE t.booking_id=b.id),'[]') tickets,
  COALESCE((SELECT jsonb_agg(jsonb_build_object('id',r.id,'amount',r.amount,'state',r.state,'reason',r.reason)) FROM refunds r WHERE r.booking_id=b.id),'[]') refunds,
- co.reference checkout_reference, co.total checkout_total
+ co.reference checkout_reference, co.total checkout_total,
+ -- Programmes added to an existing pass by an explicit amendment (programme-inclusion.ts): the
+ -- ticket entitlements beyond the booking's own snapshot, which itself is never rewritten.
+ COALESCE((SELECT jsonb_agg(DISTINCT jsonb_build_object('showId',s.id,'title',s.title,'startsAt',s.starts_at,'added',true))
+   FROM tickets t JOIN entitlements e ON e.ticket_id=t.id AND e.status='ACTIVE' JOIN shows s ON s.id=e.show_id
+   WHERE t.booking_id=b.id AND NOT (COALESCE(b.snapshot->'coverage','[]'::jsonb) @> jsonb_build_array(jsonb_build_object('showId',s.id::text)))),'[]') added_programmes
  FROM bookings b LEFT JOIN checkouts co ON co.id=b.checkout_id WHERE b.user_id=$1 AND ($2::uuid IS NULL OR b.id=$2) ORDER BY b.created_at DESC`,[userId,id??null]);
 }

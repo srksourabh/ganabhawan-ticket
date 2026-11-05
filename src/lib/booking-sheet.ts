@@ -1,4 +1,5 @@
 import { query } from './db';
+import { zoneLabel } from './i18n';
 
 export interface SheetRow {
   bookedAt: string;
@@ -77,7 +78,7 @@ export async function bookingSheet(): Promise<{ rows: SheetRow[]; summary: Sheet
       name: row.holder_name || row.user_name || '',
       email,
       phone,
-      category: row.category,
+      category: zoneLabel('en', row.category),
       kind: row.kind === 'SEASON' ? 'Season' : 'Daily',
       show: shows.join('; '),
       quantity: Number(row.quantity),
@@ -121,7 +122,7 @@ type Coverage = { title?: string; startsAt?: string };
 /** When the counter hands over the physical card. Season: every performance, on the first day. */
 export function handoverNote(kind: string): string {
   return kind === 'SEASON' || kind === 'Season'
-    ? 'All together on the first day, before the first show'
+    ? 'All Together on the first day, before the first show'
     : 'Before this performance';
 }
 
@@ -157,7 +158,7 @@ export async function physicalTickets(): Promise<PhysicalTicketRow[]> {
       name: row.holder_name || row.user_name || '',
       email,
       phone,
-      category: row.category,
+      category: zoneLabel('en', row.category),
       kind,
       show: firstShow(row.snapshot?.coverage ?? []),
       handover: handoverNote(kind),

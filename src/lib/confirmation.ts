@@ -3,7 +3,7 @@ export const NO_REFUND = 'A ticket, once booked, cannot be cancelled or refunded
 /** Arrive before the show and collect the physical ticket. Shown in the email, the terms, and the booking page. */
 export const ENTRY_OPTIONS = 'Come to the auditorium before the show starts. Show your ticket email or confirmation SMS and a valid photo ID, and collect your physical ticket before the show.';
 /** Season buyers receive every performance ticket together, on the first day. */
-export const SEASON_HANDOVER = 'All together passes are handed over on the first day, before that first show, all performances at once.';
+export const SEASON_HANDOVER = 'All Together passes are handed over on the first day, before that first show, all performances at once.';
 /** Either method, never both: one ticket admits one person once. */
 export const ONE_ENTRY = 'Each ticket admits one person once: a ticket used for entry cannot be used again, by QR code or as a physical ticket.';
 export const PICKUP_INSTRUCTION = `${ENTRY_OPTIONS} ${SEASON_HANDOVER} ${ONE_ENTRY}`;

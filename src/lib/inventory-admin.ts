@@ -2,6 +2,7 @@ import { transaction, one, query, type Client } from './db';
 import { AppError, requireValue } from './errors';
 import { audit } from './audit';
 import type { User } from './types';
+import { assertSeasonFinalPrice, loadZonePrices, seasonPricing } from './pricing';
 
 /**
  * Admin-configured inventory for one show × zone (migration 0008):
@@ -146,6 +147,8 @@ export async function createSeasonProduct(user: User, input: { category?: unknow
        JOIN pools p ON p.capacity_id=cap.id AND p.kind='SEASON'
        WHERE s.festival_id=$1 AND s.status='PUBLISHED' AND s.starts_at>now() ORDER BY s.starts_at`, [festival!.id, category])).rows;
     requireValue(pools.length > 0, 'Publish at least one upcoming performance before creating a season ticket.', 409);
+    const shared = (await loadZonePrices(festival!.id, c))[category as Zone];
+    assertSeasonFinalPrice(seasonPricing({ perProgrammePrice: shared.price, programmeCount: pools.length, finalPrice: price, configured: shared.configured }));
     const product = (await one<{ id: string }>(c,
       `INSERT INTO products(festival_id,name,name_bn,category,kind,price) VALUES($1,$2,$3,$4,'SEASON',$5) RETURNING *`,
       [festival!.id, name, nameBn, category, price]))!;
@@ -169,20 +172,23 @@ export async function zoneTemplate(c: Client, festivalId: string, excludeShowId:
        (SELECT price FROM products WHERE show_id=cap.show_id AND kind='DAILY' AND category=cap.zone LIMIT 1) price
      FROM capacities cap WHERE cap.show_id=(SELECT s.id FROM shows s WHERE s.festival_id=$1 AND s.id<>$2
        AND EXISTS (SELECT 1 FROM capacities x WHERE x.show_id=s.id) ORDER BY s.starts_at DESC LIMIT 1)`, [festivalId, excludeShowId])).rows;
+  // The daily price is the zone's shared per-programme price when one is configured (pricing.ts).
+  const shared = await loadZonePrices(festivalId, c);
   return ZONES.map((zone) => {
     const row = rows.find((r) => r.zone === zone);
+    const price = shared[zone].configured ? shared[zone].price! : Number(row?.price ?? 0);
     return row
-      ? { zone, ceiling: Number(row.ceiling), seasonAllocation: row.season_allocation, daily: Number(row.daily ?? 0), season: Number(row.season ?? 0), price: Number(row.price ?? 0), enabled: true }
-      : { zone, ceiling: 0, seasonAllocation: 0, daily: 0, season: 0, price: 0, enabled: false };
+      ? { zone, ceiling: Number(row.ceiling), seasonAllocation: row.season_allocation, daily: Number(row.daily ?? 0), season: Number(row.season ?? 0), price, enabled: true }
+      : { zone, ceiling: 0, seasonAllocation: 0, daily: 0, season: 0, price, enabled: false };
   });
 }
 
 /**
- * Explicit admin action: add one performance to a season ticket's coverage.
- * New performances never join a season by themselves (upsertShow). Refused once
- * the season ticket has any sale, hold or payment in progress, so what existing
- * season customers bought never changes. The product version is bumped, so carts
- * holding the old season ticket must re-add it (and see the new coverage).
+ * Explicit admin action: add one performance to an All Together (season) pass's coverage.
+ * New performances never join a pass by themselves (upsertShow). Only NEW purchases cover it:
+ * every existing booking keeps its own snapshot, allocations and entitlements (existing holders
+ * gain a programme only through programme-inclusion.ts amendExistingPasses). The product
+ * version is bumped, so carts holding the old pass must re-add it (and see the new coverage).
  */
 export async function addShowToSeason(user: User, productId: string, showId: string) {
   return transaction(async (c) => {
@@ -193,9 +199,6 @@ export async function addShowToSeason(user: User, productId: string, showId: str
     requireValue(show!.status !== 'CANCELLED' && new Date(show!.starts_at).getTime() > Date.now(), 'Only an upcoming, not cancelled performance can be added.', 409);
     const covered = await one(c, 'SELECT 1 FROM product_coverage WHERE product_id=$1 AND show_id=$2', [product!.id, show!.id]);
     requireValue(!covered, 'This performance is already part of the season ticket.', 409);
-    const sold = await one<{ n: number }>(c,
-      "SELECT count(*)::int n FROM bookings WHERE product_id=$1 AND status IN ('HELD','PAYMENT_PENDING','CONFIRMED','REFUND_REQUIRED','REFUNDED')", [product!.id]);
-    requireValue(Number(sold?.n ?? 0) === 0, 'This season ticket has already been sold or is being bought; its performances can no longer change.', 409);
     const pool = await one<{ id: string }>(c,
       `SELECT p.id FROM pools p JOIN capacities cap ON cap.id=p.capacity_id WHERE cap.show_id=$1 AND cap.zone=$2 AND p.kind='SEASON'`, [show!.id, product!.category]);
     requireValue(pool, 'This performance has no season stock for that zone.', 409);

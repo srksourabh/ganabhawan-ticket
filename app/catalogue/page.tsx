@@ -6,7 +6,10 @@ import { AUDITORIUM_HOUSE, DEFAULT_VENUE, DEFAULT_VENUE_BN, FESTIVAL, FESTIVAL_B
 import AuditoriumMap, { type AuditoriumCategory, type AuditoriumZone } from '@/components/AuditoriumMap';
 import { useCart } from '@/components/CartProvider';
 import { useLocale } from '@/components/LocaleProvider';
-import { dateLocale, localized, zoneLabel, zoneWhere } from '@/lib/i18n';
+import { dateLocale, localized, productDisplayName, zoneLabel, zoneWhere } from '@/lib/i18n';
+import type { SeasonPricing } from '@/lib/pricing';
+import SeasonPrice from '@/components/SeasonPrice';
+import { performanceStatus, STATUS_KEY } from '@/lib/performance-status';
 
 type Show = { id: string; title: string; title_bn: string; troupe: string; synopsis: string; synopsis_bn: string; starts_at: string; genre: string; artwork?: string };
 type Product = {
@@ -21,9 +24,19 @@ type Product = {
   coverage: { id: string; title: string; starts_at: string }[];
   /** Server-decided (availability.ts): only SELLABLE can be added to the cart. */
   state?: 'SELLABLE' | 'SOLD_OUT' | 'CLOSED';
+  /** All Together only, server-computed (pricing.ts): the shared per-programme price × programmes. */
+  pricing?: SeasonPricing;
+  /** Daily only: the zone's online seats (performance-card status tag). */
+  capacity?: number;
 };
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
+/** "Sat, 19 Dec 2026" in IST (the booking details show the same day as "19 Dec 2026"). */
+function cardDate(iso: string, locale: string) {
+  const parts = new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }).formatToParts(new Date(iso));
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? '';
+  return `${part('weekday')}, ${part('day')} ${part('month')} ${part('year')}`;
+}
 const ZONE_ORDER: AuditoriumCategory[] = ['Premier', 'Superior', 'Balcony'];
 
 export default function CataloguePage() {
@@ -117,6 +130,12 @@ export default function CataloguePage() {
 
   const [now] = useState(() => Date.now());
   const dailyClosed = selectedShow ? new Date(selectedShow.starts_at).getTime() <= now : false;
+  // Card tags from the same daily-ticket states and seat counts the zone list below shows.
+  const showStatus = useMemo(() => new Map(shows.map((show) => [show.id, performanceStatus(
+    products.filter((p) => p.kind === 'DAILY' && p.coverage.some((c) => c.id === show.id))
+      .map((p) => ({ state: p.state, available: p.available, capacity: p.capacity })),
+    show.starts_at, now,
+  )])), [shows, products, now]);
   const seasonLines = ZONE_ORDER.map((category) => {
     const product = products.find((p) => p.kind === 'SEASON' && p.category === category);
     return { category, product: product ?? null };
@@ -131,7 +150,7 @@ export default function CataloguePage() {
   function handleAddSeason(product: Product) {
     const outcome = cart.add({
       productId: product.id,
-      name: localized(product.name, product.name_bn, locale),
+      name: productDisplayName(localized(product.name, product.name_bn, locale), product.kind, product.category, locale),
       category: product.category,
       kind: product.kind,
       showTitle: t('catalogue.season'),
@@ -150,7 +169,7 @@ export default function CataloguePage() {
   function addLine(product: Product, showTitle: string, startsAt: string, added: string) {
     const outcome = cart.add({
       productId: product.id,
-      name: localized(product.name, product.name_bn, locale),
+      name: productDisplayName(localized(product.name, product.name_bn, locale), product.kind, product.category, locale),
       category: product.category,
       kind: product.kind,
       showTitle,
@@ -275,8 +294,23 @@ export default function CataloguePage() {
                 onClick={() => setSelectedShowId(show.id)}
                 className={`show-rail${effectiveShowId === show.id ? ' show-rail--on' : ''}`}
               >
-                <img src={showStill(show, index)} alt={localized(show.title, show.title_bn, locale)} />
-                <span>{localized(show.title, show.title_bn, locale)}</span>
+                <img src={showStill(show, index)} alt="" />
+                <span className="show-rail__body">
+                  <span className="show-rail__title">{localized(show.title, show.title_bn, locale)}</span>
+                  <time className="show-rail__when" dateTime={show.starts_at}>
+                    <span className="show-rail__date">
+                      {cardDate(show.starts_at, dl)}
+                    </span>
+                    <span className="show-rail__time">
+                      {new Date(show.starts_at).toLocaleTimeString(dl, { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
+                    </span>
+                  </time>
+                  {showStatus.get(show.id) && (
+                    <span className={`show-rail__tag show-rail__tag--${showStatus.get(show.id)!.toLowerCase().replace('_', '-')}`}>
+                      {t(STATUS_KEY[showStatus.get(show.id)!])}
+                    </span>
+                  )}
+                </span>
               </button>
             ))}
           </div>
@@ -354,9 +388,8 @@ export default function CataloguePage() {
                       <div>
                         <strong>{zoneLabel(locale, line.category)}</strong>
                         <p>{zoneWhere(locale, line.category)}</p>
+                        {line.product && <SeasonPrice price={line.product.price} pricing={line.product.pricing} />}
                         <p>
-                          {line.product ? money(line.product.price, dl) : ''}
-                          {' · '}
                           {seasonClosed ? t('catalogue.closed') : available > 0 ? t('map.available', { count: available }) : t('map.soldOut')}
                         </p>
                       </div>

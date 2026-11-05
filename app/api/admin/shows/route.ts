@@ -33,6 +33,8 @@ export async function POST(request: Request): Promise<Response> {
       salesClosesAt: body.salesClosesAt,
       venue: body.venue,
       prices: body.prices,
+      // Excluded from All Together unless the admin ticks it (programme-inclusion.ts).
+      allTogether: body.allTogether === true,
     });
     return jsonOk(show, 201);
   } catch (error) {

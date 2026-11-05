@@ -6,6 +6,7 @@ import { activeCoverage, seasonSaleBlocked, sellState } from './availability';
 import { configurationProblems, publicSalesOpen, seasonTicketSalesEnabled } from './env';
 import { addShowToSeason, createSeasonProduct } from './inventory-admin';
 import type { User } from './types';
+import { assertSeasonFinalPrice, seasonProductPricing } from './pricing';
 
 /**
  * Season management for the admin dashboard. There is no separate "season" entity in the
@@ -70,8 +71,8 @@ export async function seasonsOverview(user: User, nowMs = Date.now()) {
       available, state, open: reasons.length === 0, closedReasons: reasons,
       confirmedBookings: Number(s.confirmed), purchasesInProgress: Number(s.in_progress),
       performances: s.coverage.map((c) => ({ id: c.show_id, title: c.title, startsAt: new Date(c.starts_at).toISOString(), status: c.status })),
-      // Performances can change only before anything was bought (the same rule as addShowToSeason).
-      performancesLocked: Number(s.history) > 0,
+      // Performances can change at any time; only new purchases follow (existing bookings keep theirs).
+      performancesLocked: false,
       deletable: Number(s.history) === 0,
       deleteBlockedReason: Number(s.history) > 0
         ? 'This season ticket has bookings or purchase attempts, so its history is kept. Turn "On sale" off instead.'
@@ -117,10 +118,14 @@ export async function updateSeason(user: User, id: string, input: Record<string,
   if (input.price !== undefined) requireValue(Number.isInteger(input.price) && (input.price as number) > 0, 'Price must be a positive whole number of paise.', 400);
   if (input.enabled !== undefined) requireValue(typeof input.enabled === 'boolean', '"On sale" must be true or false.', 400);
   return transaction(async (c) => {
-    const p = await one<{ id: string; kind: string; name: string; name_bn: string; price: number; enabled: boolean; version: number }>(
+    const p = await one<{ id: string; kind: string; name: string; name_bn: string; price: number; enabled: boolean; version: number; festival_id: string; category: string }>(
       c, 'SELECT * FROM products WHERE id=$1 FOR UPDATE', [id]);
     requireValue(p && p.kind === 'SEASON', 'Season ticket not found.', 404);
     requireValue(Number(p!.version) === input.version, 'This season ticket was changed by someone else. Refresh and try again.', 409);
+    // The final All together price never exceeds the original total (shared per-programme price × programmes).
+    if (input.price !== undefined && input.price !== Number(p!.price)) {
+      assertSeasonFinalPrice((await seasonProductPricing(c, { id, festival_id: p!.festival_id, category: p!.category, price: input.price as number })).pricing);
+    }
     const next = {
       name: input.name !== undefined ? (input.name as string).trim() : p!.name,
       name_bn: input.nameBn !== undefined ? (input.nameBn as string).trim() : p!.name_bn,
@@ -146,9 +151,9 @@ export async function addSeasonPerformance(user: User, id: string, showId: unkno
 }
 
 /**
- * Removes a performance from a season ticket. Like adding, only before anything was bought
- * (no booking or purchase attempt, any status), so what customers bought never changes, and
- * never the last performance (delete the season ticket instead).
+ * Removes a performance from an All Together (season) pass, for NEW purchases only: bookings
+ * already made keep their snapshot, allocations and ticket entitlements. Never the last
+ * performance (delete the pass instead).
  */
 export async function removeSeasonPerformance(user: User, id: string, showId: string) {
   assertSeasonRole(user);
@@ -156,9 +161,6 @@ export async function removeSeasonPerformance(user: User, id: string, showId: st
   return transaction(async (c) => {
     const p = await one<{ id: string; kind: string }>(c, 'SELECT id, kind FROM products WHERE id=$1 FOR UPDATE', [id]);
     requireValue(p && p.kind === 'SEASON', 'Season ticket not found.', 404);
-    const history = await one<{ n: number }>(c,
-      'SELECT ((SELECT count(*) FROM bookings WHERE product_id=$1) + (SELECT count(*) FROM booking_attempts WHERE product_id=$1))::int n', [id]);
-    requireValue(Number(history?.n ?? 0) === 0, 'This season ticket has already been booked; its performances can no longer change.', 409);
     const covered = await one<{ n: number; included: boolean }>(c,
       'SELECT count(*)::int n, bool_or(show_id=$2) included FROM product_coverage WHERE product_id=$1', [id, showId]);
     requireValue(covered?.included === true, 'This performance is not part of the season ticket.', 404);

@@ -129,7 +129,7 @@ test('email 2: checkout confirmation — reference, zone, quantity, amounts, IST
     CARDS,
     `Your tickets: ${BASE}/tickets/${bookingId}`,
     `Order ${co.reference} is confirmed.`,
-    `Payment ${p.id}`, 'Daily ticket · Premier', 'Raktakarabi', 'Quantity: 2 × ₹450 = ₹900', 'Total paid: ₹900',
+    `Payment ${p.id}`, 'Daily ticket · Front block', 'Raktakarabi', 'Quantity: 2 × ₹450 = ₹900', 'Total paid: ₹900',
     `Full receipt: ${BASE}/receipts/${co.id}`,
   ]) assert.ok(mail.text.includes(expected), `email mentions: ${expected}`);
   assert.match(mail.text, /\d{1,2} \w{3} \d{4}, \d{1,2}:\d{2} [ap]m/i, 'performance time in IST, en-IN format');

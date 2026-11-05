@@ -6,7 +6,7 @@ import { AuditoriumSketch } from '@/components/AuditoriumMap';
 import { useCart } from '@/components/CartProvider';
 import { useLocale } from '@/components/LocaleProvider';
 import { FESTIVAL, FESTIVAL_BN } from '@/lib/brand';
-import { dateLocale, kindLabel, zoneLabel } from '@/lib/i18n';
+import { dateLocale, kindLabel, productDisplayName, zoneLabel } from '@/lib/i18n';
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
 
@@ -73,7 +73,7 @@ export default function CartPage() {
                 <AuditoriumSketch category={item.category} />
                 <div>
                   <p className="eyebrow" style={{ margin: 0 }}>{kindLabel(locale, item.kind)} · {zoneLabel(locale, item.category)}</p>
-                  <h3 style={{ fontSize: '1.1rem', margin: '.3rem 0' }}>{item.name}</h3>
+                  <h3 style={{ fontSize: '1.1rem', margin: '.3rem 0' }}>{productDisplayName(item.name, item.kind, item.category, locale)}</h3>
                   {item.state && item.state !== 'SELLABLE' && (
                     <p role="status" className="banner banner--err" style={{ margin: '.25rem 0' }}>{t('cart.lineUnavailable')}</p>
                   )}

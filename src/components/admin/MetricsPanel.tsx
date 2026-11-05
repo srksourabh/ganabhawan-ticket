@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { zoneLabel } from '@/lib/i18n';
 
 type Metrics = {
   sales: {
@@ -70,7 +71,7 @@ export default function MetricsPanel({ shows }: { shows: { id: string; title: st
         });
       }}>
         <label className="field"><span>Show</span><select name="showId"><option value="">All</option>{shows.map((s) => <option key={s.id} value={s.id}>{s.title} · {when(s.starts_at)}</option>)}</select></label>
-        <label className="field"><span>Zone</span><select name="zone"><option value="">All</option><option>Premier</option><option>Superior</option><option>Balcony</option></select></label>
+        <label className="field"><span>Zone</span><select name="zone"><option value="">All</option><option value="Premier">{zoneLabel('en', 'Premier')}</option><option value="Superior">{zoneLabel('en', 'Superior')}</option><option value="Balcony">{zoneLabel('en', 'Balcony')}</option></select></label>
         <label className="field"><span>Scanner</span><select name="scannerId"><option value="">All</option>{scanners.map((s) => <option key={s.scannerId} value={s.scannerId}>{s.name || s.contact}</option>)}</select></label>
         <label className="field"><span>Payment status</span><select name="paymentStatus"><option value="">All</option><option>CAPTURED</option><option>AUTHORIZED</option><option>FAILED</option></select></label>
         <label className="field"><span>From</span><input name="from" type="datetime-local" /></label>
@@ -84,7 +85,7 @@ export default function MetricsPanel({ shows }: { shows: { id: string; title: st
             <h3 className="h3">Sales</h3>
             <p>Tickets sold <strong>{data.sales.ticketsSold}</strong> · Bookings {data.sales.bookings} · Paid {data.sales.paidBookings} · Unpaid/expired {data.sales.unpaidClosedBookings} · Refund {data.sales.refundBookings} · Revenue (confirmed) <strong>{money(data.sales.confirmedRevenue)}</strong></p>
             <Table head={['Type', 'Tickets', 'Revenue']} rows={data.sales.byKind.map((r) => [r.kind === 'SEASON' ? 'Season' : 'Daily', r.tickets, money(r.revenue)])} />
-            <Table head={['Zone', 'Tickets', 'Revenue']} rows={data.sales.byZone.map((r) => [r.zone, r.tickets, money(r.revenue)])} />
+            <Table head={['Zone', 'Tickets', 'Revenue']} rows={data.sales.byZone.map((r) => [zoneLabel('en', r.zone), r.tickets, money(r.revenue)])} />
             <Table head={['Show', 'Date', 'Tickets (incl. season)']} rows={data.sales.byShow.map((r) => [r.title, when(r.startsAt), r.tickets])} />
           </section>
           <section className="card stack stack--sm">

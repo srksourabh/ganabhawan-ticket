@@ -7,7 +7,7 @@ import { AuditoriumSketch } from '@/components/AuditoriumMap';
 import { useCart, type CartItem } from '@/components/CartProvider';
 import { useLocale } from '@/components/LocaleProvider';
 import { FESTIVAL, FESTIVAL_BN } from '@/lib/brand';
-import { dateLocale, kindLabel, zoneLabel, type MessageKey } from '@/lib/i18n';
+import { dateLocale, kindLabel, productDisplayName, zoneLabel, type MessageKey } from '@/lib/i18n';
 import MobileVerify from '@/components/MobileVerify';
 import { CheckoutLineError, createClientCheckout, createClientCheckoutOrder, payExistingOrder, prefillFromContact } from '@/lib/razorpay-checkout';
 
@@ -170,7 +170,7 @@ export default function CheckoutPage() {
       setLines((prev) => updateAll(prev, { status: 'ordered' }));
       await payExistingOrder(order, {
         name: locale === 'bn' ? FESTIVAL_BN : FESTIVAL,
-        description: lines.length === 1 ? `${lines[0].item.name} × ${lines[0].item.quantity}` : `${lines.length} ticket types · ${checkout.reference}`,
+        description: lines.length === 1 ? `${productDisplayName(lines[0].item.name, lines[0].item.kind, lines[0].item.category, locale)} × ${lines[0].item.quantity}` : `${lines.length} ticket types · ${checkout.reference}`,
         ...prefillFromContact(phone, name),
         prefillEmail: email,
         prefillContact: phone,
@@ -271,7 +271,7 @@ export default function CheckoutPage() {
                   <AuditoriumSketch category={line.item.category} />
                   <div>
                   <p className="eyebrow">{kindLabel(locale, line.item.kind)} · {zoneLabel(locale, line.item.category)}</p>
-                  <h3 className="h3">{line.item.name}</h3>
+                  <h3 className="h3">{productDisplayName(line.item.name, line.item.kind, line.item.category, locale)}</h3>
                   {line.item.showTitle && (
                     <p className="muted">
                       {line.item.showTitle} · {new Date(line.item.startsAt).toLocaleString(dl, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}

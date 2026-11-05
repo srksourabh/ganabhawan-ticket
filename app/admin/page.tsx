@@ -10,6 +10,8 @@ import AvailabilityPanel from '@/components/admin/AvailabilityPanel';
 import SeasonsPanel from '@/components/admin/SeasonsPanel';
 import StaffPanel from '@/components/admin/StaffPanel';
 import MetricsPanel from '@/components/admin/MetricsPanel';
+import PricingPanel from '@/components/admin/PricingPanel';
+import { zoneLabel } from '@/lib/i18n';
 
 type Tab = 'festival' | 'shows' | 'availability' | 'seasons' | 'prices' | 'zones' | 'inventory' | 'staff' | 'metrics';
 /** What each role can open. The UI only mirrors this: every admin API checks the role itself. */
@@ -56,6 +58,12 @@ type Show = {
   language: string;
   artwork: string;
   sales_closes_at?: string | null;
+  /** All Together — Every Play inclusion (programme-inclusion.ts), from /api/admin/shows. */
+  all_together?: 'INCLUDED' | 'EXCLUDED' | 'PARTIAL' | 'NO_PASS';
+};
+
+const INCLUSION_LABEL: Record<NonNullable<Show['all_together']>, string> = {
+  INCLUDED: 'In All Together', EXCLUDED: 'Not in All Together', PARTIAL: 'In All Together (some zones only)', NO_PASS: 'No All Together pass yet',
 };
 
 type Product = {
@@ -128,7 +136,8 @@ export default function AdminPage() {
   const [editingShow, setEditingShow] = useState<Show | null>(null);
   const [creating, setCreating] = useState(false);
   const [posterPreview, setPosterPreview] = useState('');
-  const [theaterUpload, setTheaterUpload] = useState('');
+  const [theaterUpload] = useState('');
+  const [inclusionFilter, setInclusionFilter] = useState<'all' | 'included' | 'excluded'>('all');
   const [deletingShow, setDeletingShow] = useState<Show | null>(null);
   /** One delete request at a time: state updates are not visible to a second click in the same tick. */
   const deleteInFlight = useRef(false);
@@ -234,6 +243,28 @@ export default function AdminPage() {
     await load();
   }
 
+  /** New drama: included only if ticked. Edit: only a change is sent (a partly included programme stays as it is). */
+  function allTogetherChoice(checked: boolean): { allTogether?: boolean } {
+    if (creating) return { allTogether: checked };
+    const initial = editingShow?.all_together === 'INCLUDED';
+    return checked === initial ? {} : { allTogether: checked };
+  }
+
+  /** Include or exclude one programme in All Together (new purchases only; existing passes keep their programmes). */
+  async function setInclusion(show: Show, include: boolean) {
+    setBusy(true); setMessage(''); setError('');
+    const res = await fetch(`/api/admin/shows/${show.id}/all-together`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ include }),
+    }).catch(() => null);
+    const data = res ? await res.json().catch(() => ({})) : {};
+    setBusy(false);
+    if (!res || !res.ok) { setError((data as { error?: string }).error || 'Could not change All Together inclusion. Nothing was changed.'); return; }
+    setMessage(include
+      ? `"${show.title}" is now included in All Together — Every Play for new purchases.${(data as { unpublished?: boolean }).unpublished ? ' All Together sales pause until it is published.' : ''}`
+      : `"${show.title}" is no longer included in All Together for new purchases. Passes already bought keep it.`);
+    await load();
+  }
+
   async function saveShow(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -265,6 +296,8 @@ export default function AdminPage() {
       artwork: artwork || 'red',
       venue: String(form.get('venue') || ''),
       prices: zonePrices(form),
+      // Sent only when chosen on a new drama or changed on an edit, so other edits never alter inclusion.
+      ...allTogetherChoice(form.get('allTogether') === 'on'),
       confirmCancellation: false,
     };
     if (!creating && payload.status === 'CANCELLED' && editingShow?.status !== 'CANCELLED') {
@@ -524,6 +557,24 @@ export default function AdminPage() {
                   </select>
                 </label>
               </div>
+              <fieldset className="card stack stack--sm" style={{ margin: 0 }}>
+                <legend className="h3" style={{ fontSize: '1rem' }}>All Together — Every Play</legend>
+                <label className="field field--check">
+                  <input
+                    name="allTogether"
+                    type="checkbox"
+                    defaultChecked={editingShow?.all_together === 'INCLUDED'}
+                    disabled={editingShow?.all_together === 'NO_PASS' || (creating && shows[0]?.all_together === 'NO_PASS')}
+                    aria-describedby="all-together-help"
+                  />
+                  <span>Include this programme in All Together</span>
+                </label>
+                <p id="all-together-help" className="muted" style={{ margin: 0 }}>
+                  Customers purchasing All Together will receive access to this programme. It applies to new purchases; passes already
+                  bought keep their programmes (existing holders gain a programme only by an explicit, audited amendment). New programmes
+                  are not included unless ticked.
+                </p>
+              </fieldset>
               <label className="field">
                 <span>Synopsis</span>
                 <textarea name="synopsis" rows={3} defaultValue={editingShow?.synopsis || ''} />
@@ -582,8 +633,23 @@ export default function AdminPage() {
             </form>
           )}
 
+          <div className="admin__row" role="group" aria-label="All Together inclusion">
+            <p style={{ margin: 0 }} role="status">
+              <strong>{shows.filter((s) => s.all_together === 'INCLUDED' && s.status !== 'CANCELLED').length}</strong> programmes in All Together — Every Play
+              <span className="muted"> (cancelled programmes are never counted)</span>
+            </p>
+            <label className="field" style={{ margin: 0 }}>
+              <span className="sr-only">Show programmes</span>
+              <select value={inclusionFilter} onChange={(e) => setInclusionFilter(e.target.value as typeof inclusionFilter)}>
+                <option value="all">All programmes</option>
+                <option value="included">In All Together</option>
+                <option value="excluded">Not in All Together</option>
+              </select>
+            </label>
+          </div>
           <div className="admin__show-list">
-            {shows.map((show) => (
+            {shows.filter((s) => inclusionFilter === 'all'
+              || (inclusionFilter === 'included' ? s.all_together === 'INCLUDED' : s.all_together !== 'INCLUDED')).map((show) => (
               <article key={show.id} className="card admin__show-card">
                 <div className="admin__show-art">
                   {isPosterUrl(show.artwork) ? (
@@ -594,7 +660,7 @@ export default function AdminPage() {
                   )}
                 </div>
                 <div>
-                  <p className="eyebrow">{show.status} · {show.genre}</p>
+                  <p className="eyebrow">{show.status} · {show.genre} · {INCLUSION_LABEL[show.all_together ?? 'NO_PASS']}</p>
                   <h3>{show.title}</h3>
                   <p className="muted" lang="bn">{show.title_bn}</p>
                   <p className="muted">
@@ -613,6 +679,11 @@ export default function AdminPage() {
                 >
                   Edit
                 </button>
+                {show.all_together !== 'NO_PASS' && show.status !== 'CANCELLED' && (
+                  show.all_together === 'INCLUDED'
+                    ? <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => { void setInclusion(show, false); }}>Exclude from All Together</button>
+                    : <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => { void setInclusion(show, true); }}>Include in All Together</button>
+                )}
                 <button type="button" className="btn btn--danger" disabled={busy} onClick={() => setDeletingShow(show)}>
                   Delete
                 </button>
@@ -642,6 +713,7 @@ export default function AdminPage() {
       {tab === 'prices' && (
         <div className="stack admin__panel">
           <h2 className="h3">Ticket prices by zone</h2>
+          <PricingPanel onChanged={() => { void load(); }} />
           <section className="card stack stack--sm" aria-labelledby="season-sales-heading">
             <h3 id="season-sales-heading" className="h3">Season-ticket sales</h3>
             {seasonSales === null ? (
@@ -658,8 +730,9 @@ export default function AdminPage() {
               </>
             )}
           </section>
-          <p className="muted">Prices follow the hall: Premier is the front of the ground floor, Superior the back, Balcony the gallery. The stage is not for sale.</p>
-          <img className="auditorium__plan" src={AUDITORIUM_HOUSE} alt="Auditorium plan with Premier, Superior, Balcony, and the stage" />
+          <p className="muted">Prices follow the hall: Front block is the front of the ground floor, Second block the back, First floor upstairs. The stage is not for sale.</p>
+          <p className="muted">Ticket options below: display name and &quot;On sale&quot;. Daily prices come from <strong>Price per programme</strong> and All Together prices from <strong>All Together — final prices</strong> above.</p>
+          <img className="auditorium__plan" src={AUDITORIUM_HOUSE} alt="Auditorium plan with Front block, Second block, First floor, and the stage" />
           <div className="grid">
             {products.map((product) => (
               <form
@@ -668,22 +741,19 @@ export default function AdminPage() {
                 onSubmit={(event) => {
                   event.preventDefault();
                   const form = new FormData(event.currentTarget);
+                  // Prices are set above (shared pricing); this form keeps the current price.
                   saveProduct(
                     product,
-                    Number(form.get('price')),
+                    product.price / 100,
                     form.get('enabled') === 'on',
                     String(form.get('name') || product.name),
                   );
                 }}
               >
-                <p className="eyebrow">{product.kind} · {product.category}</p>
+                <p className="eyebrow">{product.kind === 'SEASON' ? 'All Together' : 'Daily'} · {zoneLabel('en', product.category)}</p>
                 <label className="field">
                   <span>Display name</span>
                   <input name="name" defaultValue={product.name} />
-                </label>
-                <label className="field">
-                  <span>Price (₹)</span>
-                  <input name="price" type="number" min={0} step={1} defaultValue={product.price / 100} />
                 </label>
                 <label className="field field--check">
                   <input name="enabled" type="checkbox" defaultChecked={product.enabled} />
@@ -707,19 +777,19 @@ export default function AdminPage() {
         <div className="card stack admin__panel">
           <h2 className="h3">Auditorium zones (guest map)</h2>
           <p className="muted">
-            Guests choose a zone on this plan. Hovering Premier, Superior, or Balcony lights that block and shows its price. Chairs are not sold one by one.
+            Guests choose a zone on this plan. Hovering Front block, Second block, or First floor lights that block and shows its price. Chairs are not sold one by one.
           </p>
           <div className="admin__zone-legend">
             <div><strong>Stage</strong> — bottom of the picture (not for sale)</div>
-            <div><strong>Premier</strong> — ground floor, front, nearest the stage</div>
-            <div><strong>Superior</strong> — ground floor, back, under the balcony</div>
-            <div><strong>Balcony</strong> — first floor</div>
-            <div><strong>Season</strong> — festival pass for the chosen zone</div>
+            <div><strong>Front block</strong> — ground floor, front, nearest the stage</div>
+            <div><strong>Second block</strong> — ground floor, back, under the first floor</div>
+            <div><strong>First floor</strong> — upstairs</div>
+            <div><strong>All Together</strong> — festival pass for the chosen zone</div>
           </div>
           <img className="auditorium__plan" src={AUDITORIUM_HOUSE} alt="Auditorium seating plan" />
           <ul className="admin__zone-prices">
             {seasonProducts.map((p) => (
-              <li key={p.id}>{p.category} Season · {money(p.price)}</li>
+              <li key={p.id}>{zoneLabel('en', p.category)} · All Together · {money(p.price)}</li>
             ))}
           </ul>
           <Link className="btn btn--primary" href="/catalogue">Preview guest catalogue</Link>

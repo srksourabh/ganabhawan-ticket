@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { AuditoriumSketch } from '@/components/AuditoriumMap';
 import { useLocale } from '@/components/LocaleProvider';
-import { dateLocale, kindLabel, zoneLabel } from '@/lib/i18n';
+import { dateLocale, kindLabel, productDisplayName, zoneLabel } from '@/lib/i18n';
 import PayBookingButton from '@/components/PayBookingButton';
 
 const money = (paise: number, locale: string) => `₹${(paise / 100).toLocaleString(locale)}`;
@@ -27,12 +27,16 @@ export type BookingDetail = {
   checkout_total?: number | null;
   refunds?: { id: string; amount: number; state: string; reason: string }[];
   snapshot: { name: string; category: string; kind: string; coverage: { title: string; startsAt: string }[] };
+  /** Programmes added to this pass later by an explicit amendment (commerce.ts ownedBookings). */
+  added_programmes?: { title: string; startsAt: string }[];
   tickets: Ticket[];
 };
 
 export default function TicketDetailView({ booking, contact, supportEmail }: { booking: BookingDetail; contact?: string; supportEmail?: string }) {
   const { locale, t } = useLocale();
   const dl = dateLocale(locale);
+  // What the booking covered when bought, plus programmes added to the pass later (never rewritten into the snapshot).
+  const coverage = [...(booking.snapshot?.coverage ?? []), ...(booking.added_programmes ?? [])];
   const isConfirmed = booking.status === 'CONFIRMED';
 
   return (
@@ -49,7 +53,7 @@ export default function TicketDetailView({ booking, contact, supportEmail }: { b
           </p>
         </div>
         <h1 style={{ fontFamily: 'Georgia, serif', fontSize: 'clamp(1.6rem, 5vw, 2.5rem)', lineHeight: 1.1, margin: '0 0 .5rem' }}>
-          {booking.snapshot?.name}
+          {productDisplayName(booking.snapshot?.name ?? '', booking.snapshot?.kind, booking.snapshot?.category, locale)}
         </h1>
         <p style={{ fontFamily: 'monospace', fontSize: '1rem', color: '#64564d', margin: booking.checkout_id ? '0 0 .5rem' : '0 0 1.5rem' }}>{booking.reference}</p>
         {booking.checkout_id && (
@@ -69,10 +73,10 @@ export default function TicketDetailView({ booking, contact, supportEmail }: { b
           <Row label={t('tickets.booked')} value={new Date(booking.created_at).toLocaleString(dl, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })} />
         </div>
 
-        {booking.snapshot?.coverage?.length > 0 && (
+        {coverage.length > 0 && (
           <div className="card" style={{ marginBottom: '1.25rem' }}>
             <h2 style={{ fontFamily: 'Georgia, serif', fontSize: '1.1rem', margin: '0 0 .75rem' }}>{t('tickets.coverage')}</h2>
-            {[...booking.snapshot.coverage].sort((a, b) => +new Date(a.startsAt) - +new Date(b.startsAt)).map((c, i) => (
+            {[...coverage].sort((a, b) => +new Date(a.startsAt) - +new Date(b.startsAt)).map((c, i) => (
               <p key={i} style={{ margin: '.25rem 0', fontSize: '.9rem', color: '#3d2a1e' }}>
                 <strong>{c.title}</strong> — {new Date(c.startsAt).toLocaleString(dl, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}
               </p>
@@ -90,7 +94,7 @@ export default function TicketDetailView({ booking, contact, supportEmail }: { b
                 ticketId={ticket.id}
                 ticketRef={ticket.reference}
                 admitted={ticket.admitted}
-                coverage={booking.snapshot?.coverage ?? []}
+                coverage={coverage}
               />
             ))}
           </div>
@@ -111,7 +115,7 @@ export default function TicketDetailView({ booking, contact, supportEmail }: { b
             <PayBookingButton
               bookingId={booking.id}
               amount={booking.checkout_total ?? booking.total}
-              description={booking.snapshot?.name ?? booking.reference}
+              description={booking.snapshot?.name ? productDisplayName(booking.snapshot.name, booking.snapshot.kind, booking.snapshot.category, locale) : booking.reference}
               contact={contact}
             />
           </div>

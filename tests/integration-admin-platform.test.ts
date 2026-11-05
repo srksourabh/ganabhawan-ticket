@@ -153,7 +153,7 @@ test('admin: season ticket creation, show creation copies the configured zones (
   await assert.rejects(inventory.createSeasonProduct(owner, { category: 'Premier', name: 'Again', nameBn: 'আবার', price: 1 }), /already exists/);
 });
 
-test('season coverage: a new performance does NOT join an existing season by itself; the admin adds it explicitly, only before any sale', { skip }, async () => {
+test('season coverage: a new performance does NOT join an existing season by itself; the admin adds it explicitly, even after a sale, for new purchases only', { skip }, async () => {
   const owner = await makeUser('owner');
   const { a, b, season } = await festivalWithSeason(owner);
   const showInput = { title: 'Late addition', titleBn: 'নতুন', troupe: 'T', synopsis: 'S', synopsisBn: 'S', startsAt: new Date(Date.now() + 20 * 86_400_000).toISOString(), runtime: 90, genre: 'Drama', status: 'PUBLISHED' };
@@ -168,13 +168,21 @@ test('season coverage: a new performance does NOT join an existing season by its
   await assert.rejects(inventory.addShowToSeason(owner, season.productId, created.id), /already part/);
   assert.equal((await query("SELECT count(*)::int n FROM audit_events WHERE action='product.season.add_show'"))[0].n, 1);
 
-  // Once a season ticket is sold, its performances can no longer change.
+  // After a sale the pass can still gain a programme, for NEW purchases only: the existing
+  // booking keeps exactly what it bought (snapshot, seat allocations, ticket entitlements).
   const buyer = await makeUser();
   const hold = (await commerce.reserve(buyer, { productId: season.productId, quantity: 1, version: before + 1 }, randomUUID())) as { id: string };
   await pay(buyer, hold.id);
-  const another = await catalogue.upsertShow(owner, { ...showInput, title: 'Too late', startsAt: new Date(Date.now() + 21 * 86_400_000).toISOString() });
-  await assert.rejects(inventory.addShowToSeason(owner, season.productId, another.id), /already been sold/);
-  assert.equal((await coverage()).length, 3, 'existing season customers keep exactly what they bought');
+  const bought = async () => (await query<{ snapshot: unknown; total: number; allocs: number; shows: number }>(
+    `SELECT b.snapshot, b.total, (SELECT count(*)::int FROM hold_allocations h WHERE h.booking_id=b.id) allocs,
+       (SELECT count(DISTINCT e.show_id)::int FROM tickets t JOIN entitlements e ON e.ticket_id=t.id WHERE t.booking_id=b.id) shows
+     FROM bookings b WHERE b.id=$1`, [hold.id]))[0];
+  const was = await bought();
+  const another = await catalogue.upsertShow(owner, { ...showInput, title: 'Added later', startsAt: new Date(Date.now() + 21 * 86_400_000).toISOString() });
+  await inventory.addShowToSeason(owner, season.productId, another.id);
+  assert.equal((await coverage()).length, 4, 'new purchases cover it');
+  assert.deepEqual(await bought(), was, 'the existing booking keeps exactly what it bought');
+  assert.equal(was.shows, 3);
 });
 
 // ---- AVAILABILITY ---------------------------------------------------------------------------------
@@ -328,7 +336,7 @@ test('notify matrix: email + mobile → exactly one consolidated email AND one S
   assert.equal(smsTo('+919800000002'), 1);
   const mail = fake.emails[0];
   assert.equal(mail.idempotencyKey, `checkout:${co.id}`, 'provider idempotency key = job key');
-  for (const expected of ['This email is your ticket.', 'Come to the auditorium before the show starts.', 'Daily ticket · Premier', 'Quantity: 2', 'Your tickets:', `/receipts/${co.id}`, co.reference]) {
+  for (const expected of ['This email is your ticket.', 'Come to the auditorium before the show starts.', 'Daily ticket · Front block', 'Quantity: 2', 'Your tickets:', `/receipts/${co.id}`, co.reference]) {
     assert.ok(mail.text.includes(expected), `email mentions ${expected}`);
   }
   const keys = (await query<{ key: string; channel: string }>('SELECT key, channel FROM notification_deliveries ORDER BY channel')).map((r) => [r.channel, r.key]);
