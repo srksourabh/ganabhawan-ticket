@@ -25,6 +25,8 @@ export const SOURCE_SITE = 'https://samatat.org';
 export const AUDITORIUM_PHOTO = '/images/auditorium-two-floors.jpg';
 /** Seating plan used wherever a guest chooses a zone or sees its price. */
 export const AUDITORIUM_HOUSE = '/images/auditorium-house.svg';
+/** The same plan with the customer zone names (Front block, Second block, First floor), shown on /catalogue. */
+export const AUDITORIUM_HOUSE_CATALOGUE = '/images/auditorium-house-catalogue.svg';
 export const BRAND_LOGO = '/images/samatat/logo.png';
 export const STORY_PHOTO = '/images/samatat/story-swapnomoy.jpg';
 /** Master festival poster — home hero and link-share preview. */
