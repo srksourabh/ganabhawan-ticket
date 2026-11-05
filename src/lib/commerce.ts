@@ -341,6 +341,11 @@ export async function refundCase(c:Client,b:Record<string,unknown>,paymentId:str
 export async function ownedBookings(userId:string,id?:string) {
  return query(`SELECT b.*,COALESCE((SELECT jsonb_agg(jsonb_build_object('id',t.id,'reference',t.reference,'status',t.status,'ordinal',t.ordinal,'credentialKind',cr.kind,'admitted',(SELECT count(*) FROM admissions a WHERE a.ticket_id=t.id)) ORDER BY t.ordinal) FROM tickets t LEFT JOIN credentials cr ON cr.ticket_id=t.id AND cr.status='ACTIVE' WHERE t.booking_id=b.id),'[]') tickets,
  COALESCE((SELECT jsonb_agg(jsonb_build_object('id',r.id,'amount',r.amount,'state',r.state,'reason',r.reason)) FROM refunds r WHERE r.booking_id=b.id),'[]') refunds,
- co.reference checkout_reference, co.total checkout_total
+ co.reference checkout_reference, co.total checkout_total,
+ -- Programmes added to an existing pass by an explicit amendment (programme-inclusion.ts): the
+ -- ticket entitlements beyond the booking's own snapshot, which itself is never rewritten.
+ COALESCE((SELECT jsonb_agg(DISTINCT jsonb_build_object('showId',s.id,'title',s.title,'startsAt',s.starts_at,'added',true))
+   FROM tickets t JOIN entitlements e ON e.ticket_id=t.id AND e.status='ACTIVE' JOIN shows s ON s.id=e.show_id
+   WHERE t.booking_id=b.id AND NOT (COALESCE(b.snapshot->'coverage','[]'::jsonb) @> jsonb_build_array(jsonb_build_object('showId',s.id::text)))),'[]') added_programmes
  FROM bookings b LEFT JOIN checkouts co ON co.id=b.checkout_id WHERE b.user_id=$1 AND ($2::uuid IS NULL OR b.id=$2) ORDER BY b.created_at DESC`,[userId,id??null]);
 }

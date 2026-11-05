@@ -28,6 +28,8 @@ export type BookingRow = {
   currency: string;
   created_at: string;
   snapshot: { name: string; kind?: string; category?: string; coverage: { title: string; startsAt: string }[] };
+  /** Programmes added to this pass later by an explicit amendment (commerce.ts ownedBookings). */
+  added_programmes?: { title: string; startsAt: string }[];
   tickets: TicketRow[];
 };
 
@@ -84,7 +86,7 @@ export default function TicketsView({
                 {new Date(b.created_at).toLocaleDateString(dl, { dateStyle: 'medium' })}
               </p>
 
-              {b.snapshot?.coverage?.map((c, i) => (
+              {[...(b.snapshot?.coverage ?? []), ...(b.added_programmes ?? [])].map((c, i) => (
                 <p key={i} style={{ margin: '.2rem 0', fontSize: '.85rem', color: '#64564d' }}>
                   {c.title} - {new Date(c.startsAt).toLocaleString(dl, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}
                 </p>
