@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AUDITORIUM_HOUSE_CATALOGUE, DEFAULT_VENUE, DEFAULT_VENUE_BN, FESTIVAL, FESTIVAL_BN, STAGE_PHOTOS } from '@/lib/brand';
 import AuditoriumMap, { type AuditoriumCategory, type AuditoriumZone } from '@/components/AuditoriumMap';
 import { useCart } from '@/components/CartProvider';
@@ -50,6 +50,8 @@ export default function CataloguePage() {
   const [selectedShowId, setSelectedShowId] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
   const [pickedZone, setPickedZone] = useState<string | null>(null);
+  const railRef = useRef<HTMLDivElement>(null);
+  const [railScroll, setRailScroll] = useState({ left: false, right: false });
 
   useEffect(() => {
     let cancelled = false;
@@ -110,6 +112,41 @@ export default function CataloguePage() {
 
   const effectiveShowId = selectedShowId ?? shows[0]?.id ?? null;
   const selectedShow = shows.find((show) => show.id === effectiveShowId) ?? null;
+
+  useEffect(() => {
+    const rail = railRef.current;
+    if (!rail || shows.length === 0) {
+      setRailScroll({ left: false, right: false });
+      return;
+    }
+    function update() {
+      const el = railRef.current;
+      if (!el) return;
+      const max = el.scrollWidth - el.clientWidth;
+      setRailScroll({
+        left: el.scrollLeft > 4,
+        right: max > 4 && el.scrollLeft < max - 4,
+      });
+    }
+    update();
+    rail.addEventListener('scroll', update, { passive: true });
+    const resize = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
+    resize?.observe(rail);
+    window.addEventListener('resize', update);
+    return () => {
+      rail.removeEventListener('scroll', update);
+      resize?.disconnect();
+      window.removeEventListener('resize', update);
+    };
+  }, [shows.length, data]);
+
+  function scrollRail(direction: 1 | -1) {
+    const rail = railRef.current;
+    if (!rail) return;
+    const step = Math.max(rail.clientWidth * 0.75, 280);
+    const reduceMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    rail.scrollBy({ left: direction * step, behavior: reduceMotion ? 'auto' : 'smooth' });
+  }
 
   const zones: AuditoriumZone[] = useMemo(() => {
     if (!selectedShow) return [];
@@ -284,35 +321,57 @@ export default function CataloguePage() {
       {shows.length > 0 && selectedShow && (
         <section className="container catalogue-page__shows">
           <h2>{t('catalogue.choose')}</h2>
-          <div className="pick-rail" role="tablist" aria-label={t('catalogue.performances')}>
-            {shows.map((show, index) => (
+          <div className={`pick-rail-wrap${railScroll.left ? ' pick-rail-wrap--left' : ''}${railScroll.right ? ' pick-rail-wrap--right' : ''}`}>
+            {railScroll.left && (
               <button
-                key={show.id}
                 type="button"
-                role="tab"
-                aria-selected={effectiveShowId === show.id}
-                onClick={() => setSelectedShowId(show.id)}
-                className={`show-rail${effectiveShowId === show.id ? ' show-rail--on' : ''}`}
+                className="pick-rail__arrow pick-rail__arrow--prev"
+                aria-label={t('catalogue.scrollPrev')}
+                onClick={() => scrollRail(-1)}
               >
-                <img src={showStill(show, index)} alt="" />
-                <span className="show-rail__body">
-                  <span className="show-rail__title">{localized(show.title, show.title_bn, locale)}</span>
-                  <time className="show-rail__when" dateTime={show.starts_at}>
-                    <span className="show-rail__date">
-                      {cardDate(show.starts_at, dl)}
-                    </span>
-                    <span className="show-rail__time">
-                      {new Date(show.starts_at).toLocaleTimeString(dl, { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
-                    </span>
-                  </time>
-                  {showStatus.get(show.id) && (
-                    <span className={`show-rail__tag show-rail__tag--${showStatus.get(show.id)!.toLowerCase().replace('_', '-')}`}>
-                      {t(STATUS_KEY[showStatus.get(show.id)!])}
-                    </span>
-                  )}
-                </span>
+                <span aria-hidden="true">‹</span>
               </button>
-            ))}
+            )}
+            <div ref={railRef} className="pick-rail" role="tablist" aria-label={t('catalogue.performances')}>
+              {shows.map((show, index) => (
+                <button
+                  key={show.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={effectiveShowId === show.id}
+                  onClick={() => setSelectedShowId(show.id)}
+                  className={`show-rail${effectiveShowId === show.id ? ' show-rail--on' : ''}`}
+                >
+                  <img src={showStill(show, index)} alt="" />
+                  <span className="show-rail__body">
+                    <span className="show-rail__title">{localized(show.title, show.title_bn, locale)}</span>
+                    <time className="show-rail__when" dateTime={show.starts_at}>
+                      <span className="show-rail__date">
+                        {cardDate(show.starts_at, dl)}
+                      </span>
+                      <span className="show-rail__time">
+                        {new Date(show.starts_at).toLocaleTimeString(dl, { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
+                      </span>
+                    </time>
+                    {showStatus.get(show.id) && (
+                      <span className={`show-rail__tag show-rail__tag--${showStatus.get(show.id)!.toLowerCase().replace('_', '-')}`}>
+                        {t(STATUS_KEY[showStatus.get(show.id)!])}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              ))}
+            </div>
+            {railScroll.right && (
+              <button
+                type="button"
+                className="pick-rail__arrow pick-rail__arrow--next"
+                aria-label={t('catalogue.scrollNext')}
+                onClick={() => scrollRail(1)}
+              >
+                <span aria-hidden="true">›</span>
+              </button>
+            )}
           </div>
 
           <div className="pick">
