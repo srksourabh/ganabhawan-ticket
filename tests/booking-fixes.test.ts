@@ -224,7 +224,7 @@ test('customer sign-in page: Google and the one-time code only — no "More sign
   assert.ok(!page.includes('login.moreOptions'));
   assert.ok(page.includes('<GoogleSignInButton redirectUrl={next} />'), 'Google sign-in stays, with the return path');
   assert.ok(page.includes("fetch('/api/auth/otp/request'") && page.includes("fetch('/api/auth/otp/verify'"), 'one-time code request and verification stay');
-  assert.ok(page.includes("t('login.staffHint')"), 'staff instructions stay');
+  assert.ok(!page.includes("t('login.staffHint')") && !page.includes('login.staffHint'), 'no staff door hint on the customer sign-in page');
   // The code form renders only when the server reports code sign-in on (CUSTOMER_OTP_ENABLED); otherwise a Google-only note.
   assert.ok(page.includes("setCodeSignIn(b?.codeSignIn === true)") && page.includes("{codeSignIn && (") && page.includes("{!codeSignIn && <p style={styles.muted}>{t('login.googleOnly')}</p>}"));
   assert.ok(page.includes('const [codeSignIn, setCodeSignIn] = useState(false);'), 'hidden until the server says otherwise');
