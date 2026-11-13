@@ -51,7 +51,7 @@ export default function CataloguePage() {
   const [notice, setNotice] = useState('');
   const [pickedZone, setPickedZone] = useState<string | null>(null);
   const railRef = useRef<HTMLDivElement>(null);
-  const [railScroll, setRailScroll] = useState({ left: false, right: false });
+  const [railScroll, setRailScroll] = useState({ overflow: false, left: false, right: false });
 
   useEffect(() => {
     let cancelled = false;
@@ -116,19 +116,26 @@ export default function CataloguePage() {
   useEffect(() => {
     const rail = railRef.current;
     if (!rail || shows.length === 0) {
-      setRailScroll({ left: false, right: false });
+      setRailScroll({ overflow: false, left: false, right: false });
       return;
     }
     function update() {
       const el = railRef.current;
       if (!el) return;
       const max = el.scrollWidth - el.clientWidth;
+      const overflow = max > 4;
       setRailScroll({
-        left: el.scrollLeft > 4,
-        right: max > 4 && el.scrollLeft < max - 4,
+        overflow,
+        left: overflow && el.scrollLeft > 4,
+        right: overflow && el.scrollLeft < max - 4,
       });
     }
     update();
+    // Images can change scrollWidth after first paint.
+    const images = rail.querySelectorAll('img');
+    images.forEach((img) => {
+      if (!img.complete) img.addEventListener('load', update, { once: true });
+    });
     rail.addEventListener('scroll', update, { passive: true });
     const resize = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
     resize?.observe(rail);
@@ -321,12 +328,13 @@ export default function CataloguePage() {
       {shows.length > 0 && selectedShow && (
         <section className="container catalogue-page__shows">
           <h2>{t('catalogue.choose')}</h2>
-          <div className={`pick-rail-wrap${railScroll.left ? ' pick-rail-wrap--left' : ''}${railScroll.right ? ' pick-rail-wrap--right' : ''}`}>
-            {railScroll.left && (
+          <div className={`pick-rail-wrap${railScroll.overflow ? ' pick-rail-wrap--scrollable' : ''}${railScroll.left ? ' pick-rail-wrap--left' : ''}${railScroll.right ? ' pick-rail-wrap--right' : ''}`}>
+            {railScroll.overflow && (
               <button
                 type="button"
                 className="pick-rail__arrow pick-rail__arrow--prev"
                 aria-label={t('catalogue.scrollPrev')}
+                disabled={!railScroll.left}
                 onClick={() => scrollRail(-1)}
               >
                 <span aria-hidden="true">‹</span>
@@ -362,11 +370,12 @@ export default function CataloguePage() {
                 </button>
               ))}
             </div>
-            {railScroll.right && (
+            {railScroll.overflow && (
               <button
                 type="button"
                 className="pick-rail__arrow pick-rail__arrow--next"
                 aria-label={t('catalogue.scrollNext')}
+                disabled={!railScroll.right}
                 onClick={() => scrollRail(1)}
               >
                 <span aria-hidden="true">›</span>
