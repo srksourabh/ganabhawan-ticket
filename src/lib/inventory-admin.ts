@@ -2,6 +2,8 @@ import { transaction, one, query, type Client } from './db';
 import { AppError, requireValue } from './errors';
 import { audit } from './audit';
 import type { User } from './types';
+import { ADMIN_POLICY } from './admin-policy';
+import { zoneLabel } from './i18n';
 import { assertSeasonFinalPrice, loadZonePrices, seasonPricing } from './pricing';
 
 /**
@@ -110,6 +112,86 @@ export async function configureSeasonForZone(user: User, zone: string, input: { 
       }));
     }
     return { zone, shows: results.length, results };
+  }, true);
+}
+
+type CoveredSeason = { capacity_id: string; show_id: string; title: string; starts_at: string; status: string; pool_id: string; allocation: number; held: number; committed: number };
+
+/** The SEASON pools of every non-cancelled performance a zone's All Together pass covers. */
+async function coveredSeasonPools(c: Client | undefined, productId: string, lock = false) {
+  const sql = `SELECT cap.id capacity_id, s.id show_id, s.title, s.starts_at, s.status, p.id pool_id, p.allocation, p.held, p.committed
+     FROM product_coverage pc JOIN shows s ON s.id=pc.show_id JOIN pools p ON p.id=pc.pool_id JOIN capacities cap ON cap.id=p.capacity_id
+     WHERE pc.product_id=$1 AND s.status<>'CANCELLED' ORDER BY s.starts_at, s.id${lock ? ' FOR UPDATE OF p, cap' : ''}`;
+  return c ? (await c.query<CoveredSeason>(sql, [productId])).rows : query<CoveredSeason>(sql, [productId]);
+}
+
+/** Seats a pass can still sell: the lowest remaining online All Together seats over the programmes it covers. */
+function passSeatsLeft(pools: CoveredSeason[]) {
+  if (pools.length === 0) return { remaining: 0, lowest: null as null | { showId: string; title: string; remaining: number } };
+  const left = pools.map((p) => ({ showId: p.show_id, title: p.title, remaining: Number(p.allocation) - Number(p.held) - Number(p.committed) }));
+  const lowest = left.reduce((min, p) => (p.remaining < min.remaining ? p : min));
+  return { remaining: Math.max(0, lowest.remaining), lowest };
+}
+
+/**
+ * All Together seats per zone, for the inventory screen. A pass needs a seat in EVERY programme
+ * it covers, so what it can still sell is the lowest remaining count among them (the same rule as
+ * availability.ts remainingTickets): raising one performance alone never adds pass seats.
+ */
+export async function allTogetherSeats() {
+  const passes = await query<{ id: string; category: string; name: string }>("SELECT id, category, name FROM products WHERE kind='SEASON' ORDER BY array_position(ARRAY['Premier','Superior','Balcony'], category)");
+  const out = [];
+  for (const pass of passes) {
+    const pools = await coveredSeasonPools(undefined, pass.id);
+    out.push({ zone: pass.category, label: zoneLabel('en', pass.category), productId: pass.id, programmes: pools.length, ...passSeatsLeft(pools) });
+  }
+  return out;
+}
+
+/**
+ * Adds `seats` All Together seats for one zone: every programme the zone's pass covers gets
+ * `seats` more seats set aside for All Together AND `seats` more sold online (a counter-only
+ * reserve, if any, is kept). All programmes change or none do, under the commerce lock (the
+ * same lock every hold takes, so no sale can interleave). A programme whose capacity has no room
+ * (daily + All Together > capacity) is named in the refusal. `expectedAvailable` must equal the
+ * seats left the admin saw, so a repeated or stale submission (double click, two admins) never
+ * adds twice. Bookings, holds and daily stock are never touched.
+ */
+export async function addAllTogetherSeats(user: User, input: { zone?: unknown; seats?: unknown; expectedAvailable?: unknown }) {
+  requireValue(user.role === 'owner' || (ADMIN_POLICY.inventory as readonly string[]).includes(user.role), 'You do not have permission for this action.', 403);
+  const zone = String(input.zone ?? '');
+  requireValue((ZONES as readonly string[]).includes(zone), 'Choose Front block, Second block or First floor.', 400);
+  const seats = input.seats as number;
+  requireValue(typeof seats === 'number' && Number.isInteger(seats) && seats >= 1 && seats <= 1000, 'Seats to add must be a whole number from 1 to 1000.', 400);
+  const expected = input.expectedAvailable as number;
+  requireValue(typeof expected === 'number' && Number.isInteger(expected) && expected >= 0, 'Refresh the page and try again.', 400);
+  return transaction(async (c) => {
+    const pass = await one<{ id: string }>(c, "SELECT id FROM products WHERE kind='SEASON' AND category=$1 ORDER BY id LIMIT 1 FOR UPDATE", [zone]);
+    requireValue(pass, `There is no All Together pass for ${zoneLabel('en', zone)}. Create one under Seasons.`, 404);
+    const pools = await coveredSeasonPools(c, pass!.id, true);
+    requireValue(pools.length > 0, 'This All Together pass covers no programme. Include programmes under Dramas first.', 409);
+    const before = passSeatsLeft(pools);
+    requireValue(before.remaining === expected, `${zoneLabel('en', zone)} now has ${before.remaining} All Together seats left (you saw ${expected}). Refresh and try again; nothing was added.`, 409);
+    for (const p of pools) {
+      const cap = (await one<{ ceiling: number; season_allocation: number | null }>(c, 'SELECT ceiling, season_allocation FROM capacities WHERE id=$1', [p.capacity_id]))!;
+      const daily = await one<{ allocation: number }>(c, "SELECT allocation FROM pools WHERE capacity_id=$1 AND kind='DAILY'", [p.capacity_id]);
+      const online = Number(p.allocation);
+      const setAside = Math.max(Number(cap.season_allocation ?? online), online);
+      try {
+        await applyCapacity(c, user, p.capacity_id, {
+          ceiling: Number(cap.ceiling), dailyAllocation: Number(daily?.allocation ?? 0),
+          seasonAllocation: setAside + seats, onlineSeasonAllocation: online + seats,
+        });
+      } catch (error) {
+        if (error instanceof AppError) {
+          throw new AppError(error.status, `${p.title} (${zoneLabel('en', zone)}): ${error.message} Raise its total capacity or lower its daily allocation first. Nothing was added.`, 'SEASON_SEATS_NO_ROOM');
+        }
+        throw error;
+      }
+    }
+    const after = passSeatsLeft(await coveredSeasonPools(c, pass!.id));
+    await audit(c, user.id, 'inventory.season.add_seats', pass!.id, { zone, seats, programmes: pools.length, before: before.remaining, after: after.remaining });
+    return { zone, seats, programmes: pools.length, before: before.remaining, after: after.remaining };
   }, true);
 }
 
