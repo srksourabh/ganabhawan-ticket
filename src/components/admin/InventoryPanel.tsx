@@ -24,6 +24,8 @@ type ZoneRow = {
   daily_enabled: boolean | null;
 };
 
+type PassSeats = { zone: string; label: string; productId: string; programmes: number; remaining: number; lowest: { showId: string; title: string; remaining: number } | null };
+
 const ZONES = ['Premier', 'Superior', 'Balcony'];
 const when = (iso: string) => new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' });
 
@@ -41,6 +43,7 @@ async function send(url: string, method: string, body: unknown) {
  */
 export default function InventoryPanel({ onChanged }: { onChanged?: () => void }) {
   const [rows, setRows] = useState<ZoneRow[]>([]);
+  const [passes, setPasses] = useState<PassSeats[]>([]);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -50,6 +53,7 @@ export default function InventoryPanel({ onChanged }: { onChanged?: () => void }
     const body = await res.json().catch(() => ({}));
     if (!res.ok) { setError((body as { error?: string }).error || 'Could not load inventory.'); return; }
     setRows((body as { zones: ZoneRow[] }).zones);
+    setPasses((body as { allTogether?: PassSeats[] }).allTogether ?? []);
   }, []);
 
   useEffect(() => {
@@ -85,6 +89,36 @@ export default function InventoryPanel({ onChanged }: { onChanged?: () => void }
       {message && <p className="banner banner--ok" role="status">{message}</p>}
       {error && <p className="banner banner--err" role="alert">{error}</p>}
 
+      {passes.length > 0 && (
+        <section className="card stack stack--sm" aria-labelledby="add-all-together-seats">
+          <h3 id="add-all-together-seats" className="h3">Add All Together seats</h3>
+          <p className="muted" style={{ margin: 0 }}>
+            An All Together pass needs a seat in every programme it covers, so the seats it can sell are the lowest number left
+            in any of them. Adding seats here adds them to every programme of the pass at once (all or nothing).
+          </p>
+          <div className="grid">
+            {passes.map((p) => (
+              <form
+                key={p.productId}
+                className="stack stack--sm"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const seats = Number(new FormData(event.currentTarget).get('seats'));
+                  void run(() => send('/api/admin/inventory/all-together-seats', 'POST', { zone: p.zone, seats, expectedAvailable: p.remaining }),
+                    `${p.label}: ${seats} All Together seat${seats === 1 ? '' : 's'} added to each of its ${p.programmes} programmes.`);
+                }}
+              >
+                <p className="eyebrow">{p.label}</p>
+                <p style={{ margin: 0 }} data-testid={`pass-seats-${p.zone}`}><strong>{p.remaining}</strong> seats left · {p.programmes} programmes</p>
+                {p.lowest && <p className="muted" style={{ margin: 0 }}>Lowest: {p.lowest.title} ({p.lowest.remaining} left)</p>}
+                <label className="field"><span>Seats to add</span><input name="seats" type="number" min={1} max={1000} step={1} required /></label>
+                <button className="btn btn--primary btn--sm" type="submit" disabled={busy}>Add seats to {p.label}</button>
+              </form>
+            ))}
+          </div>
+        </section>
+      )}
+
       <form
         className="card stack stack--sm"
         onSubmit={(event) => {
@@ -95,7 +129,8 @@ export default function InventoryPanel({ onChanged }: { onChanged?: () => void }
           }), 'Season allocation applied to every upcoming performance of that zone.');
         }}
       >
-        <h3 className="h3">Season allocation for a zone (all upcoming performances)</h3>
+        <h3 className="h3">Set exact season allocation for a zone (all upcoming performances)</h3>
+        <p className="muted" style={{ margin: 0 }}>Replaces the numbers (it does not add). To add seats to All Together, use Add All Together seats above.</p>
         <div className="grid">
           <label className="field"><span>Zone</span><select name="zone">{ZONES.map((z) => <option key={z} value={z}>{zoneLabel('en', z)}</option>)}</select></label>
           <label className="field"><span>Season allocation</span><input name="seasonAllocation" type="number" min={0} required /></label>

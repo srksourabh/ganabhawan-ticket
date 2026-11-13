@@ -1,5 +1,5 @@
 import { authenticated } from '@/lib/auth';
-import { configureCapacity, configureSeasonForZone, inventoryOverview } from '@/lib/inventory-admin';
+import { allTogetherSeats, configureCapacity, configureSeasonForZone, inventoryOverview } from '@/lib/inventory-admin';
 import { jsonError, jsonOk, readJson } from '@/lib/http';
 import { AppError } from '@/lib/errors';
 import { ADMIN_POLICY } from '@/lib/admin-policy';
@@ -10,7 +10,7 @@ const ROLES = ADMIN_POLICY.inventory;
 export async function GET(): Promise<Response> {
   try {
     await authenticated([...ROLES]);
-    return jsonOk({ zones: await inventoryOverview() });
+    return jsonOk({ zones: await inventoryOverview(), allTogether: await allTogetherSeats() });
   } catch (error) {
     return jsonError(error);
   }
